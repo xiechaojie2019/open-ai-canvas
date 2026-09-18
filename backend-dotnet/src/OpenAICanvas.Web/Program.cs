@@ -97,6 +97,22 @@ builder.Services.AddSingleton<OpenAICanvas.Application.CanvasService>(servicePro
 builder.Services.AddSingleton<OpenAICanvas.Web.Security.IRateLimiter, OpenAICanvas.Web.Security.InMemoryRateLimiter>();
 builder.Services.AddSingleton<OpenAICanvas.Platform.IRuntimePolicyProvider,
     OpenAICanvas.Platform.DefaultRuntimePolicyProvider>();
+// 资源上传：额度管理 + 写路径 + 分片会话（对应 Go 的 upload_quota.go / resource.go / resource_upload_session.go）。
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.UploadQuota(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>()));
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.ResourceUploadService(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.UploadQuota>(),
+        env.DataDir));
+builder.Services.AddSingleton(new OpenAICanvas.Application.ChunkedUploadSessions());
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.ResourceDomainService(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+        env.DataDir));
 
 WebApplication app = builder.Build();
 
@@ -166,6 +182,15 @@ api.MapModelRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.Canv
 api.MapChannelRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>());
+
+// 本地媒体分片上传路由。对应 Go 的 handler.RegisterChunkedUploadRoutes。
+api.MapChunkedUploadRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.UploadQuota>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ChunkedUploadSessions>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
 // 用户数据（画布/素材）路由。对应 Go 的 handler/user_data.go（当前接 canvas-projects 部分）。
 api.MapUserDataRoutes(

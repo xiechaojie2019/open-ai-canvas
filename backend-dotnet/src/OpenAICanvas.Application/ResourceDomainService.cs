@@ -2,6 +2,7 @@
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Platform;
 
 namespace OpenAICanvas.Application;
 
@@ -18,6 +19,23 @@ public sealed record ResourceDelivery(
     string ContentRange,
     string AcceptRanges);
 
+/// <summary>
+/// 资源流（含状态码、长度与 Range 信息）。
+/// 对应 Go: <c>internal/assets/types.go</c> 的 <c>ResourceStream</c>。
+/// </summary>
+public sealed record ResourceStream(
+    Resource Resource,
+    Stream Body,
+    string ContentRange,
+    string AcceptRanges)
+{
+    /// <summary>对应 Go 的 <c>StatusCode</c>，本地投递固定 200。</summary>
+    public int StatusCode { get; init; } = 200;
+
+    /// <summary>对应 Go 的 <c>ContentLength</c>。</summary>
+    public long ContentLength { get; init; }
+}
+
 /// <summary>账号文件存储用量。对应 Go: <c>service.AccountFileStorageUsage</c>。</summary>
 public sealed record AccountFileStorageUsage(
     long UsedBytes, long LimitBytes, bool OverQuota);
@@ -32,12 +50,17 @@ public sealed record AccountFileStorageUsage(
 /// </remarks>
 public sealed class ResourceDomainService
 {
+    private const long Gigabyte = 1L << 30;
+
     private readonly Repository _repository;
+    private readonly IRuntimePolicyProvider _policyProvider;
     private readonly string _dataDir;
 
-    public ResourceDomainService(Repository repository, string? dataDir = null)
+    public ResourceDomainService(
+        Repository repository, IRuntimePolicyProvider policyProvider, string? dataDir = null)
     {
         _repository = repository;
+        _policyProvider = policyProvider;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
     }
 
@@ -58,10 +81,12 @@ public sealed class ResourceDomainService
     public async Task<AccountFileStorageUsage> AccountFileStorageUsageAsync(
         string userId, CancellationToken cancellationToken = default)
     {
-        (long usedBytes, long limitBytes) = await _repository.UserStorageUsageAsync(
-            userId, cancellationToken).ConfigureAwait(false);
+        RuntimeResourcePolicy resource = _policyProvider.Current().Resource;
+        long usedBytes = await _repository.UserStoredFileBytesAsync(userId, cancellationToken)
+            .ConfigureAwait(false);
+        long limitBytes = Gigabyte * resource.StoredFileGB;
         long limit = Math.Max(1, limitBytes);
-        return new AccountFileStorageUsage(usedBytes, limitBytes, usedBytes > limitBytes);
+        return new AccountFileStorageUsage(usedBytes, limitBytes, usedBytes > limit);
     }
 
     /// <summary>单个资源（剥离 publicURL）。对应 Go: <c>Resource</c>。</summary>
@@ -149,7 +174,11 @@ public sealed class ResourceDomainService
             throw AppError.NotFound("资源文件不存在");
         }
         FileStream fs = File.OpenRead(path);
-        return new ResourceStream(resource, fs, ContentRange: "", AcceptRanges: "bytes");
+        return new ResourceStream(resource, fs, ContentRange: "", AcceptRanges: "bytes")
+        {
+            StatusCode = 200,
+            ContentLength = fs.Length,
+        };
     }
 
     /// <summary>对应 Go: <c>resourceStorageURL</c>（本地直链相对路径）。</summary>

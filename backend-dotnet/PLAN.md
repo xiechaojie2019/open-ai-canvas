@@ -269,7 +269,7 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 5.1 | 资源上传（含分片） | `handler/resource_upload_session.go` | ☐ |
+| 5.1 | 资源上传（含分片） | `handler/resource_upload_session.go` | ✅ 三件套路由 + 幂等/配额/本地落盘完成（对象存储通道待 #25） |
 | 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
 | 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ☐ |
