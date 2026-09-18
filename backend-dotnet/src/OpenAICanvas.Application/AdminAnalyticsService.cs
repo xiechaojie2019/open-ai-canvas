@@ -127,7 +127,7 @@ public sealed class AdminStorageStatsDto
 /// 完整分析总览（overview/users/models，依赖 user_daily_activities 与任务聚合）
 /// 属后续节点；日志列表/详情/导出与存储统计/列表已完整移植。
 /// </remarks>
-public sealed class AdminAnalyticsService
+public sealed partial class AdminAnalyticsService
 {
     private readonly Repository _repository;
 

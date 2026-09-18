@@ -793,6 +793,43 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 资源 CRUD 与管理端分析（阶段 5.9 / 9.4，已端到端打通）
+
+本轮打通 **15 条路由**：资源 7 条（`GET /resources`、`GET /resources/:id`、
+`POST /resources` multipart 整传、`POST /resources/import` URL 导入、
+`GET /resources/storage-usage`、`GET /resources/:id/oss-url`、
+`POST /resources/:id/ark-private-asset`）+ 分析 4 条（overview/models/users/export.csv）+
+模型价格 4 条（GET/POST/PATCH/DELETE）。
+
+### 本轮交付物
+
+- `ResourceCrudEndpoints` — 资源 CRUD 路由（限流/体限/幂等键与 Go 对齐）
+- `ResourceUploadService.ImportResourceUrlAsync` — URL 导入完整移植：
+  `OutboundGuard.ValidateOutboundUrlAsync`（SSRF）→ 90s 限长流式下载 →
+  复用幂等/类型探测/配额/落盘；补 PNG/GIF/JPEG 尺寸头探测
+- 存储用量契约修正：`{usedBytes,totalBytes}`（原实现多了 limitBytes/overQuota）
+- `Repository.AnalyticsQueries` — 分析三查询（tasks/logs/activities，日志列裁剪报文）、
+  排队计数、模型价格 CRUD
+- `AdminAnalyticsService.Analytics` — `buildAnalyticsOverview` 全量移植
+  （KPI/DAU/WAU/MAU 滚动窗、趋势、模型聚合、用户聚合、失败分类）、
+  `AdminAnalyticsCSV`（usage CSV + BOM）、价格归一化校验（币种大写、非负、≤12 字符）
+- 8 条路由接线（MapAdminInsightRoutes）
+
+### 关键实现点
+
+1. **api_call_logs 无 updated_at 列**（GORM 实体上的字段是装饰结果非表列），
+   分析投影按 schema-dump 精确列清单。
+2. **管理分析 URL 查询到时间窗的归一**：RFC3339 / yyyy-MM-dd 双格式；
+   日粒度 To 自动 +1 天；窗口上限 366 天。
+3. **非管理员 403 由既有 admin 测试覆盖**；注册第二用户需邮件验证码链路，不在本批展开。
+
+### 验证结果（459/459 通过）
+
+新增 3 项测试（资源列表/详情/整传/用量/OSS 直链 + URL 导入校验 + 401；
+分析空库窗口/CSV/模型视图；价格 CRUD/校验/401）。
+
+---
+
 ## 分镜候选与工作台读视图（阶段 6 节点 6.4/6.6，已端到端打通）
 
 本轮打通 **12 条路由**：

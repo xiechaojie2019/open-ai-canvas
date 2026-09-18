@@ -259,6 +259,9 @@ api.MapProjectShotRoutes(app.Services.GetRequiredService<OpenAICanvas.Applicatio
 // 管理后台日志与存储路由。对应 Go 的 handler 日志/存储部分。
 api.MapAdminAnalyticsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
+// 管理端分析总览与模型价格路由。对应 Go 的 handler/admin_analytics.go。
+api.MapAdminInsightRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+
 // 公告路由。对应 Go 的 handler.RegisterAnnouncementRoutes。
 api.MapAnnouncementRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),

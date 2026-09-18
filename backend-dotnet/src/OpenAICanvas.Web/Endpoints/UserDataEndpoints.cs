@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -1054,6 +1055,161 @@ public static class UserDataEndpoints
                 return ApiResults.FailService(error, context);
             }
         });
+    }
+
+    /// <summary>
+    /// 管理端分析总览与模型价格路由。对应 Go: <c>handler/admin_analytics.go</c>。
+    /// </summary>
+    public static void MapAdminInsightRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/admin/analytics/overview", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AnalyticsOverviewDto result = await service.AdminAnalytics.OverviewAsync(
+                    actor, AnalyticsQuery(context), cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/analytics/models", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AnalyticsOverviewDto result = await service.AdminAnalytics.OverviewAsync(
+                    actor, AnalyticsQuery(context), cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { models = result.Models });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/analytics/users", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AnalyticsOverviewDto result = await service.AdminAnalytics.OverviewAsync(
+                    actor, AnalyticsQuery(context), cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { users = result.Users, dau = result.KPI.DAU, wau = result.KPI.WAU, mau = result.KPI.MAU });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/analytics/export.csv", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                byte[] data = await service.AdminAnalytics.AnalyticsCsvAsync(
+                    actor, AnalyticsQuery(context), cancellationToken).ConfigureAwait(false);
+                context.Response.Headers["Content-Disposition"] =
+                    "attachment; filename=usage-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".csv";
+                return Results.Text(Encoding.UTF8.GetString(data), "text/csv; charset=utf-8");
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/model-pricings", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                IReadOnlyList<ModelPricing> items = await service.AdminAnalytics.ModelPricingsAsync(
+                    actor, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { pricings = items });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/model-pricings", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+            await SaveModelPricing(context, service, "", cancellationToken));
+
+        api.MapPatch("/admin/model-pricings/{id}", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+            await SaveModelPricing(context, service, id, cancellationToken));
+
+        api.MapDelete("/admin/model-pricings/{id}", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.AdminAnalytics.DeleteModelPricingAsync(
+                    actor, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { ok = true });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>分析查询参数。对应 Go: <c>analyticsQuery(c)</c>。</summary>
+    private static AnalyticsQueryDto AnalyticsQuery(HttpContext context) => new()
+    {
+        From = context.Request.Query["from"].ToString(),
+        To = context.Request.Query["to"].ToString(),
+        UserID = context.Request.Query["userId"].ToString(),
+        Model = context.Request.Query["model"].ToString(),
+        ChannelID = context.Request.Query["channelId"].ToString(),
+        Capability = context.Request.Query["capability"].ToString(),
+    };
+
+    /// <summary>价格写路径公共体。对应 Go: <c>saveModelPricing</c>。</summary>
+    private static async Task<IResult> SaveModelPricing(
+        HttpContext context, CanvasService service, string id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                .ConfigureAwait(false);
+            ModelPricingRequestDto? request = await ReadJsonAsync<ModelPricingRequestDto>(
+                context, 0, cancellationToken).ConfigureAwait(false);
+            if (request is null)
+            {
+                return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+            }
+            ModelPricing pricing = await service.AdminAnalytics.SaveModelPricingAsync(
+                actor, id, request, cancellationToken).ConfigureAwait(false);
+            return ApiResults.Ok(new { pricing });
+        }
+        catch (Exception error)
+        {
+            return ApiResults.FailService(error, context);
+        }
     }
 
     /// <summary>

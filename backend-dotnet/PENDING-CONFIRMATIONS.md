@@ -362,6 +362,29 @@
   重新合成，输出 `no-store, private`。指令集合与语义一致，仅顺序不同。
 - 处置建议：保持现状；除非发现前端/代理对顺序敏感，不值得绕过框架管道。
 
+### 55. `[待移植]` 剩余大节点（任务执行 / 创作运行 / 云 Agent / 工作流 v2 / 技能写入）
+- 位置：`app/task_creation.go`（POST /tasks 前置校验 + 计费预留）、
+  `task_execution.go`/`task_worker.go`/`task_route_executor.go`（worker 执行引擎）、
+  `provider_task_recovery.go`（query-task/retry/cancel 的供应线路查询）、
+  `creation.go`（creation-runs 15 条，908 行）+ `creation_canvas.go`（571 行）、
+  `handler/agent.go` + `app/agent*`（云 Agent 10 条）、
+  `app/project_workflow_v2*`（ProjectDetail 聚合、workflows、workflow-steps、
+  canvases 分页、units workspace）、`skills/skill_packages.go` 写入与安装（5 条 + 文件 5 条）、
+  `ai/models` 系统中转、`model-catalog` 3 条、`diagnostics` 2 条、`runninghub` 2 条、
+  settings 余量（runtime-policy/oss/drawing-engine/libtv/response-interception/
+  ark-private-assets/prompt-templates/system-performance/system-update）
+- 现状：以上路由未挂；依赖任务创建-计费-Worker 执行链与供应线路协议引擎，
+  建议按「任务创建 → Worker 执行 → SSE → retry/cancel/query-provider →
+  timeline → creation-runs → agent → workflow v2」顺序分批移植。
+- 处置建议：每批落地后在 CHECKLIST 记录路由数与测试，并回填本清单。
+
+### 56. `[已解决]` 管理端分析总览与模型价格
+- 位置：`Application/AdminAnalyticsService.Analytics.cs` + `Repository.AnalyticsQueries.cs`
+- 现状：**已移植**（8 条路由）。分析聚合与 Go 逐语义对齐（滚动窗 DAU/WAU/MAU、
+  趋势点、模型/用户/失败聚合、分位数取整 `index = (n-1)q + 0.5`）。
+- 备注：api_call_logs 表**没有** updated_at 列（GORM 实体字段是装饰结果），
+  分析投影按 schema-dump 的真实列清单。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |
