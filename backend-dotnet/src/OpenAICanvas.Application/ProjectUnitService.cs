@@ -1,4 +1,5 @@
 #nullable enable
+using System.Text.Json;
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -281,6 +282,69 @@ public sealed class ProjectUnitService
         await RequireProjectAsync(userId, projectId, cancellationToken).ConfigureAwait(false);
         await _repository.DeleteCanvasUnitLinkAsync(projectId, canvasId, unitId, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 从项目移除画布（清空归属、删除单元链接、剥离载荷 projectId）。
+    /// 对应 Go: <c>UnlinkCanvasProject</c>。
+    /// </summary>
+    public async Task UnlinkCanvasProjectAsync(
+        string userId, string projectId, string canvasId, CancellationToken cancellationToken = default)
+    {
+        await RequireProjectAsync(userId, projectId, cancellationToken).ConfigureAwait(false);
+        Domain.Entities.CanvasProject? canvas = await _repository
+            .CanvasProjectForUserAsync(userId, canvasId.Trim(), cancellationToken).ConfigureAwait(false);
+        if (canvas is null)
+        {
+            throw new InvalidOperationException("record not found");
+        }
+        if (canvas.ProjectID != projectId)
+        {
+            throw AppError.BadAuthRequest("画布不属于当前项目");
+        }
+        DateTime now = DateTime.UtcNow;
+        string payloadJson = CanvasPayloadWithoutProject(canvas.PayloadJSON, now);
+        // 关系列、同步快照和更新时间必须原子更新，否则浏览器会用旧 projectId 把关系重新写回。
+        await _repository.UnassignCanvasFromProjectAsync(
+            userId, projectId, canvas.ID, payloadJson, now, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>对应 Go: <c>canvasPayloadWithoutProject</c>。剥离 projectId 并刷新 updatedAt（键序 Ordinal）。</summary>
+    private static string CanvasPayloadWithoutProject(string payloadJson, DateTime updatedAt)
+    {
+        JsonElement payload;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(payloadJson);
+            payload = document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            throw AppError.BadAuthRequest("画布数据格式错误，无法解除项目关系");
+        }
+        if (payload.ValueKind == JsonValueKind.Null)
+        {
+            // Go 的 json.Unmarshal(null, &map) 得到 nil map，不报错。
+            return "{\"updatedAt\":\"" + ProjectService.FormatRfc3339Nano(updatedAt) + "\"}";
+        }
+        if (payload.ValueKind != JsonValueKind.Object)
+        {
+            throw AppError.BadAuthRequest("画布数据格式错误，无法解除项目关系");
+        }
+        Dictionary<string, JsonElement> map = new(StringComparer.Ordinal);
+        foreach (JsonProperty property in payload.EnumerateObject())
+        {
+            if (property.Name == "projectId")
+            {
+                continue;
+            }
+            map[property.Name] = property.Value.Clone();
+        }
+        map["updatedAt"] = JsonSerializer.SerializeToElement(
+            ProjectService.FormatRfc3339Nano(updatedAt));
+        return JsonSerializer.Serialize(
+            ProjectCharacterService.SortedElement(JsonSerializer.SerializeToElement(map)),
+            ProjectCharacterService.GoPayloadOptions);
     }
 
     // ------------------------------------------------------------ 内部

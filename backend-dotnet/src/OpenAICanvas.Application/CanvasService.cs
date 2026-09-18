@@ -71,6 +71,7 @@ public sealed class CanvasService
         // 角色域同时充当素材摘要的角色卡提供者（对应 Go 的 app.Service 内聚角色卡）。
         ProjectCharacters = new ProjectCharacterService(repository, ProjectAssets);
         ProjectAssets.AttachCharacterCardProvider(ProjectCharacters);
+        ProjectShots = new ProjectShotService(repository, ProjectCharacters, ProjectAssets);
         StyleProfiles = new StyleProfileService(repository);
         Announcements = new AnnouncementService(repository);
         AdminAnalytics = new AdminAnalyticsService(repository);
@@ -123,6 +124,9 @@ public sealed class CanvasService
 
     /// <summary>项目角色与配音。对应 Go: <c>app/project_character.go</c> 的角色域。</summary>
     public ProjectCharacterService ProjectCharacters { get; }
+
+    /// <summary>分镜与资产候选。对应 Go: <c>app/project_shot.go</c> 与候选确认。</summary>
+    public ProjectShotService ProjectShots { get; }
 
     public StyleProfileService StyleProfiles { get; }
 
@@ -263,6 +267,12 @@ public sealed class CanvasService
         string userId, string projectId, string canvasId, string unitId,
         CancellationToken cancellationToken = default) =>
         ProjectUnits.UnlinkCanvasUnitAsync(userId, projectId, canvasId, unitId, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.UnlinkCanvasProject</c>。</summary>
+    public Task UnlinkCanvasProjectAsync(
+        string userId, string projectId, string canvasId,
+        CancellationToken cancellationToken = default) =>
+        ProjectUnits.UnlinkCanvasProjectAsync(userId, projectId, canvasId, cancellationToken);
 
     /// <summary>对应 Go: <c>Service.AdminAPICallLogs</c>。</summary>
     public Task<ApiCallLogPageDto> AdminApiCallLogsAsync(

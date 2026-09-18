@@ -1348,6 +1348,27 @@ public static class UserDataEndpoints
                 return ApiResults.FailService(error, context);
             }
         });
+
+        api.MapDelete("/projects/{id}/canvases/{canvasId}", async (
+            HttpContext context, string id, string canvasId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.UnlinkCanvasProjectAsync(user.ID, id, canvasId, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { canvasId });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
     }
 
     /// <summary>
@@ -1861,6 +1882,233 @@ public static class UserDataEndpoints
                 return ApiResults.FailService(error, context);
             }
         });
+    }
+
+    /// <summary>
+    /// 分镜与资产候选路由。对应 Go: <c>handler/project.go</c> 的 shots/asset-candidates 部分。
+    /// </summary>
+    public static void MapProjectShotRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapPost("/projects/{id}/shots", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateProjectShotRequest? request = await ReadJsonAsync<CreateProjectShotRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Shot shot = await service.ProjectShots.CreateAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { shot });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/projects/{id}/units/{unitId}/shots", async (
+            HttpContext context, string id, string unitId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ReplaceProjectUnitShotsRequest? request = await ReadJsonAsync<ReplaceProjectUnitShotsRequest>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                List<Shot> shots = await service.ProjectShots.ReplaceUnitShotsAsync(
+                    user.ID, id, unitId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { shots });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/shots/{shotId}/revisions", async (
+            HttpContext context, string id, string shotId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ShotRevisionInput? request = await ReadJsonAsync<ShotRevisionInput>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                (Shot shot, ShotRevision revision) = await service.ProjectShots.CreateRevisionAsync(
+                    user.ID, id, shotId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { shot, revision });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/shots/{shotId}", async (
+            HttpContext context, string id, string shotId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.ProjectShots.DeleteAsync(user.ID, id, shotId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { deleted = true });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/shots/{shotId}/assets", async (
+            HttpContext context, string id, string shotId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                LinkShotAssetRequest? request = await ReadJsonAsync<LinkShotAssetRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ShotAssetReference reference = await service.ProjectShots.LinkAssetAsync(
+                    user.ID, id, shotId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { reference });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/shots/{shotId}/assets/{referenceId}", async (
+            HttpContext context, string id, string shotId, string referenceId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.ProjectShots.UnlinkAssetAsync(
+                    user.ID, id, shotId, referenceId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { unlinked = true });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/asset-candidates", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateAssetCandidatesRequest? request = await ReadJsonAsync<CreateAssetCandidatesRequest>(
+                    context, 512 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                List<ProjectAssetCandidate> candidates = await service.ProjectShots.CreateCandidatesAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { candidates });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/projects/{id}/asset-candidates", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                long page = ParsePositiveQueryInt(context.Request.Query["page"].ToString(), 1);
+                if (page < 0)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                long pageSize = ParsePositiveQueryInt(context.Request.Query["pageSize"].ToString(), 100);
+                if (pageSize < 0)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectAssetCandidatePageDto result = await service.ProjectShots.CandidatesPageAsync(
+                    user.ID, id, page, pageSize,
+                    context.Request.Query["unitId"].ToString(),
+                    context.Request.Query["status"].ToString(),
+                    context.Request.Query["category"].ToString(),
+                    context.Request.Query["q"].ToString(),
+                    cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/asset-candidates/{candidateId}/confirm", async (
+            HttpContext context, string id, string candidateId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ConfirmProjectAssetCandidateRequest? request = await ReadJsonAsync<ConfirmProjectAssetCandidateRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectAssetSummaryDto asset = await service.ProjectShots.ConfirmCandidateAsync(
+                    user.ID, id, candidateId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { asset });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 解析正整数查询参数；解析失败返回 -1（对应 Go: <c>parsePositiveQueryInt</c> 的 400 分支）。
+    /// </summary>
+    private static long ParsePositiveQueryInt(string value, long fallback)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return fallback;
+        }
+        if (!long.TryParse(value, out long parsed))
+        {
+            return -1;
+        }
+        return parsed;
     }
 
     /// <summary>对应 Go: <c>hasUserAssetPageFilters</c>。</summary>

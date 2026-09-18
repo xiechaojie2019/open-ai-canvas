@@ -188,7 +188,7 @@ public sealed class ProjectCharacterService : ICharacterCardProvider
     /// 设定/载荷 JSON 的序列化配置：转义规则对齐 Go 的 <c>encoding/json</c>
     /// （非 ASCII 原样输出、HTML 字符转义），键序由 <see cref="SortedElement"/> 手工排序。
     /// </summary>
-    private static readonly JsonSerializerOptions GoPayloadOptions = new()
+    internal static readonly JsonSerializerOptions GoPayloadOptions = new()
     {
         Encoder = GoJsonEncoder.Instance,
     };
@@ -592,6 +592,35 @@ public sealed class ProjectCharacterService : ICharacterCardProvider
         bool dropVoice,
         CancellationToken cancellationToken)
     {
+        (Asset nextAsset, AssetVersion next, List<AssetRepresentation> representations, CharacterVoiceBinding? voice) =
+            await PrepareNextVersionAsync(
+                asset, name, definitionJson, replacementRepresentations, replacementVoice, dropVoice,
+                cancellationToken).ConfigureAwait(false);
+
+        await _repository
+            .SaveCharacterVersionAsync(projectId, nextAsset, next, representations, voice, cancellationToken)
+            .ConfigureAwait(false);
+        asset.Title = nextAsset.Title;
+        asset.PrimaryVersionID = nextAsset.PrimaryVersionID;
+        asset.PayloadJSON = nextAsset.PayloadJSON;
+        asset.UpdatedAt = nextAsset.UpdatedAt;
+        return next;
+    }
+
+    /// <summary>
+    /// 准备下一个角色版本（不落库）。候选确认需要把版本替换与候选状态放进同一事务，
+    /// 因此准备与持久化分离。对应 Go: <c>prepareNextCharacterVersion</c>。
+    /// </summary>
+    public async Task<(Asset NextAsset, AssetVersion Next, List<AssetRepresentation> Representations, CharacterVoiceBinding? Voice)>
+        PrepareNextVersionAsync(
+            Asset asset,
+            string name,
+            string definitionJson,
+            List<AssetRepresentation>? replacementRepresentations,
+            CharacterVoiceBinding? replacementVoice,
+            bool dropVoice,
+            CancellationToken cancellationToken = default)
+    {
         AssetVersion? current = await _repository
             .AssetVersionAsync(asset.PrimaryVersionID, cancellationToken).ConfigureAwait(false);
         if (current is null)
@@ -690,14 +719,7 @@ public sealed class ProjectCharacterService : ICharacterCardProvider
             UpdatedAt = now,
         };
 
-        await _repository
-            .SaveCharacterVersionAsync(projectId, nextAsset, next, representations, voice, cancellationToken)
-            .ConfigureAwait(false);
-        asset.Title = nextAsset.Title;
-        asset.PrimaryVersionID = nextAsset.PrimaryVersionID;
-        asset.PayloadJSON = nextAsset.PayloadJSON;
-        asset.UpdatedAt = nextAsset.UpdatedAt;
-        return next;
+        return (nextAsset, next, representations, voice);
     }
 
     // ------------------------------------------------------------ 内部
@@ -835,7 +857,7 @@ public sealed class ProjectCharacterService : ICharacterCardProvider
     };
 
     /// <summary>Go: <c>characterAssetPayload</c>。载荷 JSON 与画布素材格式对齐（键序 Ordinal）。</summary>
-    private static string CharacterAssetPayload(
+    internal static string CharacterAssetPayload(
         string assetId,
         string versionId,
         string name,
@@ -873,6 +895,94 @@ public sealed class ProjectCharacterService : ICharacterCardProvider
         };
         return JsonSerializer.Serialize(payload, GoPayloadOptions);
     }
+
+    /// <summary>
+    /// 角色候选设定并入当前设定：只填空缺字段（aliases 永远走合并），别名按大小写不敏感去重，
+    /// 当前标题本身不进别名。对应 Go: <c>mergeCharacterCandidateDefinition</c>。
+    /// </summary>
+    public static string MergeCharacterCandidateDefinition(
+        string currentJson, string candidateJson, string currentName, string candidateName)
+    {
+        Dictionary<string, JsonElement> current;
+        try
+        {
+            using JsonDocument currentDoc = JsonDocument.Parse(currentJson);
+            current = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (JsonProperty property in currentDoc.RootElement.EnumerateObject())
+            {
+                current[property.Name] = property.Value.Clone();
+            }
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidOperationException(error.Message);
+        }
+
+        Dictionary<string, JsonElement> candidate;
+        try
+        {
+            using JsonDocument candidateDoc = JsonDocument.Parse(candidateJson);
+            candidate = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (JsonProperty property in candidateDoc.RootElement.EnumerateObject())
+            {
+                candidate[property.Name] = property.Value.Clone();
+            }
+        }
+        catch (JsonException)
+        {
+            throw AppError.BadAuthRequest("角色候选设定格式无效");
+        }
+
+        foreach (KeyValuePair<string, JsonElement> pair in candidate)
+        {
+            if (pair.Key == "aliases" || !EmptyCharacterDefinitionValue(current.GetValueOrDefault(pair.Key)))
+            {
+                continue;
+            }
+            current[pair.Key] = pair.Value.Clone();
+        }
+
+        List<string> aliases = [];
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        string normalizedCurrentName = currentName.Trim();
+        void AppendAlias(string value)
+        {
+            string text = value.Trim();
+            if (text.Length == 0
+                || !seen.Add(text.ToLowerInvariant())
+                || string.Equals(text, normalizedCurrentName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            aliases.Add(text);
+        }
+        foreach (JsonElement list in new[] { current.GetValueOrDefault("aliases"), candidate.GetValueOrDefault("aliases") })
+        {
+            if (list.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+            foreach (JsonElement item in list.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    AppendAlias(item.GetString() ?? "");
+                }
+            }
+        }
+        AppendAlias(candidateName);
+        current["aliases"] = JsonSerializer.SerializeToElement(aliases);
+        return JsonSerializer.Serialize(SortedElement(JsonSerializer.SerializeToElement(current)), GoPayloadOptions);
+    }
+
+    /// <summary>Go: <c>emptyCharacterDefinitionValue</c>。null/空白串/空数组视为空缺，其余非空。</summary>
+    private static bool EmptyCharacterDefinitionValue(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Undefined or JsonValueKind.Null => true,
+        JsonValueKind.String => value.GetString()?.Trim().Length == 0,
+        JsonValueKind.Array => !value.EnumerateArray().Any(),
+        _ => false,
+    };
 
     /// <summary>Go: <c>isSupportedVoiceSampleMimeType</c>。取分号前的主类型，大小写不敏感。</summary>
     private static bool IsSupportedVoiceSampleMimeType(string value)

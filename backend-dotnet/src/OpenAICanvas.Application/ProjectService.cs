@@ -488,6 +488,8 @@ public sealed class ProjectService
 internal static class ProjectStatus
 {
     public const string ProjectStatusActive = "active";
+
+    public const string ProjectStatusArchived = "archived";
 }
 
 /// <summary>项目单元状态常量别名。对应 Go: <c>model.ProjectUnitStatus*</c>。</summary>
