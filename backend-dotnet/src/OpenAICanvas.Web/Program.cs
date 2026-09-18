@@ -262,6 +262,16 @@ api.MapAdminAnalyticsRoutes(app.Services.GetRequiredService<OpenAICanvas.Applica
 // 管理端分析总览与模型价格路由。对应 Go 的 handler/admin_analytics.go。
 api.MapAdminInsightRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
+// 平台设置：运行时策略 / 绘图工具 / 响应拦截 / 方舟素材库 / 公告配图上传。
+api.MapAdminPlatformSettingsRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    new OpenAICanvas.Application.PlatformSettingsService(
+        app.Services.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        env.DataDir),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
 // 公告路由。对应 Go 的 handler.RegisterAnnouncementRoutes。
 api.MapAnnouncementRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),

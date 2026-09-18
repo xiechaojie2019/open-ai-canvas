@@ -75,6 +75,92 @@ public sealed class AnnouncementService
         _repository = repository;
     }
 
+    /// <summary>
+    /// 上传公告配图并登记草稿。对应 Go: <c>UploadAnnouncementImage</c>。
+    /// 上传器由路由层注入（资源上传链路在 DI 中独立注册）。
+    /// </summary>
+    public async Task<Resource> UploadAnnouncementImageAsync(
+        ResourceUploadService uploads,
+        User actor,
+        string fileName,
+        long size,
+        Stream file,
+        CancellationToken cancellationToken = default)
+    {
+        CanvasService.RequireAdmin(actor);
+        if (size <= 0 || size > AnnouncementImageMaxBytes)
+        {
+            throw AppError.BadAuthRequest("公告配图大小必须在 10MB 以内");
+        }
+        byte[] buffer = new byte[512];
+        int read = await file.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        if (read == 0)
+        {
+            throw AppError.BadAuthRequest("公告配图内容无法读取");
+        }
+        // 与 Go 一致：直接用 http.DetectContentType 的魔数嗅探（无文件名回退）。
+        if (!SniffIsImage(buffer.AsSpan(0, read)))
+        {
+            throw AppError.BadAuthRequest("公告配图必须是真实图片文件");
+        }
+        file.Position = 0;
+        Resource resource = await uploads.UploadResourceFromStreamAsync(
+            actor.ID, fileName, size, "image", 0, 0, 0, file,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _repository.CreateAnnouncementImageDraftAsync(
+                new AnnouncementImageDraft
+                {
+                    ResourceID = resource.ID,
+                    UserID = actor.ID,
+                    CreatedAt = DateTime.UtcNow,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // 草稿登记失败时清理刚落库的资源记录（对应 Go 的 deleteFreshAnnouncementImageResource；
+            // 物理对象由存储 GC 兜底，这里仅保证资源记录不残留）。
+            await _repository.DeleteResourceAsync(actor.ID, resource.ID, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+        resource.PublicURL = "";
+        return resource;
+    }
+
+    /// <summary>魔数嗅探是否图片（PNG/JPEG/GIF/WEBP/BMP/ICO）。对应 Go: <c>http.DetectContentType</c> 的 image 分支。</summary>
+    private static bool SniffIsImage(ReadOnlySpan<byte> head)
+    {
+        if (head.Length >= 4 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47)
+        {
+            return true; // PNG
+        }
+        if (head.Length >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF)
+        {
+            return true; // JPEG
+        }
+        if (head.Length >= 6 && head[0] == 0x47 && head[1] == 0x49 && head[2] == 0x46
+            && (head[3] == 0x37 || head[3] == 0x39))
+        {
+            return true; // GIF87a/89a
+        }
+        if (head.Length >= 12 && head[0] == 0x52 && head[1] == 0x49 && head[2] == 0x46 && head[3] == 0x46
+            && head[8] == 0x57 && head[9] == 0x45 && head[10] == 0x42 && head[11] == 0x50)
+        {
+            return true; // WEBP
+        }
+        if (head.Length >= 2 && head[0] == 0x42 && head[1] == 0x4D)
+        {
+            return true; // BMP
+        }
+        if (head.Length >= 4 && head[0] == 0x00 && head[1] == 0x00 && head[2] == 0x01 && head[3] == 0x00)
+        {
+            return true; // ICO
+        }
+        return false;
+    }
+
     /// <summary>管理端公告分页。对应 Go: <c>AdminAnnouncementPage</c>。</summary>
     public async Task<AnnouncementPageDto> AdminAnnouncementPageAsync(
         User actor, string keyword, string status, long page, long limit,

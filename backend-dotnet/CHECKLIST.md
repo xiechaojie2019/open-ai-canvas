@@ -793,6 +793,45 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 平台设置批次（阶段 9.5，已端到端打通）
+
+本轮打通 **11 条路由**：运行时策略 4 条（`GET/PUT/DELETE /admin/settings/runtime-policy`、
+`GET .../self-use`）、绘图工具 2 条（`GET/PATCH /admin/settings/drawing-engine`）、
+模型响应拦截 2 条（`GET/PATCH /admin/settings/response-interception`）、
+方舟素材库 2 条（`GET/PATCH /admin/settings/ark-private-assets`）、
+公告配图上传 1 条（`POST /admin/announcement-images`）。
+
+### 本轮交付物
+
+- `SettingsCrypto` — AES-GCM 设置密钥加密，与 Go **跨实现互解**：
+  同一 `.settings-key`（32 字节）+ "enc:v1:" + Base64(RawStd)(nonce(12)+ct+tag(16))，
+  Go 写入的密文 .NET 可解（待确认 #1 的正解前置）
+- `PlatformSettingsService` — 运行时策略读写/校验（错误文案逐字对齐 Go，
+  含自用部署上限模板 self-use）/重置；响应拦截（规则归一 + rune 上限校验 +
+  归一化回读）；方舟素材库（密钥加密落库、hasAccessKeySecret 脱敏、
+  空密钥保槽位、启用四要素校验、明文迁移自动加密）
+- `AnnouncementService.UploadAnnouncementImageAsync` — 10MB 上限 +
+  魔数嗅探（无文件名回退，对齐 `http.DetectContentType`）+ 草稿登记 +
+  失败清理资源记录；上传器由路由层按 DI 注入
+- 11 条路由接线（MapAdminPlatformSettingsRoutes）
+
+### 关键实现点
+
+1. **运行时策略读取语义**：设置记录存在且合法则生效，否则回落内置默认；
+   `configured` 标记是否有持久化记录。全局 `IRuntimePolicyProvider` 的
+   设置化读取随任务引擎批次接入（本批先落路由与读写面）。
+2. **方舟密钥回填规则**：请求密钥为空且 AccessKeyID 未变化时保留旧密钥；
+   Region/ProjectName/AccessKeyID 任一变化会清空 DefaultGroupID（组按项目重建）。
+3. **配图嗅探不走文件名回退**：`ResourceUploadService.DetectUploadedMimeType`
+   带扩展名回退（上传语义），公告校验用纯魔数嗅探（Go 行为）。
+
+### 验证结果（464/464 通过）
+
+新增 5 项测试（运行时策略读写/校验/自用模板/重置、绘图工具与响应拦截、
+方舟校验与脱敏、配图上传与内容校验、401）。
+
+---
+
 ## 资源 CRUD 与管理端分析（阶段 5.9 / 9.4，已端到端打通）
 
 本轮打通 **15 条路由**：资源 7 条（`GET /resources`、`GET /resources/:id`、
