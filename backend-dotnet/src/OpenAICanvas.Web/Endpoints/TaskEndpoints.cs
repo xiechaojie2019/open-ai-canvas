@@ -7,8 +7,11 @@ using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Web.Contracts;
 using OpenAICanvas.Web.Http;
+using OpenAICanvas.Web.Middleware;
 using OpenAICanvas.Web.Security;
 using OpenAICanvas.Web.Serialization;
+using OpenAICanvas.Platform;
+using System.Diagnostics;
 using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 
 namespace OpenAICanvas.Web.Endpoints;
@@ -32,6 +35,49 @@ public static class TaskEndpoints
 
     public static void MapTaskRoutes(this IEndpointRouteBuilder api, CanvasService service)
     {
+        MapTaskCoreRoutes(api, service, null, null);
+    }
+
+    /// <summary>
+    /// 任务创建 / SSE / 时间线转写。对应 Go: <c>handler/routes.go</c> 的
+    /// POST /tasks、GET /tasks/:id/text-events、POST /timeline/transcriptions。
+    /// </summary>
+    public static void MapTaskCreationRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        IRateLimiter limiter,
+        IRuntimePolicyProvider policyProvider)
+    {
+        MapTaskCoreRoutes(api, service, limiter, policyProvider);
+    }
+
+    private static void MapTaskCoreRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        IRateLimiter? limiter,
+        IRuntimePolicyProvider? policyProvider)
+    {
+        // 写路径仅在带限流的注册入口挂载，避免与只读入口重复注册。
+        if (limiter is null || policyProvider is null)
+        {
+            return;
+        }
+
+        // ------------------------------------------------------------ 任务创建（限流 + 16MB）
+
+        api.MapPost("/tasks", async (HttpContext context, CancellationToken cancellationToken) =>
+            await CreateTaskHandler(context, service, limiter, policyProvider, cancellationToken));
+
+        // ------------------------------------------------------------ 文本事件 SSE
+
+        api.MapGet("/tasks/{id}/text-events", (HttpContext context, string id, CancellationToken cancellationToken) =>
+            TextEventsHandlerAsync(context, service, id, cancellationToken));
+
+        // ------------------------------------------------------------ 时间线转写
+
+        api.MapPost("/timeline/transcriptions", async (HttpContext context, CancellationToken cancellationToken) =>
+            await TimelineTranscriptionHandler(context, service, limiter, policyProvider, cancellationToken));
+
         // ------------------------------------------------------------ 任务列表
 
         api.MapGet("/tasks", async (HttpContext context, CancellationToken cancellationToken) =>
@@ -236,6 +282,258 @@ public static class TaskEndpoints
                 return ApiResults.FailService(ex, context);
             }
         });
+    }
+
+    // ------------------------------------------------------------ 任务创建与 SSE
+
+    private static async Task<IResult> CreateTaskHandler(
+        HttpContext context,
+        CanvasService service,
+        IRateLimiter? limiter,
+        IRuntimePolicyProvider? policyProvider,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                .ConfigureAwait(false);
+            if (limiter is not null && policyProvider is not null)
+            {
+                RuntimePolicySetting policy = policyProvider.Current();
+                if (!await AuthEndpoints.EnforceRateLimitAsync(
+                        context, limiter, "tasks:" + user.ID,
+                        policy.Request.TaskCreatePerMinute, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                {
+                    return Results.Empty;
+                }
+            }
+            CreateTaskRequestDto? request = await ReadJsonAsync<CreateTaskRequestDto>(
+                context, 16 << 20, cancellationToken).ConfigureAwait(false);
+            if (request is null)
+            {
+                return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+            }
+            TaskEntity task;
+            try
+            {
+                task = await service.TaskCreations.CreateAsync(
+                    user.ID,
+                    request,
+                    RequestCorrelationMiddleware.TraceId(context),
+                    RequestCorrelationMiddleware.RequestId(context),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                // Go 的 handler 对 CreateTask 的所有错误统一 fail(c, 400, err)：
+                // HTTP 恒为 400，msg 取错误文案（含维护模式提示）。
+                return ApiResults.Fail(StatusCodes.Status400BadRequest, error);
+            }
+            return ApiResults.Ok(task);
+        }
+        catch (Exception error)
+        {
+            return ApiResults.FailService(error, context);
+        }
+    }
+
+    private static async Task TextEventsHandlerAsync(
+        HttpContext context,
+        CanvasService service,
+        string taskId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                .ConfigureAwait(false);
+            long after = ParseTextEventCursor(context);
+            if (after < 0)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                await context.Response.WriteAsync(
+                    "{\"code\":400,\"data\":null,\"msg\":\"after 或 Last-Event-ID 必须是非负整数\",\"reason\":\"bad_request\"}",
+                    System.Text.Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            TextReplayResultDto initial = await service.Tasks.TaskTextReplayAsync(
+                user.ID, taskId, after, cancellationToken).ConfigureAwait(false);
+
+            context.Response.Headers["Content-Type"] = "text/event-stream; charset=utf-8";
+            context.Response.Headers["Cache-Control"] = "no-cache, no-transform";
+            context.Response.Headers["X-Accel-Buffering"] = "no";
+            context.Response.StatusCode = StatusCodes.Status200OK;
+
+            await using System.IO.StreamWriter writer = new(
+                context.Response.Body, new System.Text.UTF8Encoding(false), 1024, leaveOpen: true);
+            async Task WriteEventAsync(string eventName, long id, object value)
+            {
+                string data = JsonSerializer.Serialize(value, CanvasJson.WriteOptions);
+                if (id > 0)
+                {
+                    await writer.WriteAsync($"id: {id}\n").ConfigureAwait(false);
+                }
+                await writer.WriteAsync($"event: {eventName}\n").ConfigureAwait(false);
+                await writer.WriteAsync("data: " + data + "\n\n").ConfigureAwait(false);
+                await writer.FlushAsync().ConfigureAwait(false);
+            }
+
+            await writer.WriteAsync(": connected\n\n").ConfigureAwait(false);
+            await writer.FlushAsync().ConfigureAwait(false);
+
+            TextReplayResultDto replay = initial;
+            string lastStatus = replay.Status;
+            string lastStage = replay.Stage;
+            long lastProgress = replay.Progress;
+            await WriteEventAsync("progress", 0, new
+            {
+                status = replay.Status,
+                stage = replay.Stage,
+                progress = replay.Progress,
+            }).ConfigureAwait(false);
+
+            long pollAt = 750;
+            long heartbeatAt = 15_000;
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                foreach (TaskTextDelta delta in replay.Deltas)
+                {
+                    await WriteEventAsync("delta", delta.Sequence, new
+                    {
+                        sequence = delta.Sequence,
+                        content = delta.Content,
+                    }).ConfigureAwait(false);
+                    after = delta.Sequence;
+                }
+                if (replay.Complete)
+                {
+                    await WriteEventAsync("terminal", 0, replay).ConfigureAwait(false);
+                    return;
+                }
+                if (context.RequestAborted.IsCancellationRequested)
+                {
+                    return;
+                }
+                long elapsed = stopwatch.ElapsedMilliseconds;
+                if (elapsed >= heartbeatAt)
+                {
+                    await writer.WriteAsync(": heartbeat\n\n").ConfigureAwait(false);
+                    await writer.FlushAsync().ConfigureAwait(false);
+                    heartbeatAt = elapsed + 15_000;
+                }
+                if (elapsed >= pollAt)
+                {
+                    TextReplayResultDto? next;
+                    try
+                    {
+                        next = await service.Tasks.TaskTextReplayAsync(
+                            user.ID, taskId, after, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        await WriteEventAsync("error", 0, new { message = "任务文本流不可用" })
+                            .ConfigureAwait(false);
+                        return;
+                    }
+                    if (next.Status != lastStatus || next.Stage != lastStage || next.Progress != lastProgress)
+                    {
+                        await WriteEventAsync("progress", 0, new
+                        {
+                            status = next.Status,
+                            stage = next.Stage,
+                            progress = next.Progress,
+                        }).ConfigureAwait(false);
+                        lastStatus = next.Status;
+                        lastStage = next.Stage;
+                        lastProgress = next.Progress;
+                    }
+                    replay = next;
+                    pollAt = elapsed + 750;
+                }
+                long sleep = Math.Min(Math.Max(heartbeatAt - elapsed, 1), Math.Max(pollAt - elapsed, 1));
+                try
+                {
+                    await Task.Delay((int)Math.Min(sleep, 250), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            if (!context.Response.HasStarted)
+            {
+                IResult failure = ApiResults.FailService(error, context);
+                await failure.ExecuteAsync(context).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>解析 after / Last-Event-ID 游标；非法返回 -1。对应 Go: <c>taskTextEventCursor</c>。</summary>
+    private static long ParseTextEventCursor(HttpContext context)
+    {
+        long cursor = 0;
+        foreach (string raw in new[]
+                 {
+                     context.Request.Query["after"].ToString(),
+                     context.Request.Headers["Last-Event-ID"].ToString(),
+                 })
+        {
+            if (string.IsNullOrEmpty(raw))
+            {
+                continue;
+            }
+            if (!long.TryParse(raw, out long value) || value < 0)
+            {
+                return -1;
+            }
+            if (value > cursor)
+            {
+                cursor = value;
+            }
+        }
+        return cursor;
+    }
+
+    private static async Task<IResult> TimelineTranscriptionHandler(
+        HttpContext context,
+        CanvasService service,
+        IRateLimiter? limiter,
+        IRuntimePolicyProvider? policyProvider,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                .ConfigureAwait(false);
+            if (limiter is not null && policyProvider is not null)
+            {
+                RuntimePolicySetting policy = policyProvider.Current();
+                if (!await AuthEndpoints.EnforceRateLimitAsync(
+                        context, limiter, "timeline-ts:" + user.ID,
+                        policy.Request.TaskCreatePerMinute, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                {
+                    return Results.Empty;
+                }
+            }
+            TimelineTranscriptionRequestDto? request = await ReadJsonAsync<TimelineTranscriptionRequestDto>(
+                context, 1 << 20, cancellationToken).ConfigureAwait(false);
+            if (request is null)
+            {
+                return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+            }
+            TaskEntity task = await service.TaskCreations.CreateTimelineTranscriptionAsync(
+                user.ID, request, cancellationToken).ConfigureAwait(false);
+            return ApiResults.Ok(task);
+        }
+        catch (Exception error)
+        {
+            return ApiResults.FailService(error, context);
+        }
     }
 
     // ------------------------------------------------------------ 辅助

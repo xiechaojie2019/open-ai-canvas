@@ -176,6 +176,11 @@ api.MapAdminUserRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.
 
 // 任务读取与文本回放路由。对应 Go 的 handler.RegisterTaskRoutes 的持久化部分。
 api.MapTaskRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+// 任务创建 / SSE / 时间线转写。对应 Go 的 handler/routes.go 任务写路径。
+api.MapTaskCreationRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
 // 提示词模板管理路由。对应 Go 的 handler.RegisterAuthRoutes 的模板部分。
 api.MapPromptTemplateRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());

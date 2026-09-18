@@ -793,6 +793,41 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 任务创建批 1（阶段 4.1，已端到端打通）
+
+本轮打通 **3 条路由**：`POST /tasks`（文本回放路径全语义 + 队列路径守卫）、
+`GET /tasks/:id/text-events`（SSE）、`POST /timeline/transcriptions`。
+
+### 本轮交付物
+
+- `Repository.TaskWrites` — 活动任务计数、`CreateTaskWithActiveLimit` /
+  `CreateTaskWithCreditReservation`（逻辑模型有效性 + 活跃限额 + 积分预留同事务，
+  ErrActiveTaskLimit/ErrInsufficientCredits/ErrLogicalModelUnavailable 三态投影）、
+  `CancelTaskIfStatus`（条件取消，供下一批 retry/cancel）
+- `TaskCreationService` — POST /tasks 准入：类型白名单、prompt 必填（Go 英文原文）、
+  输入归一（canvasSnapshot data: URL 压缩）、文本回放全路径
+  （status=text_replay、不排队不计费、密钥字段 AES-GCM 加密、
+  taskForOutput 白名单投影 inputJSON + 清空供应线路内部字段）、
+  存储配额（任务条数 + 任务数据 GB）
+- SSE `GET /tasks/:id/text-events` — after/Last-Event-ID 游标（负数/非法 → 400 中文文案）、
+  connected/progress/delta/terminal/heartbeat(15s)/poll(750ms) 事件序列与 Go 一致
+- `POST /timeline/transcriptions` — 功能门控 + 资源归属 + 音视频 MIME 白名单 + 排队入库
+
+### 关键取舍（PENDING #58）
+
+1. **队列路径 admission（前台模型路由/系统渠道/自定义渠道 + 计费预留 + 工作流插件门控）
+   未移植**：非回放任务当前返回 Go 维护模式信封——HTTP 400 +「服务正在维护，
+   暂不接受新的生成任务」（Go handler 对 CreateTask 所有错误统一 fail(c,400,err)，
+   维护提示也走 400）。不会产生未路由未计费的半准入任务。
+2. SSE 的 Content-Type 头手工设置；Results.Stream 的委托重载在此托管模型下不可用，
+   改为直写 Response.Body + 心跳/轮询调度。
+
+### 验证结果（471/471 通过）
+
+新增 3 项测试（回放任务创建→增量→SSE 头/事件 + 脱敏断言、队列路径维护信封、401）。
+
+---
+
 ## 模型目录（阶段 2.7 补全，已端到端打通）
 
 本轮打通 **2 条路由**：`GET /model-catalog`、`POST /model-catalog/available`。

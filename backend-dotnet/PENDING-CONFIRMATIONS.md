@@ -397,6 +397,20 @@
   技能 → 其余零散（oss/libtv/runninghub/ai/models 均依赖出站或云 SDK，
   可与任务引擎解耦并行）。
 
+### 58. `[待移植]` POST /tasks 队列路径 admission（模型路由 + 计费预留）
+- 位置：`app/task_creation.go` 的 `resolveTaskModelSelection`（前台模型/系统渠道/
+  自定义渠道三分支）、`applyRoutedProviderSelection`、`applyChannelCapabilityDefaults`、
+  `capabilityOptionsFromConfig`、`channelModelPriceTierForIntent`、
+  `taskBillingOrder`/`newLogicalModelBillingOrder`（finance.go:427）与
+  `RequireWorkflowPluginForUser`（RunningHub 插件门控）
+- 现状：文本回放路径已完整（含密钥加密、投影脱敏、存储配额）；
+  非回放任务返回 Go 维护模式信封（HTTP 400 +「服务正在维护，暂不接受新的生成任务」，
+  与 Go handler 对 CreateTask 统一 fail(c,400,err) 的投影一致）。
+- 下批：retry/cancel/query-provider 与队列 admission 同批（共享路由/计费解析）。
+  `ModelRequestIntentFromTaskInput`、`hasExecutableProviderVideoConfig`、
+  `taskInputUses*`、`compactPersistedValue` 等前置件已随本批移植或已在
+  CapabilitySpec/ModelCatalog 中。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |
