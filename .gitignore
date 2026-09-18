@@ -73,3 +73,15 @@ backend/cmd/server/server
 .workbuddy-ai/
 backend/go-routes.txt
 pelican-bicycle.svg
+
+# .NET 项目本地产物
+backend-dotnet/bin/
+backend-dotnet/obj/
+backend-dotnet/**/bin/
+backend-dotnet/**/obj/
+backend-dotnet/**/*.user
+backend-dotnet/**/*.suo
+backend-dotnet/.vs/
+backend-dotnet/artifacts/
+backend-dotnet/TestResults/
+backend-dotnet/.tmp/

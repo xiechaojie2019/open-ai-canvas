@@ -186,63 +186,63 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 交付物 | 状态 |
 | --- | --- | --- | --- | --- |
-| 0.1 | 解决方案与项目分层 | — | `OpenAICanvas.sln` + 15 个项目 | ☐ |
-| 0.2 | 错误码与原因常量 | `kernel/error_codes.go` | `ErrorCodes` / `ErrorReason` | ☐ |
-| 0.3 | `AppError` 结构化错误 | `kernel/errors.go` | `AppError` + 工厂方法 6 个 | ☐ |
-| 0.4 | 响应信封 | `handler/response.go` | `ApiEnvelope` + `EnvelopeResultFilter` | ☐ |
-| 0.5 | 全局异常投影 | `handler/response.go: failService` | `ExceptionHandlingMiddleware` | ☐ |
-| 0.6 | JSON 序列化契约 | 全量 tag | `CanvasJsonOptions`（camelCase + omitempty 等价 + time 格式） | ☐ |
-| 0.7 | 请求关联中间件 | `handler/request-context.go` | `RequestCorrelationMiddleware`（`X-Request-ID` / `X-Canvas-Trace-ID`） | ☐ |
-| 0.8 | CORS 中间件 | `main.go:211-318` | `CanvasCorsMiddleware`（逐字照搬白名单与 403 行为） | ☐ |
-| 0.9 | 环境变量契约 | 全量 `os.Getenv` | `CanvasEnvironment` 强类型封装（**变量名零改动**） | ☐ |
-| 0.10 | 启动编排 | `cmd/server/main.go` | `Program.cs`（迁移 → 种子 → 监听 → 优雅退出） | ☐ |
-| 0.11 | 健康/系统状态路由 | `cmd/server/system_status.go` | 5 条路由 | ☐ |
-| 0.12 | OpenAPI 静态资源 | `handler/openapi_embed.go` + `openapi.yaml` | 原样内嵌输出 | ☐ |
+| 0.1 | 解决方案与项目分层 | — | `OpenAICanvas.sln` + 15 个项目 | ✅ |
+| 0.2 | 错误码与原因常量 | `kernel/error_codes.go` | `ErrorCodes` / `ErrorReason` | ✅ |
+| 0.3 | `AppError` 结构化错误 | `kernel/errors.go` | `AppError` + 工厂方法 6 个 | ✅ |
+| 0.4 | 响应信封 | `handler/response.go` | `ApiEnvelope` + `EnvelopeResultFilter` | ✅ |
+| 0.5 | 全局异常投影 | `handler/response.go: failService` | `ExceptionHandlingMiddleware` | ✅ |
+| 0.6 | JSON 序列化契约 | 全量 tag | `CanvasJsonOptions`（camelCase + omitempty 等价 + time 格式） | ✅ |
+| 0.7 | 请求关联中间件 | `handler/request-context.go` | `RequestCorrelationMiddleware`（`X-Request-ID` / `X-Canvas-Trace-ID`） | ✅ |
+| 0.8 | CORS 中间件 | `main.go:211-318` | `CanvasCorsMiddleware`（逐字照搬白名单与 403 行为） | ✅ |
+| 0.9 | 环境变量契约 | 全量 `os.Getenv` | `CanvasEnvironment` 强类型封装（核心变量已实现，缺 20+ 见待确认 #16） | 🟡 |
+| 0.10 | 启动编排 | `cmd/server/main.go` | `Program.cs`（迁移 → 种子 → 监听 → 优雅退出） | ✅ |
+| 0.11 | 健康/系统状态路由 | `cmd/server/system_status.go` | 5 条路由 | ✅ |
+| 0.12 | OpenAPI 静态资源 | `handler/openapi_embed.go` + `openapi.yaml` | 原样内嵌输出 | ✅ |
 
 ### 阶段 1 · 领域模型与持久化层
 
 | # | 模块 | 对应 Go | 内容 | 状态 |
 | --- | --- | --- | --- | --- |
-| 1.1 | 枚举与常量 | `model/models.go` | 20 个字符串枚举类型 + 全部常量 | ☐ |
-| 1.2 | 身份与账号实体 | `model/models_identity.go` | `User` `AuthSession` `UserIdentity` `OAuthState` `EmailVerificationCode` | ☐ |
-| 1.3 | 渠道与模型实体 | `model/models_channel.go` | `ModelChannel` `ChannelModel` `ChannelModelPriceTier` `IDSequence` | ☐ |
-| 1.4 | 逻辑模型实体 | `model/models_logical_model.go` | `LogicalModel` `LogicalModelRevision` `LogicalModelRoute` `RouteAttempt` `ApiCallLog` `ModelPricing` | ☐ |
-| 1.5 | 计费与财务实体 | `model/models_finance.go` | `CreditAccount` `CreditLedgerEntry` `BillingOrder` `TopupProduct` | ☐ |
-| 1.6 | 支付实体 | `model/models_payment.go` | `PaymentProviderConfig` `PaymentOrder` `PaymentNotification` `PaymentReconciliationRun/Item` `RedeemBatch` `RedeemCode` | ☐ |
-| 1.7 | 平台与设置实体 | `model/models_platform.go` | `SystemSetting` `PluginPlatformState` `UserPluginState` `StorageLocation` `UserOSSSetting` `UserDailyUploadUsage` `ArkPrivateAssetBinding` | ☐ |
-| 1.8 | 项目/短剧实体 | `model/models_project.go` | `Project` `ProjectUnit` `Shot` `ShotRevision` `ShotArtifact` `Asset` 系列 10 张 + `Workflow*` 5 张 | ☐ |
-| 1.9 | 任务与创作实体 | `model/models_task.go` `models_creation.go` | `Task` `TaskTextDelta` `TaskLog` `Result` `CreationRun` `CreationSubmission` | ☐ |
-| 1.10 | 其余实体 | `model/*.go` | `CloudAgent*` `AgentProfile` `Skill*` `Resource*` `Announcement*` `CanvasShare` `StyleProfile` `VoiceProfile` | ☐ |
-| 1.11 | `AppDbContext` | `database/schema.go: Models()` | ✅ 80 个 `DbSet` + 显式表名/列名 + 软删除过滤器（已生成并验证） | ☐ |
+| 1.1 | 枚举与常量 | `model/models.go` | 20 个字符串枚举类型 + 全部常量 | ✅ |
+| 1.2 | 身份与账号实体 | `model/models_identity.go` | `User` `AuthSession` `UserIdentity` `OAuthState` `EmailVerificationCode` | ✅ |
+| 1.3 | 渠道与模型实体 | `model/models_channel.go` | `ModelChannel` `ChannelModel` `ChannelModelPriceTier` `IDSequence` | ✅ |
+| 1.4 | 逻辑模型实体 | `model/models_logical_model.go` | `LogicalModel` `LogicalModelRevision` `LogicalModelRoute` `RouteAttempt` `ApiCallLog` `ModelPricing` | ✅ |
+| 1.5 | 计费与财务实体 | `model/models_finance.go` | `CreditAccount` `CreditLedgerEntry` `BillingOrder` `TopupProduct` | ✅ |
+| 1.6 | 支付实体 | `model/models_payment.go` | `PaymentProviderConfig` `PaymentOrder` `PaymentNotification` `PaymentReconciliationRun/Item` `RedeemBatch` `RedeemCode` | ✅ |
+| 1.7 | 平台与设置实体 | `model/models_platform.go` | `SystemSetting` `PluginPlatformState` `UserPluginState` `StorageLocation` `UserOSSSetting` `UserDailyUploadUsage` `ArkPrivateAssetBinding` | ✅ |
+| 1.8 | 项目/短剧实体 | `model/models_project.go` | `Project` `ProjectUnit` `Shot` `ShotRevision` `ShotArtifact` `Asset` 系列 10 张 + `Workflow*` 5 张 | ✅ |
+| 1.9 | 任务与创作实体 | `model/models_task.go` `models_creation.go` | `Task` `TaskTextDelta` `TaskLog` `Result` `CreationRun` `CreationSubmission` | ✅ |
+| 1.10 | 其余实体 | `model/*.go` | `CloudAgent*` `AgentProfile` `Skill*` `Resource*` `Announcement*` `CanvasShare` `StyleProfile` `VoiceProfile` | ✅ |
+| 1.11 | `AppDbContext` | `database/schema.go: Models()` | ✅ 80 实体列映射（`EntityMetadata` + `SqlBuilder`，Dapper 方案） | ✅ |
 | 1.12 | 实体配置 | GORM tag | 逐表 `IEntityTypeConfiguration`（主键/长度/索引/唯一约束） | ☐ |
-| 1.13 | 连接与连接池 | `database/database.go` | sqlite / postgres 双驱动 + 池配置 | ☐ |
-| 1.14 | Schema 对齐与迁移 | `database/migrations.go` `schema.go` | 6 段特殊迁移等价实现 | ☐ |
-| 1.15 | 仓储层 | `repository/*.go` (40 文件) | 逐个 Repository（仅查询，不含策略） | ☐ |
+| 1.13 | 连接与连接池 | `database/database.go` | sqlite / postgres 双驱动 + 池配置 | ✅ |
+| 1.14 | Schema 对齐与迁移 | `database/migrations.go` `schema.go` | 6 段特殊迁移等价实现 | ✅ |
+| 1.15 | 仓储层 | `repository/*.go` (40 文件) | 🟡 按需逐个迁移（当前 162/498 方法，随业务节点推进） | 🟡 |
 
 ### 阶段 2 · 认证与用户（47 条路由）
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 2.1 | 会话签发与校验 | `auth/` (16 文件) | ☐ |
-| 2.2 | 注册 / 登录 / 登出 | `handler/auth.go` | ☐ |
-| 2.3 | 邮箱验证码 | `handler/auth.go` + 冷却异常 | ☐ |
-| 2.4 | OAuth 回调 | `handler/auth.go:208` | ☐ |
-| 2.5 | 公开认证设置 | `auth/settings` | ☐ |
-| 2.6 | 管理员用户 CRUD + 批量禁用 | `handler/auth.go:227+` | ☐ |
-| 2.7 | 用户详情 / 账本 / 任务查询 | `handler/auth.go` | ☐ |
-| 2.8 | 渠道订单 | `handler/channel_order.go` | ☐ |
+| 2.1 | 会话签发与校验 | `auth/` (16 文件) | ✅ |
+| 2.2 | 注册 / 登录 / 登出 | `handler/auth.go` | ✅ |
+| 2.3 | 邮箱验证码 | `handler/auth.go` + 冷却异常 | ✅ |
+| 2.4 | OAuth 回调 | `handler/auth.go:208` | ✅ |
+| 2.5 | 公开认证设置 | `auth/settings` | ✅ |
+| 2.6 | 管理员用户 CRUD + 批量禁用 | `handler/auth.go:227+` | ✅ |
+| 2.7 | 用户详情 / 账本 / 任务查询 | `handler/auth.go` | ✅ |
+| 2.8 | 渠道订单 | `handler/channel_order.go` | ✅ |
 
 ### 阶段 3 · 渠道、逻辑模型与路由调度
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 3.1 | 渠道管理 | `app/channel*.go` | ☐ |
-| 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | ☐ |
-| 3.3 | 逻辑模型与版本 | `app/logical_models.go` | ☐ |
-| 3.4 | 模型目录发现 | `provider/registry.go` | ☐ |
-| 3.5 | 模型能力矩阵 | `app/model_capability.go` | ☐ |
-| 3.6 | 路由目录快照与健康度 | `app/model_router.go` | ☐ |
-| 3.7 | 模型 SKU 选择器 | `model/model_sku.go` | ☐ |
+| 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；test 路由待做 |
+| 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | 🟡 列表/排序/价格档附着已通；保存/删除/fetch/import/test 待做 |
+| 3.3 | 逻辑模型与版本 | `app/logical_models.go` | 🟡 公开目录/管理端 CRUD/模拟/报价已通；工作流选路待做 |
+| 3.4 | 模型目录发现 | `provider/registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式执行引擎待做 |
+| 3.5 | 模型能力矩阵 | `app/model_capability.go` | ✅ 读路径完成（解码/归一化/投影/校验） |
+| 3.6 | 路由目录快照与健康度 | `app/model_router.go` | ✅ 快照/匹配/选路/模拟完成（Redis 协调待接） |
+| 3.7 | 模型 SKU 选择器 | `model/model_sku.go` | ✅ |
 | 3.8 | 系统模型种子 | `EnsureSystemChannelModels` | ✅ |
 
 ### 阶段 4 · 任务与生成（14 + 12 条路由）
@@ -270,35 +270,35 @@ backend-dotnet/
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
 | 5.1 | 资源上传（含分片） | `handler/resource_upload_session.go` | ☐ |
-| 5.2 | 资源引用解析 | `internal/assets` | ☐ |
-| 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ☐ |
+| 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
+| 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
 | 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ☐ |
-| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ☐ |
+| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | 🟡 全量 CRUD/分页/facets/分类/移动完成；资源上传/下发待做 |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | ☐ |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |
-| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | ☐ |
+| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布 CRUD/素材/快照/分享已通（约 18 条）；上传/文件下发/OSS 待做 |
 
 ### 阶段 6 · 项目与短剧工作流（47 条路由）
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 6.1 | 项目 CRUD | `app/project.go` | ☐ |
-| 6.2 | 项目单元（章节/剧集） | `app/project_workflow.go` | ☐ |
+| 6.1 | 项目 CRUD | `app/project.go` | ✅ 列表/分页/创建/更新/删除级联（默认工作流待接，#27） |
+| 6.2 | 项目单元（章节/剧集） | `app/project_workflow.go` | ✅ CRUD/导入/重排（workspace 读视图待接） |
 | 6.3 | 角色与配音绑定 | `app/project_character.go` | ☐ |
 | 6.4 | 分镜与镜头版本 | `app/project_shot.go` | ☐ |
-| 6.5 | 项目素材关联 | `app/project_asset.go` | ☐ |
+| 6.5 | 项目素材关联 | `app/project_asset.go` | 🟡 文件夹树完成；素材关联/版本/角色待做 |
 | 6.6 | 工作台读取视图 | `app/project_workbench_read.go` | ☐ |
 | 6.7 | 工作流模板与实例 | `app/project_workflow_v2*` | ☐ |
-| 6.8 | 风格档案 | `handler/style_profile.go` | ☐ |
-| 6.9 | 功能开关门禁 | `handler/feature_availability.go` | ☐ |
+| 6.8 | 风格档案 | `handler/style_profile.go` | ✅ CRUD/收藏/最近使用/归一化校验（voice-profiles 列表已通） |
+| 6.9 | 功能开关门禁 | `handler/feature_availability.go` | ✅ |
 
 ### 阶段 7 · 画布与分享
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 7.1 | 画布工程与单元 | `internal/canvas` | ☐ |
-| 7.2 | 画布能力校验 | `canvas/capability` | ☐ |
-| 7.3 | 画布分享（公开 token） | `handler/canvas_share.go` + 日志脱敏 | ☐ |
+| 7.1 | 画布工程与单元 | `internal/canvas` | ✅ CRUD/同步校验/媒体守卫/配额（快照 replace 待接） |
+| 7.2 | 画布能力校验 | `canvas/capability` | ✅ 媒体资产守卫（assetId+resourceID 配对校验） |
+| 7.3 | 画布分享（公开 token） | `handler/canvas_share.go` + 日志脱敏 | ✅ CRUD/公开投影脱敏/资源代理（Range 待接，#26） |
 | 7.4 | 画布状态与外观 | `app/appearance*.go` | ☐ |
 
 ### 阶段 8 · 财务与支付（29 + 21 条路由）
@@ -316,23 +316,23 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 9.1 | 管理员审计事件 | `model.AdminAuditEvent` | ☐ |
-| 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | ☐ |
-| 9.3 | 存储管理 | `handler/admin_storage.go` | ☐ |
+| 9.1 | 管理员审计事件 | `model.AdminAuditEvent` | ✅ 写入/分页/按目标查询 |
+| 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | 🟡 API 日志/导出/存储统计完成；overview 待活跃表写入（#20） |
+| 9.3 | 存储管理 | `handler/admin_storage.go` | 🟡 存储统计完成；资源列表/删除/文件下发待做 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
 | 9.5 | 系统性能 | `handler/admin_system_performance.go` | ☐ |
-| 9.6 | 系统设置 | `app/settings.go` | ☐ |
-| 9.7 | 公告与已读 | `app/announcement.go` | ☐ |
+| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/公告完成；OSS/外观/响应拦截/ARK/LibTV 待做 |
+| 9.7 | 公告与已读 | `app/announcement.go` | 🟡 feed/已读/CRUD/关闭/配图草稿消费与丢弃完成；配图上传待资源链路（#28） |
 
 ### 阶段 10 · 插件、技能与提示词
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
 | 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ☐ |
-| 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | ☐ |
+| 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；执行引擎待做 |
 | 10.3 | 技能库 | `internal/skills` + `app/skills.go` | ☐ |
 | 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ |
-| 10.5 | 提示词模板与用户定制 | `internal/prompts` | ☐ |
+| 10.5 | 提示词模板与用户定制 | `internal/prompts` | 🟡 结构化画风校验/用户风格归一化完成；模板渲染与偏好待做 |
 | 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | ☐ |
 | 10.7 | 自定义渠道中转 | `handler/custom_proxy.go` | ☐ |
 | 10.8 | 系统代理与路径转发 | `handler/system_proxy_stream.go` | ☐ |
@@ -362,7 +362,7 @@ backend-dotnet/
 | 12.5 | `reseed-logical-model-sources` | 同名 cmd | ☐ |
 | 12.6 | `host-updater` | `cmd/host-updater` | ☐ |
 | 12.7 | Dockerfile / Compose 对齐 | `backend/Dockerfile` | ☐ |
-| 12.8 | 契约回归测试 | `*_test.go` | ☐ |
+| 12.8 | 契约回归测试 | `*_test.go` | 🟡 266 项端到端契约测试通过（随节点持续补充） |
 | 12.9 | 双跑对比验收 | — | ☐ |
 
 ---
