@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using OpenAICanvas.Application;
+using OpenAICanvas.Application.Prompts;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Platform;
@@ -2307,6 +2308,72 @@ public static class UserDataEndpoints
             return -1;
         }
         return parsed;
+    }
+
+    /// <summary>
+    /// 用户提示词偏好路由。对应 Go: <c>handler/user_data.go</c> 的 settings/prompt-templates。
+    /// </summary>
+    public static void MapUserPromptPreferenceRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/settings/prompt-templates", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                List<UserPromptPreferenceDto> preferences = await service.PromptTemplates
+                    .UserPromptPreferencesAsync(user, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { preferences });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/settings/prompt-templates/{operation}", async (
+            HttpContext context, string operation, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UserPromptCustomizationRequest? request = await ReadJsonAsync<UserPromptCustomizationRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                UserPromptCustomization customization = await service.PromptTemplates
+                    .UpdateUserPromptCustomizationAsync(user, operation, request, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { customization });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/settings/prompt-templates/{operation}", async (
+            HttpContext context, string operation, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.PromptTemplates.ResetUserPromptCustomizationAsync(
+                    user, operation, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { ok = true });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
     }
 
     /// <summary>对应 Go: <c>hasUserAssetPageFilters</c>。</summary>

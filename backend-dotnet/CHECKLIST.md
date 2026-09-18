@@ -793,6 +793,27 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 用户提示词偏好（阶段 10.5，已端到端打通）
+
+本轮打通 **3 条路由**：`GET /settings/prompt-templates`、
+`PATCH /settings/prompt-templates/:operation`、`DELETE /settings/prompt-templates/:operation`。
+
+### 本轮交付物
+
+- `Repository.UserPromptCustomizations` — 用户定制的列表/单查/Save（update-or-insert）/删除
+- `PromptTemplateService` 补偏好域 — `UserPromptPreferences`（定义 × 启用模板 × 定制，
+  rewrite 且模板已更新 → outdated）、`UpdateUserPromptCustomization`
+  （inherit/append/rewrite 三模式、inherit 清空正文、12000 字 rune 上限、
+  占位符白名单校验、需启用模板）、`ResetUserPromptCustomization`
+- `UserPromptPreferenceDto` — `template` 无 omitempty（缺启用版本输出 null）、
+  `customization` 是 omitempty 指针（无定制时整字段省略，与 Go 一致）
+
+### 验证结果（466/466 通过）
+
+新增 2 项测试（列表/定制/inherit 清空/重置/未知操作 400；401）。
+
+---
+
 ## 平台设置批次（阶段 9.5，已端到端打通）
 
 本轮打通 **11 条路由**：运行时策略 4 条（`GET/PUT/DELETE /admin/settings/runtime-policy`、

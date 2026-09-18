@@ -179,6 +179,8 @@ api.MapTaskRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.Canva
 
 // 提示词模板管理路由。对应 Go 的 handler.RegisterAuthRoutes 的模板部分。
 api.MapPromptTemplateRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+// 用户提示词偏好路由。对应 Go 的 handler/user_data.go settings/prompt-templates 部分。
+api.MapUserPromptPreferenceRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
 // 技能库读取与状态路由。对应 Go 的 handler.RegisterSkillRoutes。
 api.MapSkillsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
