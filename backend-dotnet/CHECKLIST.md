@@ -793,6 +793,48 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 分镜候选与工作台读视图（阶段 6 节点 6.4/6.6，已端到端打通）
+
+本轮打通 **12 条路由**：
+`POST /projects/:id/shots`、`PUT /projects/:id/units/:unitId/shots`（2MB 体限）、
+`POST /projects/:id/shots/:shotId/revisions`、`DELETE .../shots/:shotId`、
+`POST/DELETE .../shots/:shotId/assets(/)…`、`POST/GET /projects/:id/asset-candidates`、
+`POST .../asset-candidates/:candidateId/confirm`、`DELETE /projects/:id/canvases/:canvasId`、
+`GET /projects/:id/core`、`GET /projects/:id/overview`。
+
+### 本轮交付物
+
+- `Repository.Shots.cs` — 镜头版本链（SaveShotWithRevision：MAX(version)+1、
+  下游产物 stale、工作流失效、项目 revision）、章节整体替换（expectedShotIds 乐观锁 →
+  「本章分镜已发生变化」400）、删除级联 + 顺序压紧、引用 upsert/解绑失效、
+  候选创建（ON CONFLICT DO NOTHING）与分页过滤、候选确认双事务（普通/角色）
+- `Repository.WorkbenchRead.cs` — 14 项总览指标子查询（布尔列按方言参数化）与单元行
+- `ProjectShotService` — 镜头创建（幂等 ID 走更新分支、draft 默认、状态白名单）、
+  章节替换（200 上限、单镜 6 版本上限）、候选身份去重（名称键 = 字母数字小写化，
+  含 aliases 与角色素材载荷别名）、角色候选画像校验、确认（角色并入 PrepareNextVersion，
+  普通类建 text/entity 资产）
+- `ProjectUnitService.UnlinkCanvasProjectAsync` — 画布解绑（载荷剥 projectId、
+  关系列/快照/revision 原子更新）
+- `ProjectWorkbenchService` — core/overview 读视图（ProjectDetail 聚合待任务域，#51）
+
+### 关键实现点
+
+1. **镜头写路径全部经工作流失效**：storyboard 起的步骤重置（本步 running、后续 pending）、
+   实例 revision+1——工作流 v2 未移植但失效逻辑已按 SQL 语义落地。
+2. **候选身份键**：Go `strings.Map` 只保留 unicode 字母数字并小写；别名参与身份，
+   角色素材的 payload.data.definition.aliases 也算已知身份。
+3. **候选画像校验先于身份去重**（Go 顺序）：重复候选也要先过完整画像校验。
+4. **分页 LIMIT/OFFSET 顺序**：SQLite/PostgreSQL 均为 `LIMIT n OFFSET m`。
+5. **Application 层出现同名 `ProjectStatus` 内部类**：补 `ProjectStatusArchived` 常量
+   （内层解析优先，避开 Domain 层歧义）。
+
+### 验证结果（453/453 通过）
+
+新增 6 项测试（分镜 401、镜头生命周期/章节替换/乐观锁、引用 upsert/解绑 404、
+候选创建/去重/分页/确认（含角色并档）、core/overview 指标与 404、读视图 401）。
+
+---
+
 ## 项目角色与配音（阶段 6 节点 6.3，已端到端打通）
 
 本轮打通 **6 条角色路由 + voice-profiles 修正**：

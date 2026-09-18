@@ -72,6 +72,7 @@ public sealed class CanvasService
         ProjectCharacters = new ProjectCharacterService(repository, ProjectAssets);
         ProjectAssets.AttachCharacterCardProvider(ProjectCharacters);
         ProjectShots = new ProjectShotService(repository, ProjectCharacters, ProjectAssets);
+        ProjectWorkbench = new ProjectWorkbenchService(repository);
         StyleProfiles = new StyleProfileService(repository);
         Announcements = new AnnouncementService(repository);
         AdminAnalytics = new AdminAnalyticsService(repository);
@@ -127,6 +128,9 @@ public sealed class CanvasService
 
     /// <summary>分镜与资产候选。对应 Go: <c>app/project_shot.go</c> 与候选确认。</summary>
     public ProjectShotService ProjectShots { get; }
+
+    /// <summary>工作台读视图。对应 Go: <c>app/project_workbench_read.go</c>。</summary>
+    public ProjectWorkbenchService ProjectWorkbench { get; }
 
     public StyleProfileService StyleProfiles { get; }
 

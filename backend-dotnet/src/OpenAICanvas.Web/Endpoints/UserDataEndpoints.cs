@@ -84,6 +84,48 @@ public static class UserDataEndpoints
             }
         });
 
+        api.MapGet("/projects/{id}/core", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectCoreDto core = await service.ProjectWorkbench.CoreAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(core);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/projects/{id}/overview", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectOverviewDto overview = await service.ProjectWorkbench.OverviewAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(overview);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapPatch("/projects/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
         {
             try

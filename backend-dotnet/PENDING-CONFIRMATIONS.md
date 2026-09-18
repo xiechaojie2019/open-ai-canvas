@@ -329,6 +329,24 @@
   canvas_image 任务类型、幂等绑定），与「任务与创作」节点同批接入。
 - 阻塞：任务创建/SSE/worker 链路（阶段 8）。
 
+### 51. `[待移植]` ProjectDetail 全量聚合与三视图 reconcile
+- 位置：`app/project.go` 的 `ProjectDetail`（GET /projects/:id）与
+  `project_character.go` 的 `reconcileCharacterTurnaroundTasks`
+- 现状：`GET /projects/:id/core`、`/overview` 已移植（含 14 项指标子查询）；
+  ProjectDetail 聚合了工作流详情（ProjectWorkflows，工作流 v2 未移植）、
+  任务摘要（TasksWithOptions，任务域未移植）与工作流产物补偿
+  （RegisterTaskOutputFromTask），故路由未挂。
+- 处置建议：随阶段 8（任务与创作）+ 6.7（工作流模板与实例）一并接入，
+  并在该路由打开后补 reconcileCharacterTurnaroundTasks（待确认 #50 的读侧入口）。
+
+### 52. `[取舍]` 分页查询参数解析错误文案
+- 位置：`handler/project.go` 的 `parsePositiveQueryInt`（asset-candidates 等）
+- 现状：Go 对 `page=abc` 返回 400 + Go strconv 原始报错文案
+  （如 `strconv.ParseInt: parsing "abc": invalid syntax`）；
+  C# 返回 400 + "Bad Request"。状态码与 code 一致，仅 msg 文案不同。
+  请求体 JSON 绑定错误同理（Go 输出 encoding/json 报错原文）。
+- 处置建议：保持现状（前端按状态码处理）；如需逐字节对齐可复制 Go 的错误文案。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |
