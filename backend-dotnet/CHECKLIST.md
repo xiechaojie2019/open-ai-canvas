@@ -793,6 +793,47 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 项目角色与配音（阶段 6 节点 6.3，已端到端打通）
+
+本轮打通 **6 条角色路由 + voice-profiles 修正**：
+`POST /projects/:id/characters`（256KB 体限）、`GET/PATCH /projects/:id/characters/:assetId`、
+`PUT .../representations`（128KB）、`PUT/DELETE .../voice`（64KB），
+以及 `GET /voice-profiles`（补 13 个内置声音播种 + VoiceProfileSummary 投影）。
+
+### 本轮交付物
+
+- `Repository.ProjectCharacters.cs` — 角色 JOIN 查询（assets × project_asset_links，
+  category=character）、版本/表现/声音绑定读取、`EnsureVoiceProfiles`
+  （ON CONFLICT (user_id, provider, voice_key) DO NOTHING）、
+  `CreateProjectCharacter`（资产+首版本+链接+项目 revision 同事务）、
+  `SaveCharacterVersion`（版本链整体替换 + 资产域字段更新 + revision；命中 0 行抛 not-found）
+- `ProjectCharacterService` — 角色不可变版本链（复制当前设定/表现/声音，整体替换）：
+  创建（名称修剪、definition 归一 `{}`、RFC3339Nano 载荷）、更新、形象整体替换
+  （1–8 个、视角白名单、视角去重、资源 image+ready 校验、共享 operationId）、
+  声音绑定（样本资源校验 + MIME 白名单、user_upload 档案自动建档、builtin 档案校验）、解绑
+- `ICharacterCardProvider` 实装：`ProjectAssetService.AttachCharacterCardProvider`
+  （与 CanvasAuthHost.Attach 同款解环），素材摘要现在内嵌角色卡
+  （visualStatus：turnaround_sheet 或三视图齐备 → ready / partial / missing）
+- voice-profiles：旧实现直接回原始实体（漏内置播种、漏 status=active 过滤）已修正
+- 6 条路由接线 + 补挂此前未注册的 `MapProjectAssetLinkRoutes`
+
+### 关键实现点
+
+1. **角色路由的 not-found 是 500 不是 404**：Go 这组路由不用 `IsProjectNotFound`，
+   gorm not-found 原样进 failInternal（500 信封）。C# 用非 AppError 异常复现（见待确认 #49）。
+2. **表现替换按输入顺序逐项校验**：第一项的资源检查先于第二项的视角去重（Go 顺序）。
+3. **definition/payload 键序递归 Ordinal 排序**对齐 Go map 序列化；
+   数字保留原文（已知取舍，见待确认 #47）。
+4. **旧测试 `声音档案列表_空数组` 的假设被推翻**：首次调用播种 13 个内置声音（待确认 #48）。
+
+### 验证结果（447/447 通过）
+
+新增 4 项角色端到端测试（401、创建/读取/更新版本链与角色卡内嵌 + 500 信封、
+形象替换校验链 + partial/ready、声音播种 + 绑定/解绑），修正 1 项旧声音列表测试。
+全量 447 项测试通过，构建 0 错误（测试工程遗留 10 个平行会话警告）。
+
+---
+
 ## 项目基础 CRUD（阶段 6 节点 A，已端到端打通）
 
 本轮打通 **5 条项目路由**：`GET /projects`（摘要/分页双形态）、`POST /projects`、

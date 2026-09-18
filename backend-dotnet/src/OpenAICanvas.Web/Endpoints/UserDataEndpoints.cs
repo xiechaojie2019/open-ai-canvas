@@ -1594,8 +1594,8 @@ public static class UserDataEndpoints
             {
                 User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
                     .ConfigureAwait(false);
-                IReadOnlyList<Domain.Entities.VoiceProfile> profiles = await service
-                    .VoiceProfilesAsync(user.ID, cancellationToken).ConfigureAwait(false);
+                List<VoiceProfileSummaryDto> profiles = await service.ProjectCharacters
+                    .ListVoiceProfilesAsync(user.ID, cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { profiles });
             }
             catch (Exception error)
@@ -1716,6 +1716,145 @@ public static class UserDataEndpoints
                 AssetVersion version = await service.CreateProjectAssetVersionAsync(
                     user.ID, id, assetId, request, cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { version });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 项目角色与配音路由。对应 Go: <c>handler/project.go</c> 的 characters 部分。
+    /// </summary>
+    /// <remarks>
+    /// 与 Go 一致：该组路由不识别 not-found（<c>IsProjectNotFound</c>），
+    /// 资产/项目缺失走 failInternal 的 500 信封。
+    /// </remarks>
+    public static void MapProjectCharacterRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapPost("/projects/{id}/characters", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateProjectCharacterRequest? request = await ReadJsonAsync<CreateProjectCharacterRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectCharacterDetailDto character = await service.ProjectCharacters.CreateAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(character);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/projects/{id}/characters/{assetId}", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectCharacterDetailDto character = await service.ProjectCharacters.GetAsync(
+                    user.ID, id, assetId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(character);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}/characters/{assetId}", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UpdateProjectCharacterRequest? request = await ReadJsonAsync<UpdateProjectCharacterRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectCharacterDetailDto character = await service.ProjectCharacters.UpdateAsync(
+                    user.ID, id, assetId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(character);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/projects/{id}/characters/{assetId}/representations", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ReplaceCharacterRepresentationsRequest? request =
+                    await ReadJsonAsync<ReplaceCharacterRepresentationsRequest>(
+                        context, 128 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectCharacterDetailDto character = await service.ProjectCharacters.ReplaceRepresentationsAsync(
+                    user.ID, id, assetId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(character);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/projects/{id}/characters/{assetId}/voice", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                BindCharacterVoiceRequest? request = await ReadJsonAsync<BindCharacterVoiceRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectCharacterDetailDto character = await service.ProjectCharacters.BindVoiceAsync(
+                    user.ID, id, assetId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(character);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/characters/{assetId}/voice", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectCharacterDetailDto character = await service.ProjectCharacters.UnbindVoiceAsync(
+                    user.ID, id, assetId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(character);
             }
             catch (Exception error)
             {

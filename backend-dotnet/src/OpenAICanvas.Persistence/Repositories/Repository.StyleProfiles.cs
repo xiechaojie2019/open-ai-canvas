@@ -109,15 +109,15 @@ public sealed partial class Repository
         return deleted > 0;
     }
 
-    /// <summary>用户声音档案列表。对应 Go: <c>VoiceProfiles</c>。</summary>
+    /// <summary>用户声音档案列表（仅启用档案）。对应 Go: <c>VoiceProfiles</c>。</summary>
     public async Task<IReadOnlyList<VoiceProfile>> VoiceProfilesAsync(
         string userId, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<VoiceProfile>(
             connection,
-            SqlBuilder.Select<VoiceProfile>("user_id = @userId", "created_at ASC"),
-            new { userId },
+            SqlBuilder.Select<VoiceProfile>("user_id = @userId AND status = @status", "created_at ASC"),
+            new { userId, status = "active" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

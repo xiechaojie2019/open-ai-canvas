@@ -165,12 +165,21 @@ public sealed class NullCharacterCardProvider : ICharacterCardProvider
 public sealed class ProjectAssetService
 {
     private readonly Repository _repository;
-    private readonly ICharacterCardProvider _characterCards;
+    private ICharacterCardProvider _characterCards;
 
     public ProjectAssetService(Repository repository, ICharacterCardProvider? characterCards = null)
     {
         _repository = repository;
         _characterCards = characterCards ?? new NullCharacterCardProvider();
+    }
+
+    /// <summary>
+    /// 构造完成后挂接角色卡提供者（角色服务依赖本服务的摘要构建，二者互相引用，
+    /// 与 <c>CanvasAuthHost.Attach</c> 的解环方式一致）。
+    /// </summary>
+    public void AttachCharacterCardProvider(ICharacterCardProvider provider)
+    {
+        _characterCards = provider;
     }
 
     // ------------------------------------------------------------ 读取
@@ -692,7 +701,8 @@ public sealed class ProjectAssetService
     }
 
     /// <summary>组装素材摘要。对应 Go: <c>projectAssetSummary</c>。</summary>
-    private async Task<ProjectAssetSummaryDto> BuildSummaryAsync(
+    /// <remarks>角色卡提供者抛错会向上传播（与 Go 的 projectAssetSummary 一致）。</remarks>
+    public async Task<ProjectAssetSummaryDto> BuildSummaryAsync(
         string userId, string projectId, Asset asset, CancellationToken cancellationToken)
     {
         IReadOnlyList<AssetVersion> versions = await _repository

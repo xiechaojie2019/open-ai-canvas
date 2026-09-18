@@ -294,6 +294,41 @@
 
 ---
 
+### 47. `[取舍]` 角色设定 JSON 数字保留原文（Go float64 最短化）
+- 位置：`Application/ProjectCharacterService.cs`（NormalizedDefinition / SortedElement）
+- 现状：Go 把请求里的 definition 绑定成 `map[string]any`，数字全部变 float64，
+  再 `json.Marshal` 时输出最短浮点形式（`1.0` → `1`，超 2^53 精度丢失）。
+  C# 沿用仓库既有 DOM 模式（与 AssetLibrary/ProjectService 一致）：JsonElement 保留原文，
+  仅递归按 Ordinal 排序键。常规前端数值（整数、短小数）输出一致；
+  `1.0` 这类写法会保留 `1.0`。
+- 处置建议：若要逐字节对齐需实现 Go 的 shortest-float 格式化（ragon/strconv APP.e-1x 语义），
+  建议统一在一个 JSON 工具层做，供全部 DOM 化节点复用。
+
+### 48. `[已解决]` `/voice-profiles` 曾返回原始实体且未播种内置声音
+- 位置：`Web/Endpoints/UserDataEndpoints.cs` 的 voice-profiles 处理器
+- 现状：**已修正**。Go 的 `ListVoiceProfiles` 会幂等播种 13 个内置
+  OpenAI 兼容声音并返回 `VoiceProfileSummary` 投影（compatibleModels 数组、
+  sampleResourceId omitempty、仅启用档案）；旧实现直接回原始实体（compatibleModelsJson 透出）。
+- 修法：改走 `ProjectCharacterService.ListVoiceProfilesAsync`；
+  `Repository.VoiceProfilesAsync` 补 `status='active'` 过滤（对齐 Go）。
+  旧测试 `声音档案列表_空数组` 的假设被推翻，改为断言 13 条内置 + 幂等。
+
+### 49. `[取舍]` 角色/项目缺失走 500 信封（原样对齐 Go）
+- 位置：`Application/ProjectCharacterService.cs`（CharacterAssetAsync / RequireProjectAsync）
+- 现状：Go 的角色路由不用 `IsProjectNotFound`，`ProjectForUser` / `ProjectCharacterAsset`
+  的 gorm not-found 原样进 `failService` → `failInternal` → **HTTP 500 +「系统处理失败」**。
+  .NET 用 `InvalidOperationException("record not found")` 复现同一投影（其余项目路由
+  如 style-profiles 用 404，角色路由刻意保持 500）。
+- 处置建议：维持现状即可；若日后 Go 侧统一 not-found 语义，这里一并改。
+
+### 50. `[待移植]` 三视图任务收尾与项目读时的 reconcile
+- 位置：`app/project_character.go` 的 `finalizeCharacterTurnaroundTask` /
+  `characterTurnaroundTaskBound` / `reconcileCharacterTurnaroundTasks`
+- 现状：角色 CRUD/形象/声音已移植（6 条路由 + voice-profiles）；
+  三视图生成任务的「任务成功 → 绑定新角色版本」收尾依赖任务域（input 解密、
+  canvas_image 任务类型、幂等绑定），与「任务与创作」节点同批接入。
+- 阻塞：任务创建/SSE/worker 链路（阶段 8）。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

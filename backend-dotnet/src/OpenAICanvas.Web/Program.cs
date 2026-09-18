@@ -243,6 +243,10 @@ api.MapProjectAssetFolderRoutes(app.Services.GetRequiredService<OpenAICanvas.App
 // 项目单元与画布链接路由。对应 Go 的 handler.RegisterProjectRoutes 单元/链接部分。
 api.MapProjectUnitRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
+// 项目素材关联与角色路由。对应 Go 的 handler.RegisterProjectRoutes assets/characters 部分。
+api.MapProjectAssetLinkRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapProjectCharacterRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+
 // 管理后台日志与存储路由。对应 Go 的 handler 日志/存储部分。
 api.MapAdminAnalyticsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 

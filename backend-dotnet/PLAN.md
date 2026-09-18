@@ -284,9 +284,9 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 6.1 | 项目 CRUD | `app/project.go` | ✅ 列表/分页/创建/更新/删除级联（默认工作流待接，#27） |
 | 6.2 | 项目单元（章节/剧集） | `app/project_workflow.go` | ✅ CRUD/导入/重排（workspace 读视图待接） |
-| 6.3 | 角色与配音绑定 | `app/project_character.go` | ☐ |
+| 6.3 | 角色与配音绑定 | `app/project_character.go` | ✅ 角色 CRUD/形象/声音 + voice-profiles 播种（三视图任务收尾待任务域，#47） |
 | 6.4 | 分镜与镜头版本 | `app/project_shot.go` | ☐ |
-| 6.5 | 项目素材关联 | `app/project_asset.go` | 🟡 文件夹树完成；素材关联/版本/角色待做 |
+| 6.5 | 项目素材关联 | `app/project_asset.go` | ✅ 链接/解绑/更新/版本/分页过滤 + 摘要内嵌角色卡 |
 | 6.6 | 工作台读取视图 | `app/project_workbench_read.go` | ☐ |
 | 6.7 | 工作流模板与实例 | `app/project_workflow_v2*` | ☐ |
 | 6.8 | 风格档案 | `handler/style_profile.go` | ✅ CRUD/收藏/最近使用/归一化校验（voice-profiles 列表已通） |

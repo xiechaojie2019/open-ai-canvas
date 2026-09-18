@@ -68,6 +68,9 @@ public sealed class CanvasService
         ProjectUnits = new ProjectUnitService(repository);
         ProjectAssetFolders = new ProjectAssetFolderService(repository);
         ProjectAssets = new ProjectAssetService(repository);
+        // 角色域同时充当素材摘要的角色卡提供者（对应 Go 的 app.Service 内聚角色卡）。
+        ProjectCharacters = new ProjectCharacterService(repository, ProjectAssets);
+        ProjectAssets.AttachCharacterCardProvider(ProjectCharacters);
         StyleProfiles = new StyleProfileService(repository);
         Announcements = new AnnouncementService(repository);
         AdminAnalytics = new AdminAnalyticsService(repository);
@@ -117,6 +120,9 @@ public sealed class CanvasService
     public ProjectAssetFolderService ProjectAssetFolders { get; }
 
     public ProjectAssetService ProjectAssets { get; }
+
+    /// <summary>项目角色与配音。对应 Go: <c>app/project_character.go</c> 的角色域。</summary>
+    public ProjectCharacterService ProjectCharacters { get; }
 
     public StyleProfileService StyleProfiles { get; }
 

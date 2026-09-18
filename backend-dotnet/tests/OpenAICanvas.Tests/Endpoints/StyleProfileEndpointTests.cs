@@ -208,14 +208,28 @@ public sealed class StyleProfileEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, deleted.StatusCode);
     }
 
+    /// <summary>
+    /// 对应 Go: <c>ListVoiceProfiles</c>——首次调用播种 13 个内置声音，重复请求不重复插入。
+    /// </summary>
     [Fact]
-    public async Task 声音档案列表_空数组()
+    public async Task 声音档案列表_播种内置声音()
     {
         using HttpClient admin = await SignInAsAdminAsync();
 
         HttpResponseMessage response = await admin.GetAsync("/api/voice-profiles");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(0, (await ReadDataAsync(response)).GetProperty("profiles").GetArrayLength());
+        JsonElement profiles = (await ReadDataAsync(response)).GetProperty("profiles");
+        Assert.Equal(13, profiles.GetArrayLength());
+        JsonElement alloy = profiles.EnumerateArray()
+            .Single(profile => profile.GetProperty("voiceKey").GetString() == "alloy");
+        Assert.Equal("Alloy", alloy.GetProperty("name").GetString());
+        Assert.Equal("openai_compatible", alloy.GetProperty("provider").GetString());
+        Assert.Equal("多语言", alloy.GetProperty("language").GetString());
+        Assert.Equal("active", alloy.GetProperty("status").GetString());
+        Assert.False(alloy.TryGetProperty("sampleResourceId", out _));
+
+        HttpResponseMessage again = await admin.GetAsync("/api/voice-profiles");
+        Assert.Equal(13, (await ReadDataAsync(again)).GetProperty("profiles").GetArrayLength());
     }
 }
