@@ -793,6 +793,28 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 模型目录（阶段 2.7 补全，已端到端打通）
+
+本轮打通 **2 条路由**：`GET /model-catalog`、`POST /model-catalog/available`。
+
+### 本轮交付物
+
+- `ModelCatalogService` — 按前台模型开关返回互斥形状（source=frontend → models；
+  source=system → 脱敏渠道目录）。系统目录逐渠道展开启用模型：
+  意图过滤复用与任务 admission 相同的能力合同（CapabilitySpec 匹配、
+  audio 仅能力类型）、单模型损坏隔离告警不拖垮目录、
+  价格档发布校验（ValidatePriceTierPrice 逐语义移植，ark video 协议常量
+  `volcengine-ark-video`）、展示价格/Available 从同一批有效档位派生、
+  capabilityConfig 经归一化合同投影
+- `ModelCatalogResponseDto` — 两集合恒为数组（空目录发 []，不发 null）
+- 2 条路由接线（ModelEndpoints）
+
+### 验证结果（468/468 通过）
+
+新增 2 项测试（system 形状恒数组、available 意图过滤；401）。
+
+---
+
 ## 用户提示词偏好（阶段 10.5，已端到端打通）
 
 本轮打通 **3 条路由**：`GET /settings/prompt-templates`、

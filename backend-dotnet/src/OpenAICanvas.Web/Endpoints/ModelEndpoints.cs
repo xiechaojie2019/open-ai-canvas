@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using OpenAICanvas.Application;
+using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Web.Http;
 using OpenAICanvas.Web.Security;
@@ -33,6 +34,40 @@ public static class ModelEndpoints
                 IReadOnlyList<PublicLogicalModelDto> models = await service
                     .PublicLogicalModelsAsync(null, cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { models });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/model-catalog", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User _ = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ModelCatalogResponseDto catalog = await service.ModelCatalog.CatalogAsync(
+                    null, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(catalog);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/model-catalog/available", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User _ = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ModelRequestIntent? intent = await ReadJsonAsync<ModelRequestIntent>(
+                    context, cancellationToken).ConfigureAwait(false);
+                ModelCatalogResponseDto catalog = await service.ModelCatalog.CatalogAsync(
+                    intent, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(catalog);
             }
             catch (Exception error)
             {

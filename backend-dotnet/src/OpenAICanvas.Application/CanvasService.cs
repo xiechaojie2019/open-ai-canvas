@@ -81,6 +81,7 @@ public sealed class CanvasService
         Finance = new FinanceService(repository, CreditPolicy, Features);
         Skills = new SkillsService(repository);
         PromptTemplates = new Prompts.PromptTemplateService(repository);
+        ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
         // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
         Payments = new PaymentService(
             repository,
@@ -609,6 +610,9 @@ public sealed class CanvasService
     public SkillsService Skills { get; }
 
     public Prompts.PromptTemplateService PromptTemplates { get; }
+
+    /// <summary>创作端模型目录。对应 Go: <c>app/model_catalog.go</c>。</summary>
+    public ModelCatalogService ModelCatalog { get; }
 
     public PaymentService Payments { get; }
 

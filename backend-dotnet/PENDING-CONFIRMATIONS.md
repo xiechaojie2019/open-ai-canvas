@@ -385,6 +385,18 @@
 - 备注：api_call_logs 表**没有** updated_at 列（GORM 实体字段是装饰结果），
   分析投影按 schema-dump 的真实列清单。
 
+### 57. `[待移植]` 剩余路由盘点（任务引擎及其下游，截至本批后余 ~70 条）
+- 已知分布：任务引擎 7（POST /tasks、retry、cancel、query-provider、
+  text-events SSE、timeline 2）；creation-runs 13；云 Agent 7；workflow v2 5
+  （ProjectDetail/canvases/workspace/workflows/workflow-steps）；技能 9
+  （files 5 + 写入 4）；OSS 设置 6（test 依赖云 SDK）；libtv 3 + canvas 导入 2；
+  system-performance 2；system-update 4（host-updater 进程，.NET 部署形态待定）；
+  diagnostics 2；runninghub 2；POST /ai/models 系统中转 1；
+  api-logs media/query-task 2；admin/channels/{id}/models/test 1
+- 移植顺序建议不变：任务引擎 → creation-runs → agent → workflow v2 →
+  技能 → 其余零散（oss/libtv/runninghub/ai/models 均依赖出站或云 SDK，
+  可与任务引擎解耦并行）。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |
