@@ -156,9 +156,9 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 | 2 | 认证与用户（含根级 `GET /oauth/linuxdo/callback`） | 22 | ✅ 22/22 已通 |
 | 3 | 渠道、逻辑模型与路由调度 | — | 🟡 fetch/import 已通（含出站受控 HTTP 客户端）；仅剩 test（依赖阶段 4 provider 执行引擎） |
 | 4 | 任务与生成 | 14 + 12 | 🟡 任务读取 + 文本回放 7 条已通；创建/重试/取消/上游查询/SSE 待做（依赖 provider 执行引擎） |
-| 5 | 资源、素材与存储 | 31 + 3 | 🟡 画布 CRUD + 素材库全量（含 DELETE 资源级联删除）已通；资源上传/文件下发/OSS/Eagle 待做 |
+| 5 | 资源、素材与存储 | 31 + 3 | 🟡 画布 CRUD + 素材库全量（含 DELETE 资源级联删除）+ 资源分片上传 + 文件下发（ETag/Range/匿名签名）已通；OSS/Eagle/导出 待做 |
 | 6 | 项目与短剧工作流 | 47 | 🟡 项目 CRUD + 单元/画布链接 + 素材文件夹树已通；素材关联/角色/镜头/工作流/工作台待做 |
-| 7 | 画布与分享 | 5 + 6 | 🟡 分享 CRUD + 公开投影脱敏 + 公开资源本地投递已通；Range/云重定向待接 |
+| 7 | 画布与分享 | 5 + 6 | 🟡 分享 CRUD + 公开投影脱敏 + 公开资源本地投递（含 Range）已通；云重定向待接 |
 | 8 | 财务与支付（含独立进程 RPC 插件） | 29 + 21 | 🟢 33 条已通（钱包/签到/兑换码/调账/账单核对 + 支付渠道/商品/订单/回调/对账）；仅剩内置适配器实现（按用户指示暂缓） |
 | 9 | 管理后台 | 8 + 4 + 4 + 2 + 2 + 9 | 🟡 功能开放配置 + 平台设置 + 公告 + API 日志/导出 + 存储统计已通；分析总览/存储列表/系统性能/更新待做 |
 | 10 | 插件、技能与提示词（含 `NoRoute` 短代理、2 条 `.Any()`） | 18 + 17 + 4 + 1 + 2 + 2 | 🟡 风格档案 6 条 + 技能库读取/状态 8 条 + 提示词模板 4 条已通；技能写入与安装、插件、代理待做 |
@@ -663,7 +663,8 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 - ~~画布工程 CRUD~~ ✅（节点 A）
 - ~~素材库：batch/分页/facets/单读/upsert/快照/分类/移动~~ ✅（节点 B）
 - ~~`DELETE /assets/:id`（资源级联判定链）~~ ✅（见下节）
-- 资源上传三件套（`/resources/uploads` 会话/分片/complete）与文件下发（`/resources/:id/file`）
+- ~~资源上传三件套（`/resources/uploads` 会话/分片/complete）~~ ✅（阶段 5.1）
+- ~~文件下发（`/resources/:id/file`、`/public/resources/:id/file`，含 ETag/Range/匿名签名）~~ ✅（阶段 5.8）
 - 存储位置与 OSS 设置（`/settings/oss`，test 需云 SDK）、Eagle 集成
 - `ReplaceUserCanvasProjects` / `ReplaceUserAssets`（同步接口服务面）
 - 提示词偏好（`/settings/prompt-templates`，阶段 10.5）
@@ -709,7 +710,8 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 ### 阶段 5 剩余（下一轮建议）
 
 - ~~`DELETE /assets/:id`（资源级联判定链）~~ ✅（见下节）
-- 资源上传三件套（`/resources/uploads` 会话/分片/complete）与文件下发（`/resources/:id/file`）
+- ~~资源上传三件套（`/resources/uploads` 会话/分片/complete）~~ ✅（阶段 5.1）
+- ~~文件下发（`/resources/:id/file`、`/public/resources/:id/file`，含 ETag/Range/匿名签名）~~ ✅（阶段 5.8）
 - 存储位置与 OSS 设置（`/settings/oss`，test 需云 SDK）、Eagle 集成
 - `ReplaceUserCanvasProjects` / `ReplaceUserAssets`（同步接口服务面）
 - 提示词偏好（`/settings/prompt-templates`，阶段 10.5）
@@ -1281,7 +1283,8 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 - ~~画布工程 CRUD~~ ✅（节点 A）
 - ~~素材库：batch/分页/facets/单读/upsert/快照/分类/移动~~ ✅（节点 B）
 - ~~`DELETE /assets/:id`（资源级联判定链）~~ ✅（见下节）
-- 资源上传三件套（`/resources/uploads` 会话/分片/complete）与文件下发（`/resources/:id/file`）
+- ~~资源上传三件套（`/resources/uploads` 会话/分片/complete）~~ ✅（阶段 5.1）
+- ~~文件下发（`/resources/:id/file`、`/public/resources/:id/file`，含 ETag/Range/匿名签名）~~ ✅（阶段 5.8）
 - 存储位置与 OSS 设置（`/settings/oss`，test 需云 SDK）、Eagle 集成
 - `ReplaceUserCanvasProjects` / `ReplaceUserAssets`（同步接口服务面）
 - 提示词偏好（`/settings/prompt-templates`，阶段 10.5）
@@ -1327,7 +1330,8 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 ### 阶段 5 剩余（下一轮建议）
 
 - ~~`DELETE /assets/:id`（资源级联判定链）~~ ✅（见下节）
-- 资源上传三件套（`/resources/uploads` 会话/分片/complete）与文件下发（`/resources/:id/file`）
+- ~~资源上传三件套（`/resources/uploads` 会话/分片/complete）~~ ✅（阶段 5.1）
+- ~~文件下发（`/resources/:id/file`、`/public/resources/:id/file`，含 ETag/Range/匿名签名）~~ ✅（阶段 5.8）
 - 存储位置与 OSS 设置（`/settings/oss`，test 需云 SDK）、Eagle 集成
 - `ReplaceUserCanvasProjects` / `ReplaceUserAssets`（同步接口服务面）
 - 提示词偏好（`/settings/prompt-templates`，阶段 10.5）

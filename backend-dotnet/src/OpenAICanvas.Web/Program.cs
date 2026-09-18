@@ -192,6 +192,11 @@ api.MapChunkedUploadRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
+// 资源文件下发路由（鉴权 + 匿名签名）。对应 Go 的 GET /resources/:id/file 等。
+api.MapResourceDeliveryRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>());
+
 // 用户数据（画布/素材）路由。对应 Go 的 handler/user_data.go（当前接 canvas-projects 部分）。
 api.MapUserDataRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),

@@ -273,10 +273,10 @@ backend-dotnet/
 | 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
 | 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ☐ |
-| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | 🟡 全量 CRUD/分页/facets/分类/移动完成；资源上传/下发待做 |
+| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | 🟡 全量 CRUD/分页/facets/分类/移动完成；资源上传已通，素材库侧的资源下发仍待接线 |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | ☐ |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |
-| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布 CRUD/素材/快照/分享已通（约 18 条）；上传/文件下发/OSS 待做 |
+| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布 CRUD/素材/快照/分享、资源上传（5.1）与文件下发（`/resources/:id/file`、`/public/resources/:id/file`，含 ETag/Range）已通（约 22 条）；OSS 相关与导出待做 |
 
 ### 阶段 6 · 项目与短剧工作流（47 条路由）
 
