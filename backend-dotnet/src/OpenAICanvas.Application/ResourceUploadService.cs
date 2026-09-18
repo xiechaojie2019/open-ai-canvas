@@ -1,7 +1,10 @@
 #nullable enable
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using OpenAICanvas.Domain.Entities;
+using OpenAICanvas.Outbound;
+using OpenAICanvas.Platform;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
 
@@ -23,12 +26,21 @@ public sealed class ResourceUploadService
     private readonly UploadQuota _quota;
     private readonly string _dataDir;
 
-    public ResourceUploadService(Repository repository, UploadQuota quota, string? dataDir = null)
+    private readonly IRuntimePolicyProvider? _policyProvider;
+
+    public ResourceUploadService(
+        Repository repository,
+        UploadQuota quota,
+        string? dataDir = null,
+        IRuntimePolicyProvider? policyProvider = null)
     {
         _repository = repository;
         _quota = quota;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
+        _policyProvider = policyProvider;
     }
+
+    private IRuntimePolicyProvider PolicyProvider => _policyProvider ?? new DefaultRuntimePolicyProvider();
 
     /// <summary>
     /// 接收已完整落盘的本地文件（分片上传合并后调用）。与
@@ -87,6 +99,120 @@ public sealed class ResourceUploadService
         }
         return resource;
     }
+
+    /// <summary>
+    /// 从公网 URL 导入资源：SSRF 校验 → 限长下载 → 与本地上传共享
+    /// 幂等、探测、配额与持久化语义。对应 Go: <c>ImportResourceURL</c>。
+    /// </summary>
+    public async Task<Resource> ImportResourceUrlAsync(
+        string userId,
+        string rawUrl,
+        string kind,
+        int width,
+        int height,
+        long durationMs,
+        string? uploadIdentity = null,
+        CancellationToken cancellationToken = default)
+    {
+        string? uploadKey = NormalizedUploadKey(uploadIdentity);
+        Resource? existing = await ResourceForUploadKeyAsync(userId, uploadKey, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && existing.Status == ResourceStatus.ResourceStatusReady)
+        {
+            return existing;
+        }
+        if (existing is not null && existing.Status == ResourceStatus.ResourceStatusPending)
+        {
+            throw UploadInProgress();
+        }
+        long maxBytes = PolicyProvider.Current().Resource.ResourceUploadMB << 20;
+        RemoteResourcePayload payload = await DownloadRemoteResourceAsync(
+            rawUrl, maxBytes, cancellationToken).ConfigureAwait(false);
+        kind = NormalizeResourceKind(kind, payload.MimeType);
+        if (kind == "image" && (width <= 0 || height <= 0))
+        {
+            (int decodedWidth, int decodedHeight) = ImageDimensions(payload.Data);
+            if (decodedWidth > 0 && decodedHeight > 0)
+            {
+                width = decodedWidth;
+                height = decodedHeight;
+            }
+        }
+        long size = payload.Data.Length;
+        if (existing is not null)
+        {
+            using MemoryStream buffered = new(payload.Data);
+            return await RetryStoredResourceAsync(
+                userId, existing, kind, payload.MimeType, size, buffered, cancellationToken).ConfigureAwait(false);
+        }
+        string day = await _quota.ReserveUserUploadQuotaAsync(userId, size, cancellationToken).ConfigureAwait(false);
+        Resource? resource;
+        bool stored;
+        using (MemoryStream buffered = new(payload.Data))
+        {
+            (resource, stored) = await StoreResourceAsync(
+                userId, kind, payload.FileName, payload.MimeType, size, width, height, durationMs,
+                buffered, uploadKey, cancellationToken).ConfigureAwait(false);
+        }
+        if (resource is null)
+        {
+            await _quota.ReleaseUserUploadQuotaAsync(userId, day, size, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("资源写入失败");
+        }
+        if (stored)
+        {
+            await _quota.CommitUserUploadQuotaAsync(userId, size, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _quota.ReleaseUserUploadQuotaAsync(userId, day, size, cancellationToken).ConfigureAwait(false);
+        }
+        return resource;
+    }
+
+    /// <summary>限长下载远程资源。对应 Go: <c>downloadRemoteResource</c>。</summary>
+    private static async Task<RemoteResourcePayload> DownloadRemoteResourceAsync(
+        string rawUrl, long maxBytes, CancellationToken cancellationToken)
+    {
+        Uri parsed = await OutboundGuard.ValidateOutboundUrlAsync(rawUrl).ConfigureAwait(false);
+        using HttpClient client = OutboundHttpClient.Create(TimeSpan.FromSeconds(90));
+        using HttpResponseMessage response = await client.GetAsync(
+            parsed, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode < HttpStatusCode.OK || response.StatusCode >= HttpStatusCode.MultipleChoices)
+        {
+            int status = (int)response.StatusCode;
+            string reason = response.ReasonPhrase ?? "";
+            throw AppError.BadAuthRequest($"远程资源下载失败：{status} {reason}".TrimEnd());
+        }
+        await using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        MemoryStream buffer = new();
+        byte[] chunk = new byte[81920];
+        int read;
+        while ((read = await body.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+            if (buffer.Length >= maxBytes)
+            {
+                throw AppError.BadAuthRequest($"远程资源必须小于 {UploadQuota.FormatStorageLimit(maxBytes)}");
+            }
+        }
+        byte[] data = buffer.ToArray();
+        string mimeType = (response.Content.Headers.ContentType?.MediaType ?? "").Trim();
+        if (mimeType.Length == 0 || mimeType == "application/octet-stream")
+        {
+            mimeType = DetectUploadedMimeType(new MemoryStream(data), "", "");
+        }
+        string path = parsed.AbsolutePath;
+        string fileName = path.Length > 0 ? Path.GetFileName(path) : "";
+        if (fileName.Length == 0 || fileName == "." || fileName == "/" || !fileName.Contains('.'))
+        {
+            fileName = "resource." + ExtensionFromMimeType(mimeType);
+        }
+        return new RemoteResourcePayload(parsed.ToString(), parsed.Host, fileName, mimeType, data);
+    }
+
+    /// <summary>远程资源载荷。对应 Go: <c>remoteResourcePayload</c>。</summary>
+    private sealed record RemoteResourcePayload(
+        string Url, string Endpoint, string FileName, string MimeType, byte[] Data);
 
     /// <summary>
     /// 接收 multipart 表单上传（整传）。对应 Go: <c>UploadResource</c>。
@@ -636,6 +762,62 @@ public sealed class ResourceUploadService
         };
 
     /// <summary>对应 Go 的 <c>mime.ExtensionsByType</c>（常用子集）。</summary>
+    /// <summary>
+    /// 从文件头解码图片尺寸（PNG/GIF/JPEG，与 Go 注册的三种 DecodeConfig 格式一致）。
+    /// 对应 Go: <c>imageDimensions</c>。
+    /// </summary>
+    internal static (int Width, int Height) ImageDimensions(byte[] data)
+    {
+        if (data.Length >= 24 && data[0] == 0x89 && data[1] == (byte)'P' && data[2] == (byte)'N'
+            && data[3] == (byte)'G')
+        {
+            // PNG：IHDR 宽高为 big-endian uint32。
+            int width = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+            int height = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+            return (width, height);
+        }
+        if (data.Length >= 10 && data[0] == (byte)'G' && data[1] == (byte)'I' && data[2] == (byte)'F')
+        {
+            // GIF：逻辑屏幕尺寸为 little-endian uint16。
+            int width = data[6] | (data[7] << 8);
+            int height = data[8] | (data[9] << 8);
+            return (width, height);
+        }
+        if (data.Length >= 4 && data[0] == 0xFF && data[1] == 0xD8)
+        {
+            // JPEG：扫描 SOF0-SOF15 段（跳过 DHT/DAC 等非 SOF 标记）取精度/高度/宽度。
+            int offset = 2;
+            while (offset + 9 < data.Length)
+            {
+                if (data[offset] != 0xFF)
+                {
+                    offset++;
+                    continue;
+                }
+                byte marker = data[offset + 1];
+                if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
+                {
+                    offset += 2;
+                    continue;
+                }
+                if (offset + 4 > data.Length)
+                {
+                    break;
+                }
+                int segmentLength = (data[offset + 2] << 8) | data[offset + 3];
+                bool isSof = marker >= 0xC0 && marker <= 0xCF && marker is not 0xC4 and not 0xC8 and not 0xCC;
+                if (isSof && offset + 9 <= data.Length)
+                {
+                    int height = (data[offset + 5] << 8) | data[offset + 6];
+                    int width = (data[offset + 7] << 8) | data[offset + 8];
+                    return (width, height);
+                }
+                offset += 2 + segmentLength;
+            }
+        }
+        return (0, 0);
+    }
+
     private static string ExtensionFromMimeType(string mimeType) =>
         mimeType.Trim().ToLowerInvariant() switch
         {

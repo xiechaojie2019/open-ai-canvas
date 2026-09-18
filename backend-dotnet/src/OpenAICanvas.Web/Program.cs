@@ -211,6 +211,14 @@ api.MapChunkedUploadRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
+// 资源列表/详情/整传/导入/存储用量/OSS 直链/ARK 同步路由。对应 Go 的 handler resources 部分。
+api.MapResourceCrudRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
 // 外观配置路由。对应 Go 的 handler.RegisterAppearanceRoutes。
 api.MapAppearanceRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),

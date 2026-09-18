@@ -347,6 +347,21 @@
   请求体 JSON 绑定错误同理（Go 输出 encoding/json 报错原文）。
 - 处置建议：保持现状（前端按状态码处理）；如需逐字节对齐可复制 Go 的错误文案。
 
+### 53. `[已解决]` 资源 CRUD/导入路由与存储用量契约
+- 位置：`Web/Endpoints/ResourceCrudEndpoints.cs` + `Application/ResourceUploadService.cs`
+- 现状：**已落地 7 条路由**（列表/详情/整传 multipart/URL 导入/存储用量/OSS 直链/ARK 同步）。
+  URL 导入完整移植（SSRF 校验 → 90s 限长下载 → 复用上传的幂等/探测/配额/落盘），
+  并补 PNG/GIF/JPEG 尺寸头探测（对齐 Go `image.DecodeConfig` 注册的三种格式）。
+- 修正：`AccountFileStorageUsage` 原为 `{UsedBytes, LimitBytes, OverQuota}`，
+  与 Go 契约 `{usedBytes, totalBytes}` 不符，已改齐。
+- 遗留：ARK 私有资产同步仍为桩（云 SDK 未移植，#25）→ 调用即 500 信封。
+
+### 54. `[取舍]` Cache-Control 响应头的合成顺序
+- 位置：`GET /resources/:id/oss-url`
+- 现状：Go 原样输出 `private, no-store`；ASP.NET 对已知响应头经类型化模型
+  重新合成，输出 `no-store, private`。指令集合与语义一致，仅顺序不同。
+- 处置建议：保持现状；除非发现前端/代理对顺序敏感，不值得绕过框架管道。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

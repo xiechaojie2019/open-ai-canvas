@@ -38,7 +38,8 @@ public sealed record ResourceStream(
 
 /// <summary>账号文件存储用量。对应 Go: <c>service.AccountFileStorageUsage</c>。</summary>
 public sealed record AccountFileStorageUsage(
-    long UsedBytes, long LimitBytes, bool OverQuota);
+    [property: System.Text.Json.Serialization.JsonPropertyName("usedBytes")] long UsedBytes,
+    [property: System.Text.Json.Serialization.JsonPropertyName("totalBytes")] long TotalBytes);
 
 /// <summary>
 /// 资源域服务。对应 Go: <c>app/resource.go</c> 的 CRUD 与投递部分。
@@ -89,9 +90,7 @@ public sealed class ResourceDomainService
         RuntimeResourcePolicy resource = _policyProvider.Current().Resource;
         long usedBytes = await _repository.UserStoredFileBytesAsync(userId, cancellationToken)
             .ConfigureAwait(false);
-        long limitBytes = Gigabyte * resource.StoredFileGB;
-        long limit = Math.Max(1, limitBytes);
-        return new AccountFileStorageUsage(usedBytes, limitBytes, usedBytes > limit);
+        return new AccountFileStorageUsage(usedBytes, Gigabyte * resource.StoredFileGB);
     }
 
     /// <summary>单个资源（剥离 publicURL）。对应 Go: <c>Resource</c>。</summary>
@@ -112,11 +111,7 @@ public sealed class ResourceDomainService
         string userId, string resourceId, CancellationToken cancellationToken = default) =>
         throw new NotImplementedException("Ark 私有资产同步依赖云 SDK（待确认 #25）");
 
-    /// <summary>从公网 URL 导入资源（依赖出站下载，待接）。对应 Go: <c>ImportResourceURL</c>。</summary>
-    public Task<Resource> ImportResourceUrlAsync(
-        string userId, string url, string kind, int width, int height, long durationMs,
-        CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("URL 导入依赖出站 HTTP 客户端（阶段 5 资源节点）");
+
 
     /// <summary>短时签名直链（云 provider）。对应 Go: <c>DirectResourceURL</c>。</summary>
     public async Task<string> DirectResourceUrlAsync(
@@ -153,13 +148,7 @@ public sealed class ResourceDomainService
             AcceptRanges: stream.AcceptRanges);
     }
 
-    /// <summary>资源 multipart 上传。对应 Go: <c>UploadResource</c>，留待资源上传节点。</summary>
-    public Task<Resource> UploadResourceAsync(
-        string userId, string fileName, byte[] data, string contentType,
-        string kind, int width, int height, long durationMs,
-        CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("multipart 上传依赖文件系统 + Outbox（阶段 5 资源节点）");
-
+    
     /// <summary>
     /// 匿名签名下发：校验 expires/signature 后打开资源流。
     /// 对应 Go: <c>OpenPublicResourceRange</c>。
