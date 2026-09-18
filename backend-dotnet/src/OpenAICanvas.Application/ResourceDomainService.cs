@@ -198,6 +198,17 @@ public sealed class ResourceDomainService
     }
 
     /// <summary>
+    /// 按资源实体直接打开流（管理员下发用，跳过归属校验）。
+    /// 对应 Go: <c>Service.openResourceRange(resource.UserID, resource, rangeHeader)</c>。
+    /// </summary>
+    public Task<ResourceStream> OpenResourceForOwnerAsync(
+        Resource resource, string? rangeHeader, CancellationToken cancellationToken = default)
+    {
+        resource.Provider = string.IsNullOrWhiteSpace(resource.Provider) ? "local" : resource.Provider.Trim();
+        return OpenResourceRangeAsync(resource, rangeHeader, cancellationToken);
+    }
+
+    /// <summary>
     /// 资源响应 ETag。无 ETag 时回落到 <c>ID-Size-UpdatedAtTicks</c>，与 Go 的 UnixNano 语义一致。
     /// 对应 Go: <c>resourceResponseETag</c>。
     /// </summary>

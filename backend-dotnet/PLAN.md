@@ -299,7 +299,7 @@ backend-dotnet/
 | 7.1 | 画布工程与单元 | `internal/canvas` | ✅ CRUD/同步校验/媒体守卫/配额（快照 replace 待接） |
 | 7.2 | 画布能力校验 | `canvas/capability` | ✅ 媒体资产守卫（assetId+resourceID 配对校验） |
 | 7.3 | 画布分享（公开 token） | `handler/canvas_share.go` + 日志脱敏 | ✅ CRUD/公开投影脱敏/资源代理（Range 待接，#26） |
-| 7.4 | 画布状态与外观 | `app/appearance*.go` | ☐ |
+| 7.4 | 画布状态与外观 | `app/appearance*.go` | ✅ 品牌/登录页素材/皮肤主题（4 套内置+校验）/SEO 全量；公开读取 + 管理端读写 + 资源上传下发 |
 
 ### 阶段 8 · 财务与支付（29 + 21 条路由）
 
@@ -318,7 +318,7 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 9.1 | 管理员审计事件 | `model.AdminAuditEvent` | ✅ 写入/分页/按目标查询 |
 | 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | 🟡 API 日志/导出/存储统计完成；overview 待活跃表写入（#20） |
-| 9.3 | 存储管理 | `handler/admin_storage.go` | 🟡 存储统计完成；资源列表/删除/文件下发待做 |
+| 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
 | 9.5 | 系统性能 | `handler/admin_system_performance.go` | ☐ |
 | 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/公告完成；OSS/外观/响应拦截/ARK/LibTV 待做 |
