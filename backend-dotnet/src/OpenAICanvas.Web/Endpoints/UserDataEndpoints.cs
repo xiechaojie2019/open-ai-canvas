@@ -1605,6 +1605,125 @@ public static class UserDataEndpoints
         });
     }
 
+    /// <summary>
+    /// 项目素材关联路由。对应 Go: <c>handler/project.go</c> 的 assets 部分与版本创建。
+    /// </summary>
+    public static void MapProjectAssetLinkRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/projects/{id}/assets", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectAssetFilter filter = new()
+                {
+                    Category = context.Request.Query["category"].ToString(),
+                    MediaType = context.Request.Query["mediaType"].ToString(),
+                    Status = context.Request.Query["status"].ToString(),
+                    FolderId = context.Request.Query.ContainsKey("folderId")
+                        ? context.Request.Query["folderId"].ToString()
+                        : "",
+                    Query = context.Request.Query["q"].ToString(),
+                };
+                List<ProjectAssetSummaryDto> assets = await service.ProjectAssetsAsync(
+                    user.ID, id, filter, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { assets });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/assets", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                LinkProjectAssetRequest? request = await ReadJsonAsync<LinkProjectAssetRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectAssetSummaryDto asset = await service.LinkProjectAssetAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { asset });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/assets/{assetId}", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.UnlinkProjectAssetAsync(user.ID, id, assetId, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { id = assetId });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}/assets/{assetId}", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UpdateProjectAssetRequest? request = await ReadJsonAsync<UpdateProjectAssetRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectAssetSummaryDto asset = await service.UpdateProjectAssetAsync(
+                    user.ID, id, assetId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { asset });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/assets/{assetId}/versions", async (
+            HttpContext context, string id, string assetId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateAssetVersionRequest? request = await ReadJsonAsync<CreateAssetVersionRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                AssetVersion version = await service.CreateProjectAssetVersionAsync(
+                    user.ID, id, assetId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { version });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
     /// <summary>对应 Go: <c>hasUserAssetPageFilters</c>。</summary>
     private static bool HasUserAssetPageFilters(HttpContext context)
     {

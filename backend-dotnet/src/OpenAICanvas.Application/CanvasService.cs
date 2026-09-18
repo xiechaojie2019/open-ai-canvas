@@ -67,6 +67,7 @@ public sealed class CanvasService
         Projects = new ProjectService(repository);
         ProjectUnits = new ProjectUnitService(repository);
         ProjectAssetFolders = new ProjectAssetFolderService(repository);
+        ProjectAssets = new ProjectAssetService(repository);
         StyleProfiles = new StyleProfileService(repository);
         Announcements = new AnnouncementService(repository);
         AdminAnalytics = new AdminAnalyticsService(repository);
@@ -114,6 +115,8 @@ public sealed class CanvasService
     public ProjectUnitService ProjectUnits { get; }
 
     public ProjectAssetFolderService ProjectAssetFolders { get; }
+
+    public ProjectAssetService ProjectAssets { get; }
 
     public StyleProfileService StyleProfiles { get; }
 
@@ -276,6 +279,52 @@ public sealed class CanvasService
     public Task<AdminStorageStatsDto> AdminStorageStatsAsync(
         User actor, CancellationToken cancellationToken = default) =>
         AdminAnalytics.StorageStatsAsync(actor, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.ProjectAssets</c>。</summary>
+    public Task<List<ProjectAssetSummaryDto>> ProjectAssetsAsync(
+        string userId, string projectId, ProjectAssetFilter? filter = null,
+        CancellationToken cancellationToken = default) =>
+        ProjectAssets.ProjectAssetsAsync(userId, projectId, filter, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.ProjectAssetsPage</c>。</summary>
+    public Task<object> ProjectAssetsPageAsync(
+        string userId, string projectId, int page, int pageSize,
+        string category, string mediaType, string status, string? folderId, string query,
+        CancellationToken cancellationToken = default) =>
+        ProjectAssets.ProjectAssetsPageAsync(
+            userId, projectId, page, pageSize,
+            new ProjectAssetFilter
+            {
+                Category = category,
+                MediaType = mediaType,
+                Status = status,
+                FolderId = folderId ?? "",
+                Query = query,
+            },
+            cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.LinkProjectAsset</c>。</summary>
+    public Task<ProjectAssetSummaryDto> LinkProjectAssetAsync(
+        string userId, string projectId, LinkProjectAssetRequest request,
+        CancellationToken cancellationToken = default) =>
+        ProjectAssets.LinkProjectAssetAsync(userId, projectId, request, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.UnlinkProjectAsset</c>。</summary>
+    public Task UnlinkProjectAssetAsync(
+        string userId, string projectId, string assetId, CancellationToken cancellationToken = default) =>
+        ProjectAssets.UnlinkProjectAssetAsync(userId, projectId, assetId, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.UpdateProjectAsset</c>。</summary>
+    public Task<ProjectAssetSummaryDto> UpdateProjectAssetAsync(
+        string userId, string projectId, string assetId, UpdateProjectAssetRequest request,
+        CancellationToken cancellationToken = default) =>
+        ProjectAssets.UpdateProjectAssetAsync(userId, projectId, assetId, request, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.CreateProjectAssetVersion</c>。</summary>
+    public Task<AssetVersion> CreateProjectAssetVersionAsync(
+        string userId, string projectId, string assetId, CreateAssetVersionRequest request,
+        CancellationToken cancellationToken = default) =>
+        ProjectAssets.CreateProjectAssetVersionAsync(userId, projectId, assetId, request, cancellationToken);
 
     /// <summary>对应 Go: <c>Service.UserAnnouncements</c>。</summary>
     public Task<UserAnnouncementFeedDto> UserAnnouncementsAsync(

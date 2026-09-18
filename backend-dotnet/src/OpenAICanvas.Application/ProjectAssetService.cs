@@ -135,6 +135,8 @@ public sealed class ProjectAssetFilter
     public string MediaType { get; set; } = "";
     public string Status { get; set; } = "";
     public string Usage { get; set; } = "";
+    public string FolderId { get; set; } = "";
+    public string Query { get; set; } = "";
 }
 
 /// <summary>
@@ -234,6 +236,47 @@ public sealed class ProjectAssetService
     /// 素材可能还不存在：媒体导入只落 <c>resources</c> 表，首次链接时按资源元数据
     /// 合成资产记录，避免「资源存在但无资产记录」导致导入永远失败。
     /// </remarks>
+    /// <summary>项目素材分页。对应 Go: <c>ProjectAssetsPage</c>。</summary>
+    public async Task<object> ProjectAssetsPageAsync(
+        string userId, string projectId, int page, int pageSize, ProjectAssetFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireProjectAsync(userId, projectId, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<Asset> assets = await _repository
+            .ProjectAssetsAsync(userId, projectId, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ProjectAssetLink> links = await _repository
+            .ProjectAssetLinksAsync(projectId, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, ProjectAssetLink> linkByAsset = links.ToDictionary(l => l.AssetID, StringComparer.Ordinal);
+
+        List<ProjectAssetSummaryDto> items = [];
+        foreach (Asset asset in assets)
+        {
+            if (filter.Category.Length > 0 && asset.Category != filter.Category) continue;
+            if (filter.MediaType.Length > 0 && asset.Kind != filter.MediaType) continue;
+            if (filter.Status.Length > 0 && asset.Status != filter.Status) continue;
+            if (filter.FolderId.Length > 0 &&
+                (!linkByAsset.TryGetValue(asset.ID, out ProjectAssetLink? link) ||
+                 link.FolderID != filter.FolderId)) continue;
+            if (filter.Query.Length > 0 &&
+                !asset.Title.Contains(filter.Query, StringComparison.OrdinalIgnoreCase) &&
+                !asset.PayloadJSON.Contains(filter.Query, StringComparison.OrdinalIgnoreCase)) continue;
+            items.Add(await BuildSummaryAsync(userId, projectId, asset, cancellationToken).ConfigureAwait(false));
+        }
+
+        long total = items.Count;
+        List<ProjectAssetSummaryDto> paged = items
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+        return new
+        {
+            assets = (IReadOnlyList<ProjectAssetSummaryDto>)paged,
+            total,
+            page,
+            pageSize,
+        };
+    }
+
     public async Task<ProjectAssetSummaryDto> LinkProjectAssetAsync(
         string userId, string projectId, LinkProjectAssetRequest request,
         CancellationToken cancellationToken = default)
