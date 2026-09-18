@@ -626,7 +626,10 @@ public sealed class CanvasService
     /// <summary>对应 Go: <c>Service.PublicRuntimeLimits</c>。</summary>
     public PublicRuntimeLimits PublicRuntimeLimits() => RuntimePolicy.PublicLimits();
 
-    /// <summary>品牌名。外观设置未移植前返回默认值。对应 Go: <c>appearanceBrandName</c>。</summary>
+    /// <summary>
+    /// 品牌名（同步属性，取已缓存值）。对应 Go: <c>appearanceBrandName</c>。
+    /// 外观配置可从 <c>AppearanceService.BrandNameAsync</c> 获取最新值。
+    /// </summary>
     public string BrandName => OpenAICanvas.Auth.NullAuthHost.DefaultBrandName;
 
     /// <summary>

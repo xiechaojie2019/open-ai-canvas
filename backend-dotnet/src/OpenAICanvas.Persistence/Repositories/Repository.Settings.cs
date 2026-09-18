@@ -107,4 +107,15 @@ public sealed partial class Repository
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>删除系统设置（不存在时静默）。对应 Go: <c>r.DeleteSystemSetting</c>。</summary>
+    public async Task DeleteSystemSettingAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(
+            connection,
+            "DELETE FROM \"system_settings\" WHERE \"key\" = @key",
+            new { key },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
 }

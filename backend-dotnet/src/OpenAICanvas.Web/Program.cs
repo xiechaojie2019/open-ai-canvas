@@ -113,6 +113,25 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
         env.DataDir));
+// 外观配置（品牌标识 / 皮肤主题 / 登录页素材）。对应 Go 的 app/appearance*.go。
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.Appearance.AppearanceService(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
+        env.DataDir));
+// 资源删除与物理清理（Outbox + drain）。对应 Go 的 app/resource_delete.go。
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.ResourceDeleteService(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        env.DataDir));
+// 管理端存储管理（资源分页 / 批量删除 / 直连下发）。对应 Go 的 app/admin_storage*.go。
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.AdminStorageService(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDeleteService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.Appearance.AppearanceService>()));
 
 WebApplication app = builder.Build();
 
@@ -191,6 +210,18 @@ api.MapChunkedUploadRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.ChunkedUploadSessions>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
+// 外观配置路由。对应 Go 的 handler.RegisterAppearanceRoutes。
+api.MapAppearanceRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.Appearance.AppearanceService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
+// 管理端存储管理路由。对应 Go 的 handler.RegisterAdminStorageRoutes。
+api.MapAdminStorageRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.AdminStorageService>());
 
 // 资源文件下发路由（鉴权 + 匿名签名）。对应 Go 的 GET /resources/:id/file 等。
 api.MapResourceDeliveryRoutes(

@@ -193,11 +193,13 @@
   影响面暂不可见；但阶段 6 工作台读视图接入前必须补齐。
 - 处置建议：阶段 6.7（工作流模板与实例）移植时补默认工作流生成与回滚逻辑。
 
-### 28. `[待移植]` 公告配图上传与 OSS/外观/响应拦截设置
+### 28. `[待移植]` 公告配图上传与 OSS/响应拦截设置
 - 位置：`MapAnnouncementRoutes` 的 `/admin/announcement-images`（POST）、
-  `/admin/settings/{oss,appearance,response-interception,ark-private-assets}`
+  `/admin/settings/{oss,response-interception,ark-private-assets}`
 - 现状：公告配图的**草稿消费/丢弃/下发**已完整移植；上传（multipart + 图片嗅探）
-  依赖资源上传链路；OSS/外观/响应拦截/ARK 设置依赖云 SDK 与外观资源存储。
+  依赖资源上传链路待接；OSS/响应拦截/ARK 设置依赖云 SDK。
+- **已补齐（2026-09-18）**：`/admin/settings/appearance` 全量（阶段 7.4），
+  含公开读取、管理端读写、皮肤主题校验、外观资源上传与匿名下发。
 - 处置建议：随阶段 5 资源上传节点一并补齐。
 
 ### 29. `[待移植]` 任务创建与执行引擎（阶段 4 主体）
