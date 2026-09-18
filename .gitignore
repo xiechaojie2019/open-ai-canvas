@@ -85,3 +85,4 @@ backend-dotnet/.vs/
 backend-dotnet/artifacts/
 backend-dotnet/TestResults/
 backend-dotnet/.tmp/
+/backend-dotnet/.codebuddy/memory
