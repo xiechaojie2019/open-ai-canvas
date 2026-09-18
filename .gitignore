@@ -68,3 +68,8 @@ camera_language_guide.md
 
 # Local backend executable; never commit build output.
 backend/cmd/server/server
+
+# 翻译工作区临时产物
+.workbuddy-ai/
+backend/go-routes.txt
+pelican-bicycle.svg

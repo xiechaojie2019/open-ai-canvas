@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    测试用的支付插件进程。实现 yingce.payment/v1 的 stdio JSON 协议，
+    用于端到端验证宿主侧的 RpcPaymentProvider（真实起进程、真实管道通信）。
+    不参与生产部署。
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OpenAICanvas.PaymentTestPlugin</RootNamespace>
+    <AssemblyName>OpenAICanvas.PaymentTestPlugin</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

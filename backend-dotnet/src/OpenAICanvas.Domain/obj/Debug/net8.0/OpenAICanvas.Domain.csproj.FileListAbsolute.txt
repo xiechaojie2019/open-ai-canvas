@@ -1,0 +1,12 @@
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\bin\Debug\net8.0\OpenAICanvas.Domain.deps.json
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\bin\Debug\net8.0\OpenAICanvas.Domain.dll
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\bin\Debug\net8.0\OpenAICanvas.Domain.pdb
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.AssemblyInfoInputs.cache
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.AssemblyInfo.cs
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.csproj.CoreCompileInputs.cache
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.sourcelink.json
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.dll
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\refint\OpenAICanvas.Domain.dll
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\OpenAICanvas.Domain.pdb
+C:\GIT\open-ai-canvas\backend-dotnet\src\OpenAICanvas.Domain\obj\Debug\net8.0\ref\OpenAICanvas.Domain.dll

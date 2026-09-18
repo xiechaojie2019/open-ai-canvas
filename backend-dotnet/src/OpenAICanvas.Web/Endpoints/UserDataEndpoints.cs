@@ -1,0 +1,1748 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using OpenAICanvas.Application;
+using OpenAICanvas.Domain.Entities;
+using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Platform;
+using OpenAICanvas.Web.Http;
+using OpenAICanvas.Web.Security;
+using OpenAICanvas.Web.Serialization;
+
+namespace OpenAICanvas.Web.Endpoints;
+
+/// <summary>
+/// 画布工程 CRUD 路由。对应 Go: <c>internal/handler/user_data.go</c> 的 canvas-projects 部分。
+/// </summary>
+public static class UserDataEndpoints
+{
+    /// <summary>画布保存请求体上限 5MB。对应 Go: <c>5&lt;&lt;20</c>。</summary>
+    private const long CanvasBodyLimit = 5 << 20;
+
+    public static void MapUserDataRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        IRateLimiter limiter,
+        IRuntimePolicyProvider policyProvider)
+    {
+        // ------------------------------------------------------------ 项目（阶段 6 节点 A）
+
+        api.MapGet("/projects", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                string pageParam = context.Request.Query["page"].ToString();
+                string pageSizeParam = context.Request.Query["pageSize"].ToString();
+                if (string.IsNullOrEmpty(pageParam) && string.IsNullOrEmpty(pageSizeParam))
+                {
+                    IReadOnlyList<ProjectSummaryDto> projectSummaries = await service.ListProjectsAsync(
+                        user.ID, cancellationToken).ConfigureAwait(false);
+                    return ApiResults.Ok(new { projects = projectSummaries });
+                }
+                int page = ParsePositiveQueryInt(pageParam, 1, out string? pageError);
+                if (pageError is not null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException("page: " + pageError));
+                }
+                int pageSize = ParsePositiveQueryInt(pageSizeParam, 50, out string? sizeError);
+                if (sizeError is not null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException("pageSize: " + sizeError));
+                }
+                ProjectListPageDto pageResult = await service.ListProjectsPageAsync(
+                    user.ID, page, pageSize, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(pageResult);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateProjectRequest? request = await ReadJsonAsync<CreateProjectRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Project project = await service.CreateProjectAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { project });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UpdateProjectRequest? request = await ReadJsonAsync<UpdateProjectRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Project project = await service.UpdateProjectAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { project });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteProjectAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/assets/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteUserAssetAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/canvas-projects", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(context.Request.Query["page"]))
+                {
+                    (int page, int pageSize, string? error) = ParsePagination(context, 40);
+                    if (error is not null)
+                    {
+                        return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException(error));
+                    }
+                    CanvasLibraryPageDto result = await service.UserCanvasProjectsPageAsync(
+                        user.ID,
+                        page,
+                        pageSize,
+                        context.Request.Query["projectId"].ToString(),
+                        context.Request.Query["q"].ToString(),
+                        context.Request.Query["sort"].ToString(),
+                        cancellationToken).ConfigureAwait(false);
+                    return ApiResults.Ok(result);
+                }
+                List<UserDataSummaryDto> projects = await service.UserCanvasProjectSummariesAsync(
+                    user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { projects });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/canvas-projects/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement project = await service.UserCanvasProjectAsync(user.ID, id, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { project });
+            }
+            catch (Exception error)
+            {
+                // Go: fail(c, 404, err)——不存在时 HTTP 404 + 原始错误文案。
+                if (error is InvalidOperationException)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status404NotFound,
+                        new InvalidOperationException("record not found"));
+                }
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/canvas-projects/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                RuntimeRequestPolicy policy = policyProvider.Current().Request;
+                if (!await AuthEndpoints.EnforceRateLimitAsync(
+                        context, limiter, "canvas-write:" + user.ID,
+                        policy.CanvasWritePerMinute, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                {
+                    return Results.Empty;
+                }
+
+                JsonElement? request = await ReadJsonAsync(context, CanvasBodyLimit, cancellationToken)
+                    .ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                // project 字段里的 id 必须与路径一致。
+                if (!request.Value.TryGetProperty("project", out JsonElement projectElement) ||
+                    !projectElement.TryGetProperty("id", out JsonElement idElement) ||
+                    idElement.GetString() != id)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        AppError.BadAuthRequest("画布 ID 与请求路径不一致"));
+                }
+
+                UserDataSummaryDto project = await service.UpsertUserCanvasProjectAsync(
+                    user.ID, projectElement, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { project });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        // ------------------------------------------------------------ 素材库（节点 B）
+
+        api.MapPost("/assets/batch", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                List<string>? ids = await ReadStringListAsync(context, "ids", maxBytes: 16 << 10, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ids is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                List<JsonElement> assets = await service.UserAssetsByIDsAsync(
+                    user.ID, ids, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { assets });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/assets", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                bool paged = !string.IsNullOrEmpty(context.Request.Query["page"]) ||
+                             HasUserAssetPageFilters(context);
+                if (paged)
+                {
+                    (int page, int pageSize, string? pageError) = ParsePagination(context, 40);
+                    if (pageError is not null)
+                    {
+                        return ApiResults.Fail(
+                            StatusCodes.Status400BadRequest,
+                            new InvalidOperationException(pageError));
+                    }
+                    string? folderId = context.Request.Query.ContainsKey("folderId")
+                        ? context.Request.Query["folderId"].ToString()
+                        : null;
+                    UserAssetPageDto assets = await service.UserAssetsPageAsync(
+                        user.ID,
+                        page,
+                        pageSize,
+                        context.Request.Query["kind"].ToString(),
+                        context.Request.Query["category"].ToString(),
+                        folderId,
+                        context.Request.Query["uncategorized"].ToString() == "1",
+                        context.Request.Query["status"].ToString(),
+                        context.Request.Query["q"].ToString(),
+                        cancellationToken).ConfigureAwait(false);
+                    return ApiResults.Ok(assets);
+                }
+                List<UserDataSummaryDto> summaries = await service.UserAssetSummariesAsync(
+                    user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { assets = summaries });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/asset-folders", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                IReadOnlyList<AssetFolder> folders = await service.AssetFoldersAsync(
+                    user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { folders });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/asset-folders", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement? request = await ReadJsonAsync(context, 0, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                string name = request.Value.TryGetProperty("name", out JsonElement nameElement) &&
+                              nameElement.ValueKind == JsonValueKind.String
+                    ? nameElement.GetString() ?? ""
+                    : "";
+                AssetFolder folder = await service.CreateAssetFolderAsync(
+                    user.ID, name, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { folder });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/asset-folders/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement? request = await ReadJsonAsync(context, 0, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                string name = request.Value.TryGetProperty("name", out JsonElement nameElement) &&
+                              nameElement.ValueKind == JsonValueKind.String
+                    ? nameElement.GetString() ?? ""
+                    : "";
+                AssetFolder folder = await service.UpdateAssetFolderAsync(
+                    user.ID, id, name, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { folder });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/asset-folders/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteAssetFolderAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/assets/folder", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement? request = await ReadJsonAsync(context, 0, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                List<string> assetIds = [];
+                if (request.Value.TryGetProperty("assetIds", out JsonElement idsElement) &&
+                    idsElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement item in idsElement.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            assetIds.Add(item.GetString() ?? "");
+                        }
+                    }
+                }
+                string folderId = request.Value.TryGetProperty("folderId", out JsonElement folderElement) &&
+                                  folderElement.ValueKind == JsonValueKind.String
+                    ? folderElement.GetString() ?? ""
+                    : "";
+                (IReadOnlyList<string> movedIds, string movedFolderId) = await service
+                    .MoveUserAssetsToFolderAsync(user.ID, assetIds, folderId, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { assetIds = movedIds, folderId = movedFolderId });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/user-data/snapshot", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (List<JsonElement> assets, List<JsonElement> projects) = await service.UserDataSnapshotAsync(
+                    user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { assets, projects });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/assets/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement asset = await service.UserAssetAsync(user.ID, id, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { asset });
+            }
+            catch (Exception error)
+            {
+                if (error is InvalidOperationException)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status404NotFound,
+                        new InvalidOperationException("record not found"));
+                }
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/assets/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                RuntimeRequestPolicy policy = policyProvider.Current().Request;
+                if (!await AuthEndpoints.EnforceRateLimitAsync(
+                        context, limiter, "assets-write:" + user.ID,
+                        policy.AssetWritePerMinute, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                {
+                    return Results.Empty;
+                }
+
+                JsonElement? request = await ReadJsonAsync(context, CanvasBodyLimit, cancellationToken)
+                    .ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                if (!request.Value.TryGetProperty("asset", out JsonElement assetElement) ||
+                    !assetElement.TryGetProperty("id", out JsonElement idElement) ||
+                    idElement.GetString() != id)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        AppError.BadAuthRequest("素材 ID 与请求路径不一致"));
+                }
+                UserDataSummaryDto asset = await service.UpsertUserAssetAsync(
+                    user.ID, assetElement, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { asset });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/canvas-projects/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteUserCanvasProjectAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 画布分享路由。对应 Go: <c>handler.RegisterCanvasShareRoutes</c>。
+    /// </summary>
+    public static void MapCanvasShareRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        IRateLimiter limiter,
+        string dataDir)
+    {
+        api.MapGet("/canvas-projects/{id}/share", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CanvasShareStatusDto share = await service.CanvasShareStatusAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { share });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("画布不存在"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/canvas-projects/{id}/share", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement? request = await ReadJsonAsync(context, maxBytes: 8 << 10, cancellationToken)
+                    .ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                int expiresDays = request.Value.TryGetProperty("expiresDays", out JsonElement days) &&
+                                  days.ValueKind == JsonValueKind.Number
+                    ? days.GetInt32()
+                    : 0;
+                bool rotate = request.Value.TryGetProperty("rotate", out JsonElement rotateElement) &&
+                              rotateElement.ValueKind == JsonValueKind.True;
+                CanvasShareStatusDto share = await service.CreateCanvasShareAsync(
+                    user.ID, id, expiresDays, rotate, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { share });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/canvas-projects/{id}/share", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteCanvasShareAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/public/canvas-shares/{token}", async (HttpContext context, string token, CancellationToken cancellationToken) =>
+        {
+            if (!await AuthEndpoints.EnforceRateLimitAsync(
+                    context, limiter, "public-canvas:" + AuthEndpoints.ClientIp(context),
+                    120, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+            {
+                return Results.Empty;
+            }
+            try
+            {
+                PublicCanvasShareDto share = await service.PublicCanvasShareAsync(token, cancellationToken)
+                    .ConfigureAwait(false);
+                context.Response.Headers["Cache-Control"] = "no-store";
+                context.Response.Headers["Referrer-Policy"] = "no-referrer";
+                context.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+                return ApiResults.Ok(share);
+            }
+            catch
+            {
+                return ApiResults.Fail(
+                    StatusCodes.Status404NotFound,
+                    new InvalidOperationException("分享链接无效或已失效"));
+            }
+        });
+
+        api.MapGet("/public/canvas-shares/{token}/resources/{resourceId}/file", async (
+            HttpContext context,
+            string token,
+            string resourceId,
+            CancellationToken cancellationToken) =>
+        {
+            if (!await AuthEndpoints.EnforceRateLimitAsync(
+                    context, limiter, "public-canvas-resource:" + AuthEndpoints.ClientIp(context),
+                    300, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+            {
+                return Results.Empty;
+            }
+            try
+            {
+                (Domain.Entities.Resource resource, string path) = await service
+                    .PrepareSharedCanvasResourceDeliveryAsync(token, resourceId, dataDir, cancellationToken)
+                    .ConfigureAwait(false);
+
+                context.Response.Headers["Cache-Control"] = "no-store";
+                context.Response.Headers["Content-Security-Policy"] = "sandbox";
+                context.Response.Headers["Referrer-Policy"] = "no-referrer";
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                context.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+                context.Response.Headers["Accept-Ranges"] = "bytes";
+                context.Response.ContentType = string.IsNullOrEmpty(resource.MimeType)
+                    ? "application/octet-stream"
+                    : resource.MimeType;
+                await context.Response.SendFileAsync(path, cancellationToken).ConfigureAwait(false);
+                return Results.Empty;
+            }
+            catch
+            {
+                return ApiResults.Fail(
+                    StatusCodes.Status404NotFound,
+                    new InvalidOperationException("分享资源不存在"));
+            }
+        });
+    }
+
+    /// <summary>
+    /// 平台设置管理路由。对应 Go: <c>handler/finance.go</c> / <c>auth.go</c> 的设置部分。
+    /// </summary>
+    public static void MapAdminSettingsRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/admin/settings/registration", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Auth.PublicRegistrationSetting setting = await service.AdminRegistrationSettingAsync(
+                    actor, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/admin/settings/registration", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Auth.RegistrationSettingRequest? request = await ReadJsonAsync<Auth.RegistrationSettingRequest>(
+                    context, 16 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Auth.PublicRegistrationSetting setting = await service.UpdateRegistrationSettingAsync(
+                    actor, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/settings/email", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Auth.PublicEmailSetting setting = await service.AdminEmailSettingAsync(
+                    actor, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/admin/settings/email", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Auth.EmailSettingRequest? request = await ReadJsonAsync<Auth.EmailSettingRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Auth.PublicEmailSetting setting = await service.UpdateEmailSettingAsync(
+                    actor, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/settings/linuxdo", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Auth.PublicLinuxDOSetting setting = await service.AdminLinuxDOSettingAsync(
+                    actor, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/admin/settings/linuxdo", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Auth.LinuxDOSettingRequest? request = await ReadJsonAsync<Auth.LinuxDOSettingRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Auth.PublicLinuxDOSetting setting = await service.UpdateLinuxDOSettingAsync(
+                    actor, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/settings/credits", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreditPolicy policy = await service.AdminCreditPolicyAsync(actor, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { policy });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/admin/settings/credits", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreditPolicy? policy = await ReadJsonAsync<CreditPolicy>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (policy is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                CreditPolicy updated = await service.UpdateCreditPolicyAsync(
+                    actor, policy, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { policy = updated });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 公告路由。对应 Go: <c>handler/announcement.go</c>（配图上传待资源节点）。
+    /// </summary>
+    public static void MapAnnouncementRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        string dataDir)
+    {
+        api.MapGet("/announcements", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UserAnnouncementFeedDto feed = await service.UserAnnouncementsAsync(user, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(feed);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/announcements/read", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement? request = await ReadJsonAsync(context, 64 << 10, cancellationToken)
+                    .ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                List<string> ids = [];
+                if (request.Value.TryGetProperty("announcementIds", out JsonElement idsElement) &&
+                    idsElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement item in idsElement.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            ids.Add(item.GetString() ?? "");
+                        }
+                    }
+                }
+                long unreadCount = await service.MarkAnnouncementsReadAsync(user, ids, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { unreadCount });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/announcements/{id}/image", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Domain.Entities.Resource resource = await service.OpenAnnouncementImageAsync(
+                    user, id, cancellationToken).ConfigureAwait(false);
+
+                context.Response.Headers["Cache-Control"] = "private, max-age=3600";
+                context.Response.Headers["Referrer-Policy"] = "no-referrer";
+                context.Response.Headers["Accept-Ranges"] = "bytes";
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                context.Response.ContentType = string.IsNullOrEmpty(resource.MimeType)
+                    ? "application/octet-stream"
+                    : resource.MimeType;
+
+                if (resource.Provider.Trim() is "" or "local")
+                {
+                    string relativeKey = resource.ObjectKey.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+                    string root = Path.GetFullPath(Path.Combine(dataDir, "resources"));
+                    string path = Path.GetFullPath(Path.Combine(root, relativeKey));
+                    if (path.StartsWith(root, StringComparison.Ordinal) && File.Exists(path))
+                    {
+                        await context.Response.SendFileAsync(path, cancellationToken).ConfigureAwait(false);
+                        return Results.Empty;
+                    }
+                }
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("公告配图不存在"));
+            }
+            catch (AppError error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/announcements", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (int page, int pageSize, string? error) = ParsePagination(context, 20);
+                if (error is not null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException(error));
+                }
+                AnnouncementPageDto result = await service.AdminAnnouncementPageAsync(
+                    actor,
+                    context.Request.Query["keyword"].ToString(),
+                    context.Request.Query["status"].ToString(),
+                    page,
+                    pageSize,
+                    cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/announcements", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AnnouncementRequest? request = await ReadJsonAsync<AnnouncementRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.Announcement announcement = await service.CreateAnnouncementAsync(
+                    actor, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { announcement });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/admin/announcements/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AnnouncementRequest? request = await ReadJsonAsync<AnnouncementRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.Announcement announcement = await service.UpdateAnnouncementAsync(
+                    actor, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { announcement });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/announcements/{id}/close", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Domain.Entities.Announcement announcement = await service.CloseAnnouncementAsync(
+                    actor, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { announcement });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/admin/announcement-images/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DiscardAnnouncementImageAsync(actor, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { ok = true });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 管理后台日志与存储路由。对应 Go: <c>handler/auth.go</c> 日志部分与
+    /// <c>handler/admin_storage.go</c> 统计部分。
+    /// </summary>
+    public static void MapAdminAnalyticsRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/admin/api-logs", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (int page, int pageSize, string? error) = ParsePagination(context, 50);
+                if (error is not null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException(error));
+                }
+                OpenAICanvas.Persistence.Repositories.AnalyticsFilter analytics =
+                    AdminAnalyticsService.NormalizeFilter(
+                        context.Request.Query["from"].ToString(),
+                        context.Request.Query["to"].ToString(),
+                        context.Request.Query["userId"].ToString(),
+                        context.Request.Query["model"].ToString(),
+                        context.Request.Query["channelId"].ToString(),
+                        context.Request.Query["capability"].ToString());
+                ApiCallLogPageDto logs = await service.AdminApiCallLogsAsync(
+                    actor,
+                    new OpenAICanvas.Persistence.Repositories.ApiCallLogFilter(
+                        analytics,
+                        context.Request.Query["recordType"].ToString(),
+                        context.Request.Query["keyword"].ToString(),
+                        context.Request.Query["status"].ToString(),
+                        page,
+                        pageSize),
+                    cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(logs);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/api-logs/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Domain.Entities.ApiCallLog log = await service.AdminApiCallLogAsync(actor, id, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { log });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/api-logs-export.csv", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                OpenAICanvas.Persistence.Repositories.AnalyticsFilter analytics =
+                    AdminAnalyticsService.NormalizeFilter(
+                        context.Request.Query["from"].ToString(),
+                        context.Request.Query["to"].ToString(),
+                        context.Request.Query["userId"].ToString(),
+                        context.Request.Query["model"].ToString(),
+                        context.Request.Query["channelId"].ToString(),
+                        context.Request.Query["capability"].ToString());
+                string csv = await service.AdminApiCallLogsExportCsvAsync(
+                    actor,
+                    new OpenAICanvas.Persistence.Repositories.ApiCallLogFilter(
+                        analytics,
+                        context.Request.Query["recordType"].ToString(),
+                        context.Request.Query["keyword"].ToString(),
+                        context.Request.Query["status"].ToString(),
+                        1,
+                        5000),
+                    cancellationToken).ConfigureAwait(false);
+                return Results.Text(csv, "text/csv; charset=utf-8", System.Text.Encoding.UTF8);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/storage/stats", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AdminStorageStatsDto stats = await service.AdminStorageStatsAsync(actor, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(stats);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 项目单元与画布链接路由。对应 Go: <c>handler/project.go</c> 的单元/链接部分。
+    /// </summary>
+    public static void MapProjectUnitRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapPost("/projects/{id}/units", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateProjectUnitRequest? request = await ReadJsonAsync<CreateProjectUnitRequest>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.ProjectUnit unit = await service.CreateProjectUnitAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { unit });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/projects/{id}/units", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectUnitSummariesDto units = await service.ProjectUnitSummariesAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(units);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/projects/{id}/units/{unitId}", async (
+            HttpContext context, string id, string unitId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Domain.Entities.ProjectUnit unit = await service.GetProjectUnitAsync(
+                    user.ID, id, unitId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { unit });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/units/import", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ImportProjectUnitsRequest? request = await ReadJsonAsync<ImportProjectUnitsRequest>(
+                    context, 32 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                IReadOnlyList<Domain.Entities.ProjectUnit> units = await service.ImportProjectUnitsAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                // 导入响应只返回标识与摘要，正文不回传。
+                foreach (Domain.Entities.ProjectUnit unit in units)
+                {
+                    unit.SourceText = "";
+                }
+                return ApiResults.Ok(new { units });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}/units/reorder", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ReorderProjectUnitsRequest? request = await ReadJsonAsync<ReorderProjectUnitsRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                await service.ReorderProjectUnitsAsync(user.ID, id, request, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { unitIds = request.UnitIDs ?? [] });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}/units/{unitId}", async (
+            HttpContext context, string id, string unitId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UpdateProjectUnitRequest? request = await ReadJsonAsync<UpdateProjectUnitRequest>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.ProjectUnit unit = await service.UpdateProjectUnitAsync(
+                    user.ID, id, unitId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { unit });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/units/{unitId}", async (
+            HttpContext context, string id, string unitId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteProjectUnitAsync(user.ID, id, unitId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id = unitId });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/canvas-links", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                LinkCanvasUnitRequest? request = await ReadJsonAsync<LinkCanvasUnitRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.CanvasUnitLink link = await service.LinkCanvasUnitAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { link });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/canvas-links/{canvasId}/units/{unitId}", async (
+            HttpContext context, string id, string canvasId, string unitId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.UnlinkCanvasUnitAsync(user.ID, id, canvasId, unitId, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { ok = true });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 项目素材文件夹路由。对应 Go: <c>handler/project.go</c> 的 asset-folders 部分。
+    /// </summary>
+    public static void MapProjectAssetFolderRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/projects/{id}/asset-folders", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                IReadOnlyList<Domain.Entities.ProjectAssetFolder> folders = await service
+                    .ProjectAssetFoldersAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { folders });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/asset-folders", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateProjectAssetFolderRequest? request = await ReadJsonAsync<CreateProjectAssetFolderRequest>(
+                    context, 32 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.ProjectAssetFolder folder = await service.CreateProjectAssetFolderAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { folder });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}/asset-folders/{folderId}", async (
+            HttpContext context, string id, string folderId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UpdateProjectAssetFolderRequest? request = await ReadJsonAsync<UpdateProjectAssetFolderRequest>(
+                    context, 32 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.ProjectAssetFolder folder = await service.UpdateProjectAssetFolderAsync(
+                    user.ID, id, folderId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { folder });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/projects/{id}/asset-folders/{folderId}", async (
+            HttpContext context, string id, string folderId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteProjectAssetFolderAsync(user.ID, id, folderId, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { id = folderId });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 风格档案与声音档案路由。对应 Go: <c>handler/style_profile.go</c> 与
+    /// <c>handler/project.go</c> 的 voice-profiles。
+    /// </summary>
+    public static void MapStyleProfileRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/style-profiles", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                IReadOnlyList<Domain.Entities.StyleProfile> profiles = await service
+                    .ListStyleProfilesAsync(user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { profiles });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/style-profiles", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                StyleProfileRequest? request = await ReadJsonAsync<StyleProfileRequest>(
+                    context, 320 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.StyleProfile profile = await service.CreateStyleProfileAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { profile });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/style-profiles/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                StyleProfileRequest? request = await ReadJsonAsync<StyleProfileRequest>(
+                    context, 320 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.StyleProfile profile = await service.UpdateStyleProfileAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { profile });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/style-profiles/{id}/favorite", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                StyleProfileFavoriteRequest? request = await ReadJsonAsync<StyleProfileFavoriteRequest>(
+                    context, 16 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                await service.SetStyleProfileFavoriteAsync(user.ID, id, request.Favorite, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { id, favorite = request.Favorite });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/style-profiles/{id}/use", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.TouchStyleProfileAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/style-profiles/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await service.DeleteStyleProfileAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { id });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/voice-profiles", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                IReadOnlyList<Domain.Entities.VoiceProfile> profiles = await service
+                    .VoiceProfilesAsync(user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { profiles });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>对应 Go: <c>hasUserAssetPageFilters</c>。</summary>
+    private static bool HasUserAssetPageFilters(HttpContext context)
+    {
+        foreach (string key in new[] { "pageSize", "kind", "category", "folderId", "uncategorized", "status", "q" })
+        {
+            if (context.Request.Query.ContainsKey(key))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>读取 JSON 请求体（可选体上限），语法错误或超限返回 null。</summary>
+    private static async Task<T?> ReadJsonAsync<T>(
+        HttpContext context,
+        long maxBytes,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        if (maxBytes > 0 && context.Request.ContentLength is > 0 && context.Request.ContentLength > maxBytes)
+        {
+            return null;
+        }
+        try
+        {
+            return await JsonSerializer.DeserializeAsync<T>(
+                context.Request.Body,
+                CanvasJson.ReadOptions,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (BadHttpRequestException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>读取字符串数组字段（体上限生效）。对应 Go 的匿名绑定 struct{IDs []string}。</summary>
+    private static async Task<List<string>?> ReadStringListAsync(
+        HttpContext context, string field, long maxBytes, CancellationToken cancellationToken)
+    {
+        if (context.Request.ContentLength is > 0 && context.Request.ContentLength > maxBytes)
+        {
+            return null;
+        }
+        try
+        {
+            JsonElement? request = await JsonSerializer.DeserializeAsync<JsonElement>(
+                context.Request.Body,
+                CanvasJson.ReadOptions,
+                cancellationToken).ConfigureAwait(false);
+            if (request is null ||
+                request.Value.ValueKind != JsonValueKind.Object ||
+                !request.Value.TryGetProperty(field, out JsonElement ids) ||
+                ids.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+            List<string> result = [];
+            foreach (JsonElement item in ids.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    result.Add(item.GetString() ?? "");
+                }
+            }
+            return result;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (BadHttpRequestException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>对应 Go: <c>parsePaginationQuery</c>。非法值返回错误信息。</summary>
+    private static (int Page, int PageSize, string? Error) ParsePagination(
+        HttpContext context, int fallbackPageSize)
+    {
+        int page = ParsePositiveQueryInt(context.Request.Query["page"].ToString(), 1, out string? pageError);
+        if (pageError is not null)
+        {
+            return (0, 0, "page: " + pageError);
+        }
+        int pageSize = ParsePositiveQueryInt(
+            context.Request.Query["pageSize"].ToString(), fallbackPageSize, out string? sizeError);
+        if (sizeError is not null)
+        {
+            return (0, 0, "pageSize: " + sizeError);
+        }
+        return (page, pageSize, null);
+    }
+
+    private static int ParsePositiveQueryInt(string raw, int fallback, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return fallback;
+        }
+        if (int.TryParse(raw, out int parsed) && parsed > 0)
+        {
+            return parsed;
+        }
+        error = "must be a positive integer";
+        return fallback;
+    }
+
+    private static async Task<JsonElement?> ReadJsonAsync(
+        HttpContext context,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        if (context.Request.ContentLength is > 0 && context.Request.ContentLength > maxBytes)
+        {
+            return null;
+        }
+        try
+        {
+            return await JsonSerializer.DeserializeAsync<JsonElement>(
+                context.Request.Body,
+                CanvasJson.ReadOptions,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (BadHttpRequestException)
+        {
+            return null;
+        }
+    }
+}

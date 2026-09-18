@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Web</RootNamespace>
+    <AssemblyName>OpenAICanvas.Web</AssemblyName>
+    <!-- 等价于 Go 的 cmd/server/main.go 挂载 internal/handler。 -->
+    <UserSecretsId>open-ai-canvas-dotnet</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Application\OpenAICanvas.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 等价于 handler/openapi_embed.go：openapi.yaml 原样内嵌输出。 -->
+    <EmbeddedResource Include="..\..\..\backend\internal\handler\openapi.yaml" LogicalName="openapi.yaml" />
+  </ItemGroup>
+
+</Project>

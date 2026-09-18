@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Payment</RootNamespace>
+    <AssemblyName>OpenAICanvas.Payment</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/payment：支付适配注册表、支付宝/微信/对账。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Outbound\OpenAICanvas.Outbound.csproj" />
+  </ItemGroup>
+
+</Project>

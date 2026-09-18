@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Tests</RootNamespace>
+    <AssemblyName>OpenAICanvas.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenAICanvas.Web\OpenAICanvas.Web.csproj" />
+    <ProjectReference Include="..\..\src\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\OpenAICanvas.Payment\OpenAICanvas.Payment.csproj" />
+    <!-- 支付插件测试桩：只保证构建顺序，不作为程序集引用（它是 Exe）。 -->
+    <ProjectReference Include="..\OpenAICanvas.PaymentTestPlugin\OpenAICanvas.PaymentTestPlugin.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!--
+    把支付插件测试桩的输出复制到测试 bin 下的 payment-test-plugin/。
+    测试会把它搬到临时目录的 backend/ 子目录，再交给 RpcPaymentProvider 当插件跑，
+    这样能真实验证「起进程 + stdio JSON」全链路。
+  -->
+  <Target Name="CopyPaymentTestPlugin" AfterTargets="Build">
+    <ItemGroup>
+      <PaymentPluginFiles Include="$(MSBuildThisFileDirectory)..\OpenAICanvas.PaymentTestPlugin\bin\$(Configuration)\net8.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PaymentPluginFiles)"
+          DestinationFolder="$(OutDir)payment-test-plugin\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Go/GORM 的权威结构导出，作为结构一致性测试的基线。 -->
+  <ItemGroup>
+    <None Include="..\..\schema-dump.json" Link="schema-dump.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

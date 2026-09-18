@@ -1,0 +1,1113 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Web\\OpenAICanvas.Web.csproj": {}
+  },
+  "projects": {
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Application\\OpenAICanvas.Application.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Application\\OpenAICanvas.Application.csproj",
+        "projectName": "OpenAICanvas.Application",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Application\\OpenAICanvas.Application.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Application\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Assets\\OpenAICanvas.Assets.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Assets\\OpenAICanvas.Assets.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Auth\\OpenAICanvas.Auth.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Auth\\OpenAICanvas.Auth.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Canvas\\OpenAICanvas.Canvas.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Canvas\\OpenAICanvas.Canvas.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Payment\\OpenAICanvas.Payment.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Payment\\OpenAICanvas.Payment.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Platform\\OpenAICanvas.Platform.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Platform\\OpenAICanvas.Platform.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Prompts\\OpenAICanvas.Prompts.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Prompts\\OpenAICanvas.Prompts.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Providers\\OpenAICanvas.Providers.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Providers\\OpenAICanvas.Providers.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Skills\\OpenAICanvas.Skills.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Skills\\OpenAICanvas.Skills.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "AWSSDK.S3": {
+              "target": "Package",
+              "version": "[3.7.405.5, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Assets\\OpenAICanvas.Assets.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Assets\\OpenAICanvas.Assets.csproj",
+        "projectName": "OpenAICanvas.Assets",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Assets\\OpenAICanvas.Assets.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Assets\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Auth\\OpenAICanvas.Auth.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Auth\\OpenAICanvas.Auth.csproj",
+        "projectName": "OpenAICanvas.Auth",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Auth\\OpenAICanvas.Auth.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Auth\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "BCrypt.Net-Next": {
+              "target": "Package",
+              "version": "[4.0.3, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Canvas\\OpenAICanvas.Canvas.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Canvas\\OpenAICanvas.Canvas.csproj",
+        "projectName": "OpenAICanvas.Canvas",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Canvas\\OpenAICanvas.Canvas.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Canvas\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj",
+        "projectName": "OpenAICanvas.Domain",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj",
+        "projectName": "OpenAICanvas.Outbound",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Payment\\OpenAICanvas.Payment.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Payment\\OpenAICanvas.Payment.csproj",
+        "projectName": "OpenAICanvas.Payment",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Payment\\OpenAICanvas.Payment.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Payment\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj",
+        "projectName": "OpenAICanvas.Persistence",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Dapper": {
+              "target": "Package",
+              "version": "[2.1.35, )"
+            },
+            "Microsoft.Data.Sqlite": {
+              "target": "Package",
+              "version": "[8.0.10, )"
+            },
+            "Npgsql": {
+              "target": "Package",
+              "version": "[8.0.5, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Platform\\OpenAICanvas.Platform.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Platform\\OpenAICanvas.Platform.csproj",
+        "projectName": "OpenAICanvas.Platform",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Platform\\OpenAICanvas.Platform.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Platform\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "StackExchange.Redis": {
+              "target": "Package",
+              "version": "[2.8.16, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Prompts\\OpenAICanvas.Prompts.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Prompts\\OpenAICanvas.Prompts.csproj",
+        "projectName": "OpenAICanvas.Prompts",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Prompts\\OpenAICanvas.Prompts.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Prompts\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj",
+        "projectName": "OpenAICanvas.Protocol",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Providers\\OpenAICanvas.Providers.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Providers\\OpenAICanvas.Providers.csproj",
+        "projectName": "OpenAICanvas.Providers",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Providers\\OpenAICanvas.Providers.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Providers\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Outbound\\OpenAICanvas.Outbound.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Protocol\\OpenAICanvas.Protocol.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Skills\\OpenAICanvas.Skills.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Skills\\OpenAICanvas.Skills.csproj",
+        "projectName": "OpenAICanvas.Skills",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Skills\\OpenAICanvas.Skills.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Skills\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Domain\\OpenAICanvas.Domain.csproj"
+              },
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Persistence\\OpenAICanvas.Persistence.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Web\\OpenAICanvas.Web.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Web\\OpenAICanvas.Web.csproj",
+        "projectName": "OpenAICanvas.Web",
+        "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Web\\OpenAICanvas.Web.csproj",
+        "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
+        "outputPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Web\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
+          "C:\\Program Files\\dotnet\\sdk\\NuGetFallbackFolder"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "http://192.168.0.107:8358/Nuget/nuget": {},
+          "http://wan2.fjdaze.com:8081/repository/nuget-group/index.json": {},
+          "https://api.nuget.org/v3/index.json": {},
+          "https://mirrors.huaweicloud.com/repository/nuget/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Application\\OpenAICanvas.Application.csproj": {
+                "projectPath": "C:\\GIT\\open-ai-canvas\\backend-dotnet\\src\\OpenAICanvas.Application\\OpenAICanvas.Application.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.204/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

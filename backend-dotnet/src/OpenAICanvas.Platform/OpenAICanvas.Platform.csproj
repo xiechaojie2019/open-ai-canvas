@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Platform</RootNamespace>
+    <AssemblyName>OpenAICanvas.Platform</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/platform：运行时策略、限流、worker、有界读缓存、Redis 协调。 -->
+
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <!-- Go 的 internal/platform 直接使用 repository（读运行时策略与系统设置）。 -->
+    <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

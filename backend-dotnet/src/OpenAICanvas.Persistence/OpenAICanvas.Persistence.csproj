@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Persistence</RootNamespace>
+    <AssemblyName>OpenAICanvas.Persistence</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    等价于 Go 的 internal/database + internal/repository。
+
+    使用 Dapper + 手写 SQL，不用 EF Core：
+    - 表结构由 scripts/generate-entities.py 从 GORM 权威导出（schema-dump.json）生成静态 DDL，
+      保证与 Go/GORM 的物理结构逐字一致。
+    - upsert（27 处 ON CONFLICT）与行锁（16 处 FOR UPDATE/SHARE）用 SQL 表达更自然。
+    - 软删除过滤由 SoftDeleteSql 强制注入，避免 76 处引用里漏写。
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <PackageReference Include="Npgsql" Version="8.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+  </ItemGroup>
+
+  <!-- 生成的建表脚本随程序集内嵌，运行时直接取用。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Schema\SqliteSchema.sql" />
+    <EmbeddedResource Include="Schema\PostgresSchema.sql" />
+  </ItemGroup>
+
+</Project>

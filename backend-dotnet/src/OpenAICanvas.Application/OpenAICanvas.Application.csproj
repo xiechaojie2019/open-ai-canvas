@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Application</RootNamespace>
+    <AssemblyName>OpenAICanvas.Application</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    等价于 Go 的 internal/app（业务组合根）+ internal/service（稳定导入面）。
+    这是最大的一块，承载渠道、任务、项目、画布、财务、Agent 等业务实现。
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" Version="3.7.405.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Outbound\OpenAICanvas.Outbound.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Platform\OpenAICanvas.Platform.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Auth\OpenAICanvas.Auth.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Canvas\OpenAICanvas.Canvas.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Prompts\OpenAICanvas.Prompts.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Skills\OpenAICanvas.Skills.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Payment\OpenAICanvas.Payment.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Assets\OpenAICanvas.Assets.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Protocol\OpenAICanvas.Protocol.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Providers\OpenAICanvas.Providers.csproj" />
+  </ItemGroup>
+
+</Project>

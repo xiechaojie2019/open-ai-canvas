@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Assets</RootNamespace>
+    <AssemblyName>OpenAICanvas.Assets</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/assets：资源引用解析与归属校验。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

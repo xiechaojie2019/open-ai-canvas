@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Protocol</RootNamespace>
+    <AssemblyName>OpenAICanvas.Protocol</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/protocol：模型协议适配、声明式协议、协议注册表。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Outbound\OpenAICanvas.Outbound.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Skills</RootNamespace>
+    <AssemblyName>OpenAICanvas.Skills</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/skills：技能库、技能版本、技能文件、内置种子。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

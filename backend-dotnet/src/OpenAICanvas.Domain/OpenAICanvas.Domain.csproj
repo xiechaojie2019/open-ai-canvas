@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Domain</RootNamespace>
+    <AssemblyName>OpenAICanvas.Domain</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    等价于 Go 的 internal/model + internal/kernel：
+    实体、枚举、结构化错误、错误码与原因常量。不依赖任何其他项目。
+  -->
+
+</Project>

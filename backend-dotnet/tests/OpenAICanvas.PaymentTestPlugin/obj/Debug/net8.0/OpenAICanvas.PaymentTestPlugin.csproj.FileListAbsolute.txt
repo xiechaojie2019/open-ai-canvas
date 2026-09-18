@@ -1,0 +1,15 @@
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\bin\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.exe
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\bin\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.deps.json
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\bin\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.runtimeconfig.json
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\bin\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.dll
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\bin\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.pdb
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.GeneratedMSBuildEditorConfig.editorconfig
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.AssemblyInfoInputs.cache
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.AssemblyInfo.cs
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.csproj.CoreCompileInputs.cache
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.sourcelink.json
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.dll
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\refint\OpenAICanvas.PaymentTestPlugin.dll
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.pdb
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\OpenAICanvas.PaymentTestPlugin.genruntimeconfig.cache
+C:\GIT\open-ai-canvas\backend-dotnet\tests\OpenAICanvas.PaymentTestPlugin\obj\Debug\net8.0\ref\OpenAICanvas.PaymentTestPlugin.dll

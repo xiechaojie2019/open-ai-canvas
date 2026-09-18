@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Outbound</RootNamespace>
+    <AssemblyName>OpenAICanvas.Outbound</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/outbound：出站 SSRF 防护与受控 HTTP 客户端。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

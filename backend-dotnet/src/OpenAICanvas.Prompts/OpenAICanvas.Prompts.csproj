@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>OpenAICanvas.Prompts</RootNamespace>
+    <AssemblyName>OpenAICanvas.Prompts</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 internal/prompts：提示词模板、风格、用户定制。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
+    <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

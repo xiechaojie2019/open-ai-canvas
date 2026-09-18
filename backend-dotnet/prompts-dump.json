@@ -1,0 +1,252 @@
+{
+  "definitions": [
+    {
+      "operation": "chapter_assets_extract",
+      "label": "章节角色、场景与道具提取",
+      "category": "角色",
+      "description": "从章节正文提取角色、实际发生剧情的场景和影响剧情的道具，分别进入资产待确认列表。",
+      "outputType": "json",
+      "schemaKey": "chapter-assets/v1",
+      "variables": [
+        {
+          "label": "项目名称",
+          "placeholder": "{{项目名称}}"
+        },
+        {
+          "label": "章节名称",
+          "placeholder": "{{章节名称}}"
+        },
+        {
+          "label": "项目画风",
+          "placeholder": "{{项目画风}}"
+        }
+      ],
+      "defaultContent": "你是短剧资产导演。按章节事实提取角色、场景和道具。同一身份的别名合并，不编造正文未出现的资产；未明确的视觉信息写“正文未明确”。角色包含剧情定位、稳定外貌服装体态、性格、一致性提示、三视图提示及语言、声音年龄、音色。场景描述空间布局、环境和光照；道具描述材质、形状及剧情用途。无对应资产时返回空数组。",
+      "outputContract": "服务端固定 JSON Schema chapter-assets/v1（不可由运营模板或用户定制覆盖）：\n{\n  \"type\": \"object\", \"additionalProperties\": false,\n  \"required\": [\"characters\", \"scenes\", \"props\"],\n  \"properties\": {\n    \"characters\": {\"$ref\": \"#/$defs/characterBreakdown/properties/characters\"},\n    \"scenes\": {\"type\": \"array\", \"items\": {\"$ref\": \"#/$defs/asset\"}},\n    \"props\": {\"type\": \"array\", \"items\": {\"$ref\": \"#/$defs/asset\"}}\n  },\n  \"$defs\": {\n    \"asset\": {\n      \"type\": \"object\", \"additionalProperties\": false,\n      \"required\": [\"name\", \"description\", \"prompt\"],\n      \"properties\": {\"name\": {\"type\": \"string\"}, \"description\": {\"type\": \"string\"}, \"prompt\": {\"type\": \"string\"}}\n    },\n    \"characterBreakdown\": {\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"characters\"],\n  \"properties\": {\n    \"characters\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"required\": [\"name\", \"aliases\", \"role\", \"appearance\", \"clothing\", \"physique\", \"personality\", \"props\", \"consistencyPrompt\", \"multiViewPrompt\", \"voiceLanguage\", \"voiceAge\", \"voiceTimbre\"],\n        \"properties\": {\n          \"name\": {\"type\": \"string\"},\n          \"aliases\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n          \"role\": {\"type\": \"string\"},\n          \"appearance\": {\"type\": \"string\"},\n          \"clothing\": {\"type\": \"string\"},\n          \"physique\": {\"type\": \"string\"},\n          \"personality\": {\"type\": \"string\"},\n          \"props\": {\"type\": \"string\"},\n          \"consistencyPrompt\": {\"type\": \"string\"},\n          \"multiViewPrompt\": {\"type\": \"string\"},\n          \"voiceLanguage\": {\"type\": \"string\"},\n          \"voiceAge\": {\"type\": \"string\"},\n          \"voiceTimbre\": {\"type\": \"string\"}\n        }\n      }\n    }\n  }\n}\n  }\n}"
+    },
+    {
+      "operation": "storyboard_plan",
+      "label": "分镜规划",
+      "category": "分镜",
+      "description": "把剧情、项目画风和当前角色版本规划为可执行镜头。",
+      "outputType": "json",
+      "schemaKey": "storyboard-plan/v3",
+      "variables": [
+        {
+          "label": "项目名称",
+          "placeholder": "{{项目名称}}"
+        },
+        {
+          "label": "项目画风",
+          "placeholder": "{{项目画风}}"
+        },
+        {
+          "label": "用户要求",
+          "placeholder": "{{用户要求}}"
+        }
+      ],
+      "defaultContent": "你是影视分镜导演和 AI 视频提示词专家。先理解故事目标、人物动机、冲突、情绪曲线和结尾，再把剧情转译为可执行、可拍摄的连续镜头，不要把剧情段落直接改写成镜头摘要。\n\n每个镜头先确定观众此刻跟随谁，再明确 narrativeIntent、viewerPOV 和 performanceBlocking，然后选择景别、机位、焦段、构图和运镜。摄影机设计必须说明叙事动机，不得用术语数量代替导演判断；一个镜头只保留一个主运镜，必须有起点、动机和停止点，并为人物表演让出注意力。\n\n大远景只承担空间、规模和处境建立；人物对白与喜剧反应优先使用中景、近景、过肩或独立反应镜头。按叙事需要使用反应、停顿、空镜、插入和匹配剪辑，避免每镜都推进、环绕、航拍或慢动作。\n\ndescription 只写可见画面与动作；把“意识到、回忆起、感到”等不可见信息转译成眼神、停顿、手部动作、走位、道具反应或环境变化。visualPrompt 明确人物左右位置、视线、前中后景、遮挡、视觉焦点、可信光源、材质和色彩；videoPrompt 只补充主体运动、环境运动和结尾状态。\n\n保持角色五官、年龄、发型、服装、道具、损伤位置、空间关系和项目媒介一致。视觉媒介、光线和材质严格服从项目画风，不得默认改写为真人摄影，也不得把 3D、动画或卡通项目强制改成写实。负面要求必须针对当前镜头的换脸、服装变化、手部错误、乱码、闪烁、穿模、风格突变和动作僵硬风险。",
+      "outputContract": "服务端固定 JSON Schema storyboard-plan/v3（不可由运营模板或用户定制覆盖）：\n{\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"title\", \"logline\", \"styleGuide\", \"characters\", \"locations\", \"shots\"],\n  \"properties\": {\n    \"title\": {\"type\": \"string\"},\n    \"logline\": {\"type\": \"string\"},\n    \"styleGuide\": {\"type\": \"string\", \"maxLength\": 120},\n    \"characters\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"locations\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"shots\": {\n      \"type\": \"array\",\n      \"minItems\": 1,\n      \"items\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"required\": [\"title\", \"description\", \"durationSeconds\", \"dialogue\", \"characterIds\", \"narrativeIntent\", \"viewerPOV\", \"performanceBlocking\", \"shotSize\", \"emotion\", \"lightingAndAtmosphere\", \"audioEffects\", \"visualPrompt\", \"videoPrompt\", \"camera\", \"motion\", \"timeBeats\", \"mustHave\", \"optionalDetails\", \"continuityOut\", \"negativePrompt\", \"assetRefs\"],\n        \"properties\": {\n          \"title\": {\"type\": \"string\"},\n          \"description\": {\"type\": \"string\"},\n          \"durationSeconds\": {\"type\": \"integer\", \"minimum\": 1, \"maximum\": 60},\n          \"dialogue\": {\"type\": \"string\"},\n          \"characterIds\": {\"type\": \"array\", \"description\": \"优先填写当前角色资产 ID；尚未确认资产的角色填写角色名称\", \"items\": {\"type\": \"string\"}},\n          \"narrativeIntent\": {\"type\": \"string\"},\n          \"viewerPOV\": {\"type\": \"string\"},\n          \"performanceBlocking\": {\"type\": \"string\"},\n          \"shotSize\": {\"type\": \"string\"},\n          \"emotion\": {\"type\": \"string\"},\n          \"lightingAndAtmosphere\": {\"type\": \"string\"},\n          \"audioEffects\": {\"type\": \"string\"},\n          \"visualPrompt\": {\"type\": \"string\"},\n          \"videoPrompt\": {\"type\": \"string\"},\n          \"camera\": {\"type\": \"string\"},\n          \"motion\": {\"type\": \"string\"},\n          \"timeBeats\": {\"type\": \"string\"},\n          \"mustHave\": {\"type\": \"array\", \"maxItems\": 3, \"items\": {\"type\": \"string\"}},\n          \"optionalDetails\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n          \"continuityOut\": {\"type\": \"string\"},\n          \"negativePrompt\": {\"type\": \"string\"},\n          \"assetRefs\": {\n            \"type\": \"array\",\n            \"maxItems\": 6,\n            \"items\": {\n              \"type\": \"object\",\n              \"additionalProperties\": false,\n              \"required\": [\"nodeId\", \"role\", \"priority\"],\n              \"properties\": {\n                \"nodeId\": {\"type\": \"string\"},\n                \"role\": {\"type\": \"string\", \"enum\": [\"character\", \"environment\", \"wardrobe\", \"prop\", \"weapon\", \"style\", \"motion\", \"audio\"]},\n                \"priority\": {\"type\": \"integer\", \"minimum\": 0, \"maximum\": 100}\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}"
+    },
+    {
+      "operation": "storyboard_repair",
+      "label": "分镜修复",
+      "category": "分镜",
+      "description": "修复模型返回的分镜结构、字段和镜头复杂度。",
+      "outputType": "json",
+      "schemaKey": "storyboard-plan/v3",
+      "variables": [
+        {
+          "label": "校验错误",
+          "placeholder": "{{校验错误}}"
+        },
+        {
+          "label": "项目画风",
+          "placeholder": "{{项目画风}}"
+        }
+      ],
+      "defaultContent": "你是影视分镜 JSON 修复导演。修复结构时必须保留剧情信息，通过拆镜或重新分配内容解决复杂度超限，不得用删除关键剧情掩盖错误。若校验错误是台词/旁白超长，必须拆镜或精简为单镜头可念完的台词，保留关键情节，不要把超长 dialogue 原样放回。保持原项目的视觉媒介、角色身份、服装、道具和连续性，不要擅自改写画风。只修复校验错误和由此引发的镜头组织问题。",
+      "outputContract": "服务端固定 JSON Schema storyboard-plan/v3（不可由运营模板或用户定制覆盖）：\n{\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"title\", \"logline\", \"styleGuide\", \"characters\", \"locations\", \"shots\"],\n  \"properties\": {\n    \"title\": {\"type\": \"string\"},\n    \"logline\": {\"type\": \"string\"},\n    \"styleGuide\": {\"type\": \"string\", \"maxLength\": 120},\n    \"characters\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"locations\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"shots\": {\n      \"type\": \"array\",\n      \"minItems\": 1,\n      \"items\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"required\": [\"title\", \"description\", \"durationSeconds\", \"dialogue\", \"characterIds\", \"narrativeIntent\", \"viewerPOV\", \"performanceBlocking\", \"shotSize\", \"emotion\", \"lightingAndAtmosphere\", \"audioEffects\", \"visualPrompt\", \"videoPrompt\", \"camera\", \"motion\", \"timeBeats\", \"mustHave\", \"optionalDetails\", \"continuityOut\", \"negativePrompt\", \"assetRefs\"],\n        \"properties\": {\n          \"title\": {\"type\": \"string\"},\n          \"description\": {\"type\": \"string\"},\n          \"durationSeconds\": {\"type\": \"integer\", \"minimum\": 1, \"maximum\": 60},\n          \"dialogue\": {\"type\": \"string\"},\n          \"characterIds\": {\"type\": \"array\", \"description\": \"优先填写当前角色资产 ID；尚未确认资产的角色填写角色名称\", \"items\": {\"type\": \"string\"}},\n          \"narrativeIntent\": {\"type\": \"string\"},\n          \"viewerPOV\": {\"type\": \"string\"},\n          \"performanceBlocking\": {\"type\": \"string\"},\n          \"shotSize\": {\"type\": \"string\"},\n          \"emotion\": {\"type\": \"string\"},\n          \"lightingAndAtmosphere\": {\"type\": \"string\"},\n          \"audioEffects\": {\"type\": \"string\"},\n          \"visualPrompt\": {\"type\": \"string\"},\n          \"videoPrompt\": {\"type\": \"string\"},\n          \"camera\": {\"type\": \"string\"},\n          \"motion\": {\"type\": \"string\"},\n          \"timeBeats\": {\"type\": \"string\"},\n          \"mustHave\": {\"type\": \"array\", \"maxItems\": 3, \"items\": {\"type\": \"string\"}},\n          \"optionalDetails\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n          \"continuityOut\": {\"type\": \"string\"},\n          \"negativePrompt\": {\"type\": \"string\"},\n          \"assetRefs\": {\n            \"type\": \"array\",\n            \"maxItems\": 6,\n            \"items\": {\n              \"type\": \"object\",\n              \"additionalProperties\": false,\n              \"required\": [\"nodeId\", \"role\", \"priority\"],\n              \"properties\": {\n                \"nodeId\": {\"type\": \"string\"},\n                \"role\": {\"type\": \"string\", \"enum\": [\"character\", \"environment\", \"wardrobe\", \"prop\", \"weapon\", \"style\", \"motion\", \"audio\"]},\n                \"priority\": {\"type\": \"integer\", \"minimum\": 0, \"maximum\": 100}\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}"
+    },
+    {
+      "operation": "storyboard_first_frame",
+      "label": "分镜首帧",
+      "category": "生成",
+      "description": "把单镜头结构转换为图片模型使用的首帧提示词。",
+      "outputType": "text",
+      "schemaKey": "",
+      "variables": [
+        {
+          "label": "项目视觉",
+          "placeholder": "{{项目视觉}}"
+        },
+        {
+          "label": "首帧构图",
+          "placeholder": "{{首帧构图}}"
+        },
+        {
+          "label": "表演起始状态",
+          "placeholder": "{{表演起始状态}}"
+        },
+        {
+          "label": "负面要求",
+          "placeholder": "{{负面要求}}"
+        }
+      ],
+      "defaultContent": "生成单一、可执行的分镜首帧。严格继承项目视觉媒介和角色资产；画面明确主体左右位置、视线、前中后景、遮挡、视觉焦点、可信光源与材质。只描述静止首帧，不提前写后续运动，不添加画外人物、无来源光线、文字或水印。\n\n【项目视觉】\n{{项目视觉}}\n\n【首帧构图】\n{{首帧构图}}\n\n【表演起始状态】\n{{表演起始状态}}\n\n【负面要求】\n{{负面要求}}",
+      "outputContract": "当前操作输出普通文本提示词，没有 JSON Schema。"
+    },
+    {
+      "operation": "storyboard_video",
+      "label": "分镜视频",
+      "category": "生成",
+      "description": "把单镜头结构转换为视频模型使用的紧凑执行提示词。",
+      "outputType": "text",
+      "schemaKey": "",
+      "variables": [
+        {
+          "label": "项目视觉",
+          "placeholder": "{{项目视觉}}"
+        },
+        {
+          "label": "镜头意图",
+          "placeholder": "{{镜头意图}}"
+        },
+        {
+          "label": "首帧构图",
+          "placeholder": "{{首帧构图}}"
+        },
+        {
+          "label": "表演与调度",
+          "placeholder": "{{表演与调度}}"
+        },
+        {
+          "label": "摄影机",
+          "placeholder": "{{摄影机}}"
+        },
+        {
+          "label": "时间节拍",
+          "placeholder": "{{时间节拍}}"
+        },
+        {
+          "label": "运动与结尾",
+          "placeholder": "{{运动与结尾}}"
+        },
+        {
+          "label": "声音",
+          "placeholder": "{{声音}}"
+        },
+        {
+          "label": "执行优先级",
+          "placeholder": "{{执行优先级}}"
+        },
+        {
+          "label": "负面要求",
+          "placeholder": "{{负面要求}}"
+        }
+      ],
+      "defaultContent": "【项目视觉】\n{{项目视觉}}\n\n【镜头意图】\n{{镜头意图}}\n\n【首帧构图】\n{{首帧构图}}\n\n【表演与调度】\n{{表演与调度}}\n\n【摄影机】\n{{摄影机}}\n\n【时间节拍】\n{{时间节拍}}\n\n【运动与结尾】\n{{运动与结尾}}\n\n【台词与声音】\n{{声音}}\n\n【执行优先级】\n{{执行优先级}}\n\n【负面要求】\n{{负面要求}}",
+      "outputContract": "当前操作输出普通文本提示词，没有 JSON Schema。"
+    },
+    {
+      "operation": "character_extract",
+      "label": "角色卡提取",
+      "category": "角色",
+      "description": "从章节正文提取需要跨镜头保持一致的角色资产。",
+      "outputType": "json",
+      "schemaKey": "character-breakdown/v1",
+      "variables": [
+        {
+          "label": "项目名称",
+          "placeholder": "{{项目名称}}"
+        },
+        {
+          "label": "章节名称",
+          "placeholder": "{{章节名称}}"
+        },
+        {
+          "label": "项目画风",
+          "placeholder": "{{项目画风}}"
+        }
+      ],
+      "defaultContent": "你是短剧角色资产导演。只提取章节中实际出场、发言或对剧情产生明确作用，并且后续制作需要保持视觉或声音一致的角色。忽略系统播报、纯物件、无身份群众和没有持续角色价值的一次性路人；合并同一角色的姓名、专属称谓和别名。正文未明确的信息必须写“正文未明确”，不得自行改变人物关系、时代背景或编造编号式姓名。角色设定要具体、稳定、可用于后续三视图和视频一致性控制。",
+      "outputContract": "服务端固定 JSON Schema character-breakdown/v1（不可由运营模板或用户定制覆盖）：\n{\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"characters\"],\n  \"properties\": {\n    \"characters\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"required\": [\"name\", \"aliases\", \"role\", \"appearance\", \"clothing\", \"physique\", \"personality\", \"props\", \"consistencyPrompt\", \"multiViewPrompt\", \"voiceLanguage\", \"voiceAge\", \"voiceTimbre\"],\n        \"properties\": {\n          \"name\": {\"type\": \"string\"},\n          \"aliases\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n          \"role\": {\"type\": \"string\"},\n          \"appearance\": {\"type\": \"string\"},\n          \"clothing\": {\"type\": \"string\"},\n          \"physique\": {\"type\": \"string\"},\n          \"personality\": {\"type\": \"string\"},\n          \"props\": {\"type\": \"string\"},\n          \"consistencyPrompt\": {\"type\": \"string\"},\n          \"multiViewPrompt\": {\"type\": \"string\"},\n          \"voiceLanguage\": {\"type\": \"string\"},\n          \"voiceAge\": {\"type\": \"string\"},\n          \"voiceTimbre\": {\"type\": \"string\"}\n        }\n      }\n    }\n  }\n}"
+    },
+    {
+      "operation": "character_turnaround",
+      "label": "角色三视图",
+      "category": "角色",
+      "description": "按当前角色版本和项目画风生成正、侧、背三视图。",
+      "outputType": "text",
+      "schemaKey": "",
+      "variables": [
+        {
+          "label": "角色名称",
+          "placeholder": "{{角色名称}}"
+        },
+        {
+          "label": "项目画风",
+          "placeholder": "{{项目画风}}"
+        },
+        {
+          "label": "角色设定",
+          "placeholder": "{{角色设定}}"
+        }
+      ],
+      "defaultContent": "制作专业人物三视图设定表。画面严格分成三个等宽竖向区域，从左到右依次为正面全身、右侧面全身、背面全身。三个视角必须是同一角色、同一服装、同一发型、同一体型和同一比例，采用站立中性姿势，完整显示头顶到脚底。背景使用纯净中性浅色和均匀设定稿光线，只负责分离轮廓，不得改变项目画风的绘画或渲染媒介。禁止文字、边框、道具说明、表情变化和额外人物。",
+      "outputContract": "当前操作输出普通文本提示词，没有 JSON Schema。"
+    },
+    {
+      "operation": "short_drama_outline",
+      "label": "短剧大纲",
+      "category": "项目",
+      "description": "根据一句话故事生成短剧标题、简介和章节正文，供项目创建导入。",
+      "outputType": "json",
+      "schemaKey": "short-drama-outline/v1",
+      "variables": [
+        {
+          "label": "章节数量",
+          "placeholder": "{{章节数量}}"
+        },
+        {
+          "label": "叙事结构",
+          "placeholder": "{{叙事结构}}"
+        },
+        {
+          "label": "每章字数",
+          "placeholder": "{{每章字数}}"
+        },
+        {
+          "label": "叙事视角",
+          "placeholder": "{{叙事视角}}"
+        },
+        {
+          "label": "整体基调",
+          "placeholder": "{{整体基调}}"
+        },
+        {
+          "label": "角色规模",
+          "placeholder": "{{角色规模}}"
+        },
+        {
+          "label": "章节篇幅",
+          "placeholder": "{{章节篇幅}}"
+        }
+      ],
+      "defaultContent": "你是短剧编剧。根据用户的一句话故事，生成一部短剧的标题、一句话简介和 {{章节数量}} 个章节。生成要求：叙事采用{{叙事结构}}结构，每章约 {{每章字数}} 字，使用{{叙事视角}}视角，整体基调{{整体基调}}，主要角色约 {{角色规模}}，章节篇幅{{章节篇幅}}。",
+      "outputContract": "服务端固定 JSON Schema short-drama-outline/v1（不可由运营模板或用户定制覆盖）：\n{\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"title\", \"synopsis\", \"chapters\"],\n  \"properties\": {\n    \"title\": {\"type\": \"string\"},\n    \"synopsis\": {\"type\": \"string\"},\n    \"chapters\": {\n      \"type\": \"array\",\n      \"minItems\": 1,\n      \"items\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"required\": [\"title\", \"content\"],\n        \"properties\": {\n          \"title\": {\"type\": \"string\"},\n          \"content\": {\"type\": \"string\"}\n        }\n      }\n    }\n  }\n}\n只输出一个 JSON 对象，不要输出 markdown 代码块或其他文字。"
+    },
+    {
+      "operation": "skill_draft",
+      "label": "技能草稿",
+      "category": "技能",
+      "description": "根据用户想法生成可复用创作技能的名称、分类、简介和指令草稿。",
+      "outputType": "json",
+      "schemaKey": "skill-draft/v1",
+      "variables": [],
+      "defaultContent": "你是一位技能编写助手。根据用户的想法，为一个「可复用的创作技能」生成一份草稿。技能名称简短，不超过 20 个字。分类 tag 必须是 drama、ecommerce、creative、social、others 之一。简介不超过 120 字，说明适用场景、输入条件和最终产出。指令使用 Markdown，至少 300 字，写给后续在画布中使用该技能的模型阅读，必须包含角色设定、输入与约束、分步执行流程、检查清单和输出格式。工具步骤只描述所需能力、输入、输出和确认点，不虚构具体工具名，不把工具、节点、权限、预算或审批写成技能授予的能力；执行时始终以运行环境实际暴露的能力清单为准。",
+      "outputContract": "服务端固定 JSON Schema skill-draft/v1（不可由运营模板或用户定制覆盖）：\n{\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\"skillName\", \"tag\", \"description\", \"instruction\"],\n  \"properties\": {\n    \"skillName\": {\"type\": \"string\"},\n    \"tag\": {\"type\": \"string\", \"enum\": [\"drama\", \"ecommerce\", \"creative\", \"social\", \"others\"]},\n    \"description\": {\"type\": \"string\"},\n    \"instruction\": {\"type\": \"string\"}\n  }\n}\n只输出一个 JSON 对象，不要输出 markdown 代码块或其他文字。"
+    }
+  ],
+  "legacyPreamble": "生成单一连续镜头的视频执行提示词。一个镜头只保留一个叙事目标、一个主运镜和一条主要动作链；摄影机运动必须有起点、动机和停止点。优先保证角色身份、表演、关键动作和连续性，次要环境效果可以简化。\n\n"
+}

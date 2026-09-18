@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OpenAICanvas.Tools</RootNamespace>
+    <AssemblyName>OpenAICanvas.Tools</AssemblyName>
+  </PropertyGroup>
+
+  <!-- 等价于 Go 的 cmd/migrate-*、cmd/payment-*、cmd/host-updater 等一次性命令。 -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenAICanvas.Application\OpenAICanvas.Application.csproj" />
+  </ItemGroup>
+
+</Project>
