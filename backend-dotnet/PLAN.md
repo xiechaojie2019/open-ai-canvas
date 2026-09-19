@@ -236,7 +236,7 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；test 路由待做 |
+| 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；models/test 路由待做（出站调用） |
 | 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | 🟡 列表/排序/价格档附着已通；保存/删除/fetch/import/test 待做 |
 | 3.3 | 逻辑模型与版本 | `app/logical_models.go` | 🟡 公开目录/管理端 CRUD/模拟/报价已通；工作流选路待做 |
 | 3.4 | 模型目录发现 | `provider/registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式执行引擎待做 |
@@ -251,7 +251,7 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 4.1 | 任务 CRUD | `handler/routes.go` | ✅ 列表/详情/日志/文本增量/回放收尾/POST /tasks 全量（批 1+2） |
 | 4.2 | 任务文本增量与 SSE 流 | `app/text_replay.go` | ✅ text-events SSE（游标/心跳/轮询）+ AdminTextReplayStats |
-| 4.3 | 任务重试 / 取消 / 上游查询 | `app/task_*.go` (12 文件) | 🟡 retry/cancel 全量（#61 上游取消 HTTP 跳过）；query-provider 门槛+归属已通（#62 上游查询待 provider 引擎） |
+| 4.3 | 任务重试 / 取消 / 上游查询 | `app/task_*.go` (12 文件) | ✅ retry/cancel/query-provider 三路由全通（#61/#62 上游部分待 provider 引擎） |
 | 4.4 | Worker 调度与租约 | `app/task_worker.go` | ☐ |
 | 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` | 🟡 仓储层 MarkRunning/Settle/Restore/Refund/Uncertain 已通（worker 接入待 4.4） |
 | 4.6 | 文本协议 | `app/provider_text.go` | ☐ |
@@ -263,7 +263,7 @@ backend-dotnet/
 | 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ☐ |
 | 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ☐ |
 | 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 transcription 创建已通（whisper 执行待）；render 创建待做 |
-| 4.15 | 创作运行与提交 | `app/creation*.go` | ☐ |
+| 4.15 | 创作运行与提交 | `app/creation*.go` | ✅ 运行生命周期/报价/批准/执行 13 条（批 1）+ 画布提交 3 条（批 2，#63 关闭）；agentRequests 占位符水合待（#64） |
 
 ### 阶段 5 · 资源、素材与存储
 
@@ -321,7 +321,7 @@ backend-dotnet/
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
 | 9.5 | 系统性能 | `handler/admin_system_performance.go` | ☐ |
-| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库完成；OSS/LibTV 待做（依赖云 SDK/外部服务） |
+| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库完成；OSS 6 条/LibTV 3 条待做（test 依赖云 SDK/外部服务） |
 | 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 
 ### 阶段 10 · 插件、技能与提示词
@@ -330,8 +330,8 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ☐ |
 | 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；执行引擎待做 |
-| 10.3 | 技能库 | `internal/skills` + `app/skills.go` | ☐ |
-| 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ |
+| 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/添加/点赞已通；file 5 条读 + create/update/install/sync 4 条写待做 |
+| 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ 包目录布局与 manifest 解析待移植（install/sync/file 读的前置） |
 | 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |
 | 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | ☐ |
 | 10.7 | 自定义渠道中转 | `handler/custom_proxy.go` | ☐ |
