@@ -92,7 +92,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             "INSERT INTO credit_accounts (user_id, available_microcredits, reserved_microcredits, version, created_at, updated_at) VALUES (@userId, 0, 0, 0, @now, @now) ON CONFLICT DO NOTHING",
-            new { order.UserID, now = DateTime.UtcNow },
+            new { userId = order.UserID, now = DateTime.UtcNow },
             transaction,
             cancellationToken).ConfigureAwait(false);
 
@@ -105,7 +105,7 @@ public sealed partial class Repository
               version = version + 1, updated_at = @now
             WHERE user_id = @userId AND available_microcredits >= @amount
             """,
-            new { amount = order.AmountMicrocredits, now = DateTime.UtcNow, order.UserID },
+            new { amount = order.AmountMicrocredits, now = DateTime.UtcNow, userId = order.UserID },
             transaction,
             cancellationToken).ConfigureAwait(false);
         if (updated != 1)

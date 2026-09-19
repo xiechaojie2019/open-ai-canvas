@@ -48,7 +48,7 @@ public sealed class CreateTaskRequestDto
 /// 队列任务全准入——在该批落地前，非回放任务返回 Go 维护模式的 503 信封
 /// （与 IsDraining 行为一致），不会产生未计费或未路由的半准入任务。
 /// </remarks>
-public sealed class TaskCreationService
+public sealed partial class TaskCreationService
 {
     private readonly Repository _repository;
     private readonly IRuntimePolicyProvider _runtimePolicy;
@@ -65,7 +65,10 @@ public sealed class TaskCreationService
         _runtimePolicy = runtimePolicy ?? new DefaultRuntimePolicyProvider();
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
         _features = features;
+        LogicalModels = new LogicalModelService(repository);
     }
+
+    internal LogicalModelService LogicalModels { get; }
 
     /// <summary>创建任务。对应 Go: <c>CreateTask</c>。</summary>
     public async Task<TaskEntity> CreateAsync(
@@ -92,9 +95,8 @@ public sealed class TaskCreationService
                 .ConfigureAwait(false);
         }
 
-        // 队列路径的完整 admission（模型路由 + 计费预留 + 工作流插件门控）属下一批；
-        // 在此之前沿用 Go 维护模式信封，避免产生未路由未计费的半准入任务（PENDING #58）。
-        throw new AppError(503, "服务正在维护，暂不接受新的生成任务");
+        return await CreateQueuedAsync(
+            userId, request, input, taskType, prompt, traceId, requestId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>文本回放任务。对应 Go: <c>createTextReplayTask</c>。</summary>

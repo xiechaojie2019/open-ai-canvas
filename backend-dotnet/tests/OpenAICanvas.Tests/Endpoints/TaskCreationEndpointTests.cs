@@ -184,19 +184,18 @@ public sealed class TaskCreationEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task 队列任务路径返回维护信封()
+    public async Task 队列任务路径_系统渠道分支_缺配置()
     {
         using HttpClient user = await SignInAsync();
 
-        // 非回放任务走队列 admission（未移植）→ Go handler 对 CreateTask 所有错误
-        // 统一 fail(c, 400, err)：HTTP 400 + 维护文案。
+        // 队列 admission 已移植：前台关闭 + 非自定义渠道 → 系统渠道分支 → 缺模型配置。
         HttpResponseMessage queued = await user.PostAsJsonAsync("/api/tasks", new
         {
             type = "text",
             prompt = "普通任务",
         });
         Assert.Equal(HttpStatusCode.BadRequest, queued.StatusCode);
-        Assert.Equal("服务正在维护，暂不接受新的生成任务", await ReadMessageAsync(queued));
+        Assert.Equal("缺少模型配置", await ReadMessageAsync(queued));
     }
 
     [Fact]

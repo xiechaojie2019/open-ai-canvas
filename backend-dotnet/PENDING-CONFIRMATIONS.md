@@ -411,6 +411,22 @@
   `taskInputUses*`、`compactPersistedValue` 等前置件已随本批移植或已在
   CapabilitySpec/ModelCatalog 中。
 
+### 59. `[取舍]` ValidateTaskCapability 逐值校验未随队列 admission 移植
+- 位置：Go `model_capability.go:700`（validateImageTask / validateVideoTask /
+  validateWorkflowProvider*）
+- 现状：队列 admission 已移植（批 2）；OPTION 级参数约束由逻辑模型
+  MatchCapability 与系统渠道能力合同匹配覆盖。图片/视频的逐值校验
+  （尺寸枚举、时长范围、参考图数量与大小等）留待 worker 执行批次补齐。
+- 影响：客户端提交越界参数的任务会成功入队，执行阶段才会失败；
+  Go 会在 admission 阶段拒绝。无安全影响（能力合同仍由
+  ResolveLogicalModel / 渠道匹配强制）。
+
+### 60. `[已解决]` POST /tasks 队列路径 admission
+- 现状：**已移植**（本批）。三分支选路、能力默认值回填、capabilityOptions
+  归一、计费预留（channel/unified 双策略）、工作流插件门控、
+  项目归档守卫、内嵌媒体检查全部落地；471→477 项测试。
+- 剩余（下一批）：retry/cancel/query-provider 与 worker 执行引擎。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

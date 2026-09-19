@@ -793,6 +793,42 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 任务创建批 2（阶段 4.2，已端到端打通）
+
+本轮打通队列任务 admission：`POST /tasks` 队列路径全语义（与文本回放路径合计完成
+POST /tasks 全量），并新增 6 项队列端到端测试。
+
+### 本轮交付物
+
+- `TaskCreationService.Admission` — 队列三分支选路：
+  前台模型（ResolveLogicalModel + applyRoutedProviderSelection：供应链字段剔除、
+  能力默认值回填、capabilityOptions 写回执行配置、渠道模型/价格档 ID 写入）、
+  系统渠道（渠道/模型/协议/能力合同逐级校验 → 能力参数提取 → intent 匹配 →
+  图片定价规格归一（quality/size 缺省 1k）→ 价格档选择 → apiFormat/interfaceType 写入）、
+  自定义渠道（CustomChannels 门控 + 直通）
+- `ModelRequestIntentFromTaskInput` 全量移植（模式/类型推导、参考输入计数、
+  mask、capabilityOptions 优先、config 兜底、quality auto/any 剔除）
+- `taskBillingOrder` + `newLogicalModelBillingOrder` — credits 门控、
+  channel 策略走 BuildBillingOrderWithPriceTier（order.Model=前台 code）、
+  unified 策略按 fixed/per_second/token 三模式计价（PriceVersion 取 revision.Version）
+- 工作流协议门控（RunningHub 插件未启用 → 与 Go 一致 400 信封）、
+  视频模式检查、内嵌媒体检查、ensureTaskProjectActive 归档守卫、
+  protectTaskSecrets + 存储配额 + CreateTaskWith* 事务（批 1 已备）、任务日志
+- `Repository.TaskAdmission` — LogicalModelRoute/SystemChannelByID/CreateTaskLog
+
+### 已知取舍（PENDING #59）
+
+Go 的 `ValidateTaskCapability`（图片/视频参数逐值校验）未移植——
+OPTION 级约束已由 MatchCapability 与渠道能力合同匹配覆盖；图片/视频逐值校验
+随 worker 执行批次补齐。
+
+### 验证结果（477/477 通过）
+
+新增 6 项队列测试（前台路径入队+脱敏+日志、缺 logicalModelId 400、
+系统渠道缺配置 400、视频模式 400、RunningHub 400、内嵌媒体 400）。
+
+---
+
 ## 任务创建批 1（阶段 4.1，已端到端打通）
 
 本轮打通 **3 条路由**：`POST /tasks`（文本回放路径全语义 + 队列路径守卫）、
