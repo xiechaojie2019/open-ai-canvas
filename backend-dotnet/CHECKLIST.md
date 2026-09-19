@@ -809,7 +809,9 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 1. Windows 侧 tar 不保留可执行位 → Dockerfile 中 `RUN chmod +x ./OpenAICanvas.Web`。
 2. 自包含发布需 `RUN chmod` 或 ICUs 齐备；当前镜像为 aspnet:8.0（含 ICU）。
-3. web 前端（nginx 静态 + /api 反代）尚未部署该实例，仅后端 API。
+3. web 前端已部署（`open-ai-canvas-web:local`，nginx 静态 + /api 反代到
+   compose 内 backend 服务），宿主 **5173** → 容器 3000；backend 健康检查
+   使用 bash /dev/tcp（aspnet:8.0 无 wget/curl）。
 4. 该部署为独立实例，与 Go 版部署数据不互通。
 
 ---
