@@ -152,6 +152,7 @@ public sealed partial class Repository
             """
             UPDATE creation_runs SET
               state_json = @StateJSON, status = @Status, revision = @Revision,
+              canvas_id = @CanvasID,
               execution_epoch = @ExecutionEpoch, execution_owner = @ExecutionOwner,
               lease_expires_at = @LeaseExpiresAt,
               approved_proposal_version = @ApprovedProposalVersion,
@@ -439,6 +440,29 @@ public sealed class CreationRunMutationContext
         TaskEntity task, BillingOrder? order, int activeTaskLimit, CancellationToken cancellationToken = default) =>
         _repository.CreateTaskWithQuotaInTxAsync(_connection, _transaction, task, order, activeTaskLimit, cancellationToken);
 
+    public Task<TaskEntity?> TaskForUserAsync(
+        string userId, string taskId, CancellationToken cancellationToken = default) =>
+        _repository.TaskForUserInTxAsync(_connection, _transaction, userId, taskId, cancellationToken);
+
+    public Task<UserStorageUsage> UserStorageUsageAsync(
+        string userId, CancellationToken cancellationToken = default) =>
+        _repository.UserStorageUsageInTxAsync(_connection, _transaction, userId, cancellationToken);
+
+    public async Task<CanvasProject?> CanvasProjectForUserAsync(
+        string userId, string id, CancellationToken cancellationToken = default)
+    {
+        return await _repository.CanvasProjectForUserInTxAsync(
+            _connection, _transaction, userId, id, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task CreateCanvasProjectAsync(
+        CanvasProject canvas, CancellationToken cancellationToken = default) =>
+        _repository.CreateCanvasProjectInTxAsync(_connection, _transaction, canvas, cancellationToken);
+
+    public Task CompareSaveCreationCanvasAsync(
+        CanvasProject canvas, string previous, CancellationToken cancellationToken = default) =>
+        _repository.CompareSaveCreationCanvasInTxAsync(_connection, _transaction, canvas, previous, cancellationToken);
+
     public Task<long> CreationRunStorageBytesAsync(string userId, CancellationToken cancellationToken = default) =>
         _repository.CreationRunStorageBytesInTxAsync(_connection, _transaction, userId, cancellationToken);
 }
@@ -620,4 +644,121 @@ public sealed partial class Repository
             transaction,
             cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>创建画布工程。对应 Go: <c>CreateCreationCanvas</c>。</summary>
+    public async Task CreateCanvasProjectAsync(
+        CanvasProject canvas, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            SqlBuilder.Insert(typeof(CanvasProject)), canvas, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>比较并保存画布（期望旧载荷一致）。对应 Go: <c>CompareSaveCreationCanvas</c>。</summary>
+    public async Task CompareSaveCreationCanvasAsync(
+        CanvasProject canvas, string previous, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        int updated = await ExecuteAsync(
+            connection,
+            """
+            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now
+            WHERE id = @ID AND user_id = @UserID AND payload_json = @previous
+            """,
+            new { canvas.PayloadJSON, canvas.Title, now = DateTime.UtcNow, canvas.ID, canvas.UserID, previous },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (updated != 1)
+        {
+            throw new InvalidOperationException("creation_conflict");
+        }
+    }
+
+
+    internal async Task<TaskEntity?> TaskForUserInTxAsync(
+        DbConnection connection, DbTransaction? transaction,
+        string userId, string taskId, CancellationToken cancellationToken = default)
+    {
+        return await FirstOrDefaultAsync<TaskEntity>(
+            connection,
+            SqlBuilder.Select<TaskEntity>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            new { id = taskId, userId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+
+    internal async Task<UserStorageUsage> UserStorageUsageInTxAsync(
+        DbConnection connection, DbTransaction? transaction,
+        string userId, CancellationToken cancellationToken = default)
+    {
+        long taskCount = await ScalarAsync<long>(
+            connection, "SELECT COUNT(*) FROM tasks WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        long taskBytes = await ScalarAsync<long>(
+            connection, "SELECT COALESCE(SUM(length(prompt) + length(COALESCE(input_json, '')) + length(COALESCE(error, ''))), 0) FROM tasks WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        long assetCount = await ScalarAsync<long>(
+            connection, "SELECT COUNT(*) FROM assets WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        long assetBytes = await ScalarAsync<long>(
+            connection, "SELECT COALESCE(SUM(length(COALESCE(payload_json, ''))), 0) FROM assets WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        long canvasCount = await ScalarAsync<long>(
+            connection, "SELECT COUNT(*) FROM canvas_projects WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        long canvasBytes = await ScalarAsync<long>(
+            connection, "SELECT COALESCE(SUM(length(COALESCE(payload_json, ''))), 0) FROM canvas_projects WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        long apiCallCount = await ScalarAsync<long>(
+            connection, "SELECT COUNT(*) FROM api_call_logs WHERE user_id = @userId",
+            new { userId }, transaction, cancellationToken).ConfigureAwait(false);
+        return new UserStorageUsage
+        {
+            AssetCount = assetCount, AssetBytes = assetBytes,
+            CanvasCount = canvasCount, CanvasBytes = canvasBytes,
+            TaskCount = taskCount, TaskBytes = taskBytes,
+            ApiCallCount = apiCallCount,
+        };
+    }
+
+    internal async Task<CanvasProject?> CanvasProjectForUserInTxAsync(
+        DbConnection connection, DbTransaction? transaction,
+        string userId, string id, CancellationToken cancellationToken = default)
+    {
+        return await FirstOrDefaultAsync<CanvasProject>(
+            connection,
+            SqlBuilder.Select<CanvasProject>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            new { id, userId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task CreateCanvasProjectInTxAsync(
+        DbConnection connection, DbTransaction? transaction,
+        CanvasProject canvas, CancellationToken cancellationToken = default)
+    {
+        await ExecuteAsync(
+            connection, SqlBuilder.Insert<CanvasProject>(), canvas, transaction, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task CompareSaveCreationCanvasInTxAsync(
+        DbConnection connection, DbTransaction? transaction,
+        CanvasProject canvas, string previous, CancellationToken cancellationToken = default)
+    {
+        int updated = await ExecuteAsync(
+            connection,
+            """
+            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now
+            WHERE id = @ID AND user_id = @UserID AND payload_json = @previous
+            """,
+            new { canvas.PayloadJSON, canvas.Title, now = DateTime.UtcNow, canvas.ID, canvas.UserID, previous },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        if (updated != 1)
+        {
+            throw new InvalidOperationException("creation_conflict");
+        }
+    }
+
 }

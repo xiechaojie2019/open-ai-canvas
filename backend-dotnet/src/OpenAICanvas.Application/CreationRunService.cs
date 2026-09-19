@@ -48,13 +48,45 @@ public sealed class CreationCanvasOpDto
     [GoOmitEmpty]
     public string FromNodeID { get; set; } = "";
 
+    [JsonPropertyName("fromHandleId")]
+    [GoOmitEmpty]
+    public string FromHandleID { get; set; } = "";
+
     [JsonPropertyName("toNodeId")]
     [GoOmitEmpty]
     public string ToNodeID { get; set; } = "";
 
+    [JsonPropertyName("toHandleId")]
+    [GoOmitEmpty]
+    public string ToHandleID { get; set; } = "";
+
     [JsonPropertyName("ids")]
     [GoOmitEmpty]
     public List<string>? IDs { get; set; }
+
+    [JsonPropertyName("title")]
+    [GoOmitEmpty]
+    public string Title { get; set; } = "";
+
+    [JsonPropertyName("position")]
+    [GoOmitEmpty]
+    public Dictionary<string, JsonElement>? Position { get; set; }
+
+    [JsonPropertyName("x")]
+    [GoOmitEmpty]
+    public double? X { get; set; }
+
+    [JsonPropertyName("y")]
+    [GoOmitEmpty]
+    public double? Y { get; set; }
+
+    [JsonPropertyName("width")]
+    [GoOmitEmpty]
+    public double? Width { get; set; }
+
+    [JsonPropertyName("height")]
+    [GoOmitEmpty]
+    public double? Height { get; set; }
 }
 
 /// <summary>创作请求。对应 Go: <c>app.CreationRequest</c>。</summary>
@@ -104,6 +136,12 @@ public sealed class CreationRequestDto
 
     [JsonPropertyName("submissionId")]
     public string SubmissionID { get; set; } = "";
+
+    [JsonPropertyName("expectedSnapshotHash")]
+    public string ExpectedSnapshotHash { get; set; } = "";
+
+    [JsonPropertyName("document")]
+    public JsonElement? Document { get; set; }
 }
 
 /// <summary>运行输出（含展开 state）。对应 Go: <c>app.CreationRunOutput</c>。</summary>
@@ -231,7 +269,7 @@ public sealed class CreationDetailDto
 /// 画布提交三路由（canvas / canvas-snapshot / canvas-commit）属
 /// <c>creation_canvas.go</c>，随下一批接入（PENDING #63）。
 /// </remarks>
-public sealed class CreationRunService
+public sealed partial class CreationRunService
 {
     private const string CreationConflictMessage = "创作状态已变化，请重新读取后继续";
 
@@ -249,6 +287,7 @@ public sealed class CreationRunService
     private readonly Repository _repository;
     private readonly TaskCreationService _creations;
     private readonly IRuntimePolicyProvider _runtimePolicy;
+    internal UserDataService? UserData { get; set; }
 
     public CreationRunService(
         Repository repository,

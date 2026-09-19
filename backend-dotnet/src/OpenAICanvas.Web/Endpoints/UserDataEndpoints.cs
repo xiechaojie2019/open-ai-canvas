@@ -2518,6 +2518,66 @@ public static class UserDataEndpoints
             }
         });
 
+        api.MapPost("/creation-runs/{id}/canvas", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Dictionary<string, JsonElement?> result = await service.CreationRuns.CreateCanvasAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/creation-runs/{id}/canvas-snapshot", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                Dictionary<string, JsonElement?> snapshot = await service.CreationRuns.CanvasSnapshotAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(snapshot);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/creation-runs/{id}/canvas-commit", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 8 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Dictionary<string, JsonElement?> result = await service.CreationRuns.CommitCanvasAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapPost("/creation-runs/{id}/execute", async (
             HttpContext context, string id, CancellationToken cancellationToken) =>
         {

@@ -844,6 +844,11 @@ public sealed class UserDataService
     /// 画布同步的最终服务端不变量：持久化画布只能通过本用户素材指向已上传资源。
     /// 对应 Go: <c>ValidateCanvasMediaAssets</c>。
     /// </summary>
+    /// <summary>创作画布提交的媒体资产守卫（公共入口）。</summary>
+    public Task ValidateCanvasMediaAssetsPublicAsync(
+        string userId, string rawText, CancellationToken cancellationToken = default) =>
+        ValidateCanvasMediaAssetsAsync(userId, rawText, cancellationToken);
+
     private async Task ValidateCanvasMediaAssetsAsync(
         string userId,
         string rawText,

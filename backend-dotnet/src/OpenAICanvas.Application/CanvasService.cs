@@ -85,6 +85,7 @@ public sealed class CanvasService
         TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);
         TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
         CreationRuns = new CreationRunService(repository, TaskCreations, RuntimePolicy);
+        CreationRuns.UserData = UserData;
         // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
         Payments = new PaymentService(
             repository,
