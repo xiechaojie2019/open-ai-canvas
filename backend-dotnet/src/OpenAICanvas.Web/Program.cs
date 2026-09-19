@@ -196,6 +196,7 @@ api.MapSkillWriteRoutes(app.Services.GetRequiredService<OpenAICanvas.Application
 api.MapAdminLogMediaRoute(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>());
+api.MapDiagnosticsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
 // 支付路由（渠道、商品、订单、回调）。对应 Go 的 handler.RegisterPaymentRoutes。
 api.MapPaymentRoutes(

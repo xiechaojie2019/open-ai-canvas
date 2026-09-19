@@ -1215,6 +1215,67 @@ public static class UserDataEndpoints
     }
 
     /// <summary>
+    /// 用户诊断包路由。对应 Go: <c>handler/diagnostics.go</c>。
+    /// </summary>
+    public static void MapDiagnosticsRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapPost("/diagnostics/preview", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                DiagnosticExportRequestDto? request = await ReadJsonAsync<DiagnosticExportRequestDto>(
+                    context, 4 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                DiagnosticPreviewDto preview = await service.Diagnostics.PreviewAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(preview);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/diagnostics/export", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                DiagnosticExportRequestDto? request = await ReadJsonAsync<DiagnosticExportRequestDto>(
+                    context, 4 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                DiagnosticBundleDto bundle = await service.Diagnostics.ExportAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                context.Response.Headers["Cache-Control"] = "private, no-store";
+                context.Response.Headers["Content-Disposition"] =
+                    "attachment; filename=\"" + bundle.FileName + "\"";
+                context.Response.Headers["X-Diagnostic-Bundle-ID"] = bundle.BundleID;
+                context.Response.Headers["X-Diagnostic-Schema-Version"] = "1";
+                context.Response.ContentType = "application/zip";
+                await context.Response.Body.WriteAsync(bundle.Data, cancellationToken).ConfigureAwait(false);
+                return Results.Empty;
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
     /// 管理端日志媒体路由。对应 Go: <c>GET /admin/api-logs/:id/media</c>。
     /// </summary>
     public static void MapAdminLogMediaRoute(

@@ -816,6 +816,30 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 用户诊断包（阶段 10.x，已端到端打通）
+
+本轮打通 **2 条路由**：`POST /diagnostics/preview`、`POST /diagnostics/export`。
+
+### 本轮交付物
+
+- `Repository.Diagnostics` — 窗口内采集三查询（tasks 100 / task-logs 2000 /
+  upstream-calls 1000 上限；taskId 直取或 project 过滤；上游调用裁剪报文列）
+- `DiagnosticsService` — 时间窗归一（RFC3339、默认近 30 分钟、to 封顶 now、
+  超 24 小时拒绝）、任务归属校验、客户端事件截取最后 500 条（truncated 标记）、
+  逐记录脱敏（14 类敏感标记命中值段替换 [REDACTED]、URL 剥离 query/fragment、
+  标识符白名单字符、rune 截断、数值上下界）
+- ZIP 构建：manifest.json（schemaVersion=1、bundleId、时间窗、counts）、
+  README.txt（品牌名来自外观设置，默认 影策）、client/events.jsonl、
+  backend/tasks.jsonl、backend/task-logs.jsonl、backend/upstream-calls.jsonl、
+  context/runtime.json；10MB 上限；no-store + X-Diagnostic-* 响应头
+- 2 条路由接线（MapDiagnosticsRoutes）
+
+### 验证结果（494/494 通过）
+
+新增 2 项测试（预览计数/超窗 400/时间格式 400/导出 ZIP 结构与响应头；401）。
+
+---
+
 ## 技能创建与更新（阶段 10.3 收尾，已端到端打通）
 
 本轮打通 **2 条路由**：`POST /skills`、`PUT /skills/:id`（单 Markdown 技能）。
