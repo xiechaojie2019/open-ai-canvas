@@ -793,6 +793,33 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 技能包文件读取（阶段 10.3 部分，已端到端打通）
+
+本轮打通 **5 条路由**：`GET /skills/:id/files`、`GET /skills/:id/file?path=`、
+`GET /skills/:id/file/raw?path=`、`GET /skills/:id/bundle`、`GET /skills/:id/search?q=`。
+
+### 本轮交付物
+
+- `Repository.SkillPackages` — SkillVersion / SkillFiles 查询
+- `SkillsService.Packages` — 5 条读路径：文件清单、文本预览（512KB 上限、
+  二进制标记）、raw 直出（no-store/nosniff/CSP sandbox/inline disposition）、
+  bundle（全文件 base64 + 版本元数据）、内容搜索（1-120 字符、文本文件逐行、
+  截断 240、上限 50 条）；`normalizeSkillPath`（相对路径 clean + ../ 与 .git 拒绝 +
+  长度上限）、mime/kind 判定
+- zip 读取走 `dataDir/skill-packages/<packageKey>`（与 Go 落盘布局一致，
+  Go 部署的既有包数据可直接读取）
+
+### 已知取舍（PENDING #65）
+
+install（upload/markdown/zip 解析）/install-github/sync 三条写路由未移植
+（上传解析与出站 GitHub 客户端），create/update（单 Markdown 技能）随下批。
+
+### 验证结果（490/490 通过）
+
+新增 2 项测试（清单/预览/raw+安全头/搜索/聚合/越界 400/缺失 400；401）。
+
+---
+
 ## 创作画布提交（阶段 4.15 收尾，已端到端打通）
 
 本轮打通 **3 条路由**：`POST /creation-runs/:id/canvas`（创建/关联画布）、

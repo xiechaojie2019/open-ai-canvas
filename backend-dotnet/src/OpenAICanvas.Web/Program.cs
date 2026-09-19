@@ -191,6 +191,7 @@ api.MapCreationRunRoutes(app.Services.GetRequiredService<OpenAICanvas.Applicatio
 
 // 技能库读取与状态路由。对应 Go 的 handler.RegisterSkillRoutes。
 api.MapSkillsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapSkillPackageRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
 // 支付路由（渠道、商品、订单、回调）。对应 Go 的 handler.RegisterPaymentRoutes。
 api.MapPaymentRoutes(

@@ -460,6 +460,14 @@
   （媒体模式直接拒绝 agentRequests，与 Go 一致）。
 - 处置建议：随云 Agent 批次补齐。
 
+### 65. `[待移植]` 技能写入与同步（3 条）
+- 位置：Go `skills/skill_packages.go` InstallSkillUpload（multipart zip/markdown
+  解析 + normalizeSkillArchiveRoot + persistSkillArchive）/ InstallGitHubSkill /
+  SyncGitHubSkill（出站 GitHub 客户端 + StartSyncWorker）
+- 现状：5 条文件读路由已通（与 Go 落盘布局一致）；create/update（单 Markdown
+  技能，走 createSingleMarkdownSkill）随下批；install/sync 依赖出站与
+  zip/markdown 解析器（archiveFromZip/archiveFromMarkdown/normalizeSkillArchiveRoot）。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

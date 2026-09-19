@@ -253,4 +253,103 @@ public static class SkillsEndpoints
         value = parsed;
         return true;
     }
+    /// <summary>
+    /// 技能包文件读取路由。对应 Go: <c>handler/skills.go</c> 的 files/file/file-raw/bundle/search。
+    /// </summary>
+    public static void MapSkillPackageRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapGet("/skills/{id}/files", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                List<SkillPackageFileItemDto> files = await service.Skills.SkillPackageFilesAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { files });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/skills/{id}/file", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                SkillPackageFileContentDto file = await service.Skills.SkillPackageFileAsync(
+                    user.ID, id, context.Request.Query["path"].ToString(), cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { file });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/skills/{id}/file/raw", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (byte[] data, string mimeType, string fileName) = await service.Skills.SkillPackageRawFileAsync(
+                    user.ID, id, context.Request.Query["path"].ToString(), cancellationToken).ConfigureAwait(false);
+                context.Response.Headers["Cache-Control"] = "private, no-store";
+                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+                context.Response.Headers["Content-Disposition"] =
+                    "inline; filename=" + (fileName.Contains(' ') ? "\"" + fileName + "\"" : fileName);
+                return Results.Bytes(data, mimeType);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/skills/{id}/bundle", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                SkillPackageBundleDto bundle = await service.Skills.SkillPackageBundleAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                context.Response.Headers["Cache-Control"] = "private, no-store";
+                return ApiResults.Ok(new { bundle });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/skills/{id}/search", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                List<SkillFileSearchResultDto> results = await service.Skills.SearchSkillPackageAsync(
+                    user.ID, id, context.Request.Query["q"].ToString(), cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { results });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
 }

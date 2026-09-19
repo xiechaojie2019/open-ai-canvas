@@ -79,7 +79,7 @@ public sealed class CanvasService
         AdminUsers = new AdminUserService(repository, Auth, CreditPolicy, RuntimePolicy);
         Tasks = new TaskService(repository);
         Finance = new FinanceService(repository, CreditPolicy, Features);
-        Skills = new SkillsService(repository);
+        Skills = new SkillsService(repository, dataDir);
         PromptTemplates = new Prompts.PromptTemplateService(repository);
         ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
         TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);

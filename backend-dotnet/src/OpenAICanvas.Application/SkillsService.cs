@@ -203,7 +203,7 @@ public sealed class SkillListDto
 /// 本轮覆盖列表 / 详情 / 已添加 / 加入 / 收藏 / 删除。
 /// 创建与更新依赖技能包文件写入（<c>skill_packages.go</c>），另行实现。
 /// </remarks>
-public sealed class SkillsService
+public sealed partial class SkillsService
 {
     /// <summary>技能状态：启用。对应 Go: <c>skillStatusEnabled</c>。</summary>
     private const long SkillStatusEnabled = 1;
@@ -219,10 +219,12 @@ public sealed class SkillsService
     };
 
     private readonly Repository _repository;
+    private readonly string _dataDir;
 
-    public SkillsService(Repository repository)
+    public SkillsService(Repository repository, string? dataDir = null)
     {
         _repository = repository;
+        _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
     }
 
     // ------------------------------------------------------------ 列表
