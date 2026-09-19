@@ -342,4 +342,84 @@ public sealed partial class Repository
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>创建技能与包（四写同事务）。对应 Go: <c>CreateSkillWithPackage</c>。</summary>
+    public async Task CreateSkillWithPackageAsync(
+        Skill skill,
+        SkillVersion version,
+        IReadOnlyList<SkillFile> files,
+        UserSkillState ownerState,
+        CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlBuilder.Insert<Skill>(), skill, transaction, cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlBuilder.Insert<SkillVersion>(), version, transaction, cancellationToken).ConfigureAwait(false);
+        foreach (SkillFile file in files)
+        {
+            await ExecuteAsync(connection, SqlBuilder.Insert<SkillFile>(), file, transaction, cancellationToken).ConfigureAwait(false);
+        }
+        await ExecuteAsync(connection, SqlBuilder.Insert<UserSkillState>(), ownerState, transaction, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>追加技能版本（版本+文件+技能保存同事务）。对应 Go: <c>AddSkillVersion</c>。</summary>
+    public async Task AddSkillVersionAsync(
+        Skill skill,
+        SkillVersion version,
+        IReadOnlyList<SkillFile> files,
+        CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, SqlBuilder.Insert<SkillVersion>(), version, transaction, cancellationToken).ConfigureAwait(false);
+        foreach (SkillFile file in files)
+        {
+            await ExecuteAsync(connection, SqlBuilder.Insert<SkillFile>(), file, transaction, cancellationToken).ConfigureAwait(false);
+        }
+        await ExecuteAsync(
+            connection,
+            """
+            UPDATE skills SET
+              instruction = @Instruction,
+              current_version_id = @CurrentVersionID, version_label = @VersionLabel,
+              content_hash = @ContentHash, file_count = @FileCount, total_bytes = @TotalBytes,
+              source_type = @SourceType, source_url = @SourceURL, source_ref = @SourceRef,
+              source_subdir = @SourceSubdir, source_commit = @SourceCommit,
+              sync_status = @SyncStatus, sync_error = @SyncError, auto_update = @AutoUpdate,
+              last_checked_at = @LastCheckedAt, last_synced_at = @LastSyncedAt,
+              updated_at = @UpdatedAt
+            WHERE id = @ID
+            """,
+            skill,
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>保存技能全量字段。对应 Go: <c>SaveSkill</c>（GORM Save）。</summary>
+    public async Task SaveSkillAsync(Skill skill, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        int updated = await ExecuteAsync(
+            connection,
+            """
+            UPDATE skills SET
+              name = @Name, description = @Description, instruction = @Instruction,
+              tag = @Tag, is_private = @IsPrivate, markdown_url = @MarkdownURL,
+              showcase_media_json = @ShowcaseMediaJSON, extra_info = @ExtraInfo,
+              current_version_id = @CurrentVersionID, version_label = @VersionLabel,
+              content_hash = @ContentHash, file_count = @FileCount, total_bytes = @TotalBytes,
+              updated_at = @UpdatedAt
+            WHERE id = @ID
+            """,
+            skill,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (updated == 0)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                SqlBuilder.Insert<Skill>(), skill, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+    }
+
 }

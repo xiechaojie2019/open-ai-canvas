@@ -793,6 +793,30 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 技能创建与更新（阶段 10.3 收尾，已端到端打通）
+
+本轮打通 **2 条路由**：`POST /skills`、`PUT /skills/:id`（单 Markdown 技能）。
+PENDING #65 的 create/update 部分关闭；install/sync 3 条仍待（依赖出站 GitHub 客户端）。
+
+### 本轮交付物
+
+- `SkillMutationRequestDto` + `NormalizeMutation` — 归一化与校验
+  （名称 1-80 / 简介 1-500 / 指令 1-100000 rune、分类白名单、
+  Markdown URL HTTP(S) 校验、补充信息 2000、展示媒体 ≤8 且类型/URL 校验）
+- `CreateSkillAsync` — 单 Markdown 归档（SKILL.md = 指令）→ 内容哈希
+  （排序路径 path+NUL+content+NUL 累积 SHA-256）→ ZIP 落盘
+  （`dataDir/skill-packages/<skillId>/<versionId>.zip`）→ 技能/版本/文件清单/
+  所有者状态四写同事务
+- `UpdateSkillAsync` — 归属校验 → 归一化（markdown/builtin/空源要求指令）→
+  追加版本（ZIP 重写 + 版本行 + skills 行含 instruction 全量更新）
+- 2 条路由接线（MapSkillWriteRoutes）
+
+### 验证结果（492/492 通过）
+
+新增 2 项测试（创建校验/落盘/更新版本追加/bundle 反映新内容；401）。
+
+---
+
 ## 技能包文件读取（阶段 10.3 部分，已端到端打通）
 
 本轮打通 **5 条路由**：`GET /skills/:id/files`、`GET /skills/:id/file?path=`、

@@ -253,6 +253,79 @@ public static class SkillsEndpoints
         value = parsed;
         return true;
     }
+    /// <summary>技能创建/更新路由。对应 Go: <c>handler/skills.go</c> POST /skills 与 PUT /skills/:id。</summary>
+    public static void MapSkillWriteRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        api.MapPost("/skills", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                SkillMutationRequestDto? request = await ReadJsonAsync<SkillMutationRequestDto>(context, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("技能数据格式无效"));
+                }
+                SkillItemDto skill = await service.Skills.CreateSkillAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { skill });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/skills/{id}", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                SkillMutationRequestDto? request = await ReadJsonAsync<SkillMutationRequestDto>(context, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("技能数据格式无效"));
+                }
+                SkillItemDto skill = await service.Skills.UpdateSkillAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { skill });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>读取 JSON 请求体。</summary>
+    private static async Task<T?> ReadJsonAsync<T>(
+        HttpContext context, CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            return await System.Text.Json.JsonSerializer.DeserializeAsync<T>(
+                context.Request.Body,
+                OpenAICanvas.Web.Serialization.CanvasJson.ReadOptions,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// 技能包文件读取路由。对应 Go: <c>handler/skills.go</c> 的 files/file/file-raw/bundle/search。
     /// </summary>
