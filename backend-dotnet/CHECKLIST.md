@@ -793,6 +793,27 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 部署（阶段 12.7 部分完成）
+
+.NET 后端已部署至 **192.168.0.211**（Docker，独立目录 /opt/open-ai-canvas-dotnet）：
+
+- 栈：postgres:17-alpine + redis:7.4-alpine + 自包含发布的 OpenAICanvas.Web
+  （self-contained linux-x64，`mcr.microsoft.com/dotnet/aspnet:8.0` 基础镜像）
+- 端口：宿主 **8081** → 容器 8080（避开宿主机 8080 上的 Go 部署）
+- 数据库密码：`/opt/open-ai-canvas-dotnet/.env`（600 权限，openssl 随机生成）
+- 健康验证：`/api/health/live`、`/api/health/ready`（schema 15/15 ready、database ok）、
+  注册接口实测写入成功（首账号自动 admin）
+- 数据库自动迁移：`CANVAS_AUTO_MIGRATE=true`（postgres schema 0→15）
+
+### 已知事项
+
+1. Windows 侧 tar 不保留可执行位 → Dockerfile 中 `RUN chmod +x ./OpenAICanvas.Web`。
+2. 自包含发布需 `RUN chmod` 或 ICUs 齐备；当前镜像为 aspnet:8.0（含 ICU）。
+3. web 前端（nginx 静态 + /api 反代）尚未部署该实例，仅后端 API。
+4. 该部署为独立实例，与 Go 版部署数据不互通。
+
+---
+
 ## 技能创建与更新（阶段 10.3 收尾，已端到端打通）
 
 本轮打通 **2 条路由**：`POST /skills`、`PUT /skills/:id`（单 Markdown 技能）。
