@@ -84,6 +84,8 @@ public sealed class CanvasService
         ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
         TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);
         TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
+        AdminLogMedia = new AdminLogMediaService(repository,
+            new ResourceDomainService(repository, RuntimePolicy, dataDir));
         CreationRuns = new CreationRunService(repository, TaskCreations, RuntimePolicy);
         CreationRuns.UserData = UserData;
         // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
@@ -626,6 +628,9 @@ public sealed class CanvasService
 
     /// <summary>智能创作运行。对应 Go: <c>app/creation.go</c>。</summary>
     public CreationRunService CreationRuns { get; }
+
+    /// <summary>管理端日志媒体。对应 Go: <c>PrepareAdminAPICallLogMediaDelivery</c>。</summary>
+    public AdminLogMediaService AdminLogMedia { get; }
 
 
 

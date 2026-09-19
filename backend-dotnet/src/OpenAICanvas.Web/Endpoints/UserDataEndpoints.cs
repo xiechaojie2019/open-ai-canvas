@@ -1215,6 +1215,42 @@ public static class UserDataEndpoints
     }
 
     /// <summary>
+    /// 管理端日志媒体路由。对应 Go: <c>GET /admin/api-logs/:id/media</c>。
+    /// </summary>
+    public static void MapAdminLogMediaRoute(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        ResourceDomainService resources)
+    {
+        api.MapGet("/admin/api-logs/{id}/media", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ResourceDelivery delivery = await service.AdminLogMedia.PrepareMediaDeliveryAsync(
+                    actor, id, cancellationToken).ConfigureAwait(false);
+                if (delivery.RedirectURL.Length > 0)
+                {
+                    return Results.Redirect(delivery.RedirectURL);
+                }
+                context.Response.Headers["Accept-Ranges"] = delivery.AcceptRanges;
+                context.Response.ContentType = delivery.Resource.MimeType;
+                await using (System.IO.Stream body = delivery.Stream!)
+                {
+                    await body.CopyToAsync(context.Response.Body, cancellationToken).ConfigureAwait(false);
+                }
+                return Results.Empty;
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
     /// 管理后台日志与存储路由。对应 Go: <c>handler/auth.go</c> 日志部分与
     /// <c>handler/admin_storage.go</c> 统计部分。
     /// </summary>
