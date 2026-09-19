@@ -793,6 +793,42 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 创作画布提交（阶段 4.15 收尾，已端到端打通）
+
+本轮打通 **3 条路由**：`POST /creation-runs/:id/canvas`（创建/关联画布）、
+`GET /creation-runs/:id/canvas-snapshot`、`POST /creation-runs/:id/canvas-commit`
+（获批范围 diff 校验 + 乐观提交）。PENDING #63 关闭。
+
+### 本轮交付物
+
+- canvas：守卫/状态/已批准校验 → 新建默认画布（结构化配额 + 事务内落库 +
+  绑定 run.CanvasID + revision+1 + waiting_canvas）或幂等返回已关联画布
+- snapshot：画布文档 + `creationHash` 快照哈希
+- commit：`ValidateSyncedPayload` + 媒体资产守卫 + 快照哈希乐观锁 +
+  **获批范围 diff**：顶层字段（nodes/connections/updatedAt 外）禁改禁增、
+  节点禁删、更新节点按 ops 逐字段重放比对（含 baseline 手工编辑三态检测）、
+  新增节点按 `creationAddedNode` 默认参数比对（8 类节点默认尺寸/标题）、
+  连线禁改禁删/新增需批准且端点存在、结果回写须绑定本运行提交的真实成功任务
+  （taskId/nodeId/资源指纹/成功态四重校验）→ CompareSave 乐观提交
+- `CreationRunMutationContext` 补事务内用户存储用量 / 画布读取与写入 /
+  任务读取；`SameJson` 改为**语义相等**（键序与转义无关，字符串按解码值、
+  数字按值）替代 raw-text 比较
+
+### 关键实现点
+
+1. **客户端回传的 JSON 转义形式不可信**（HttpClient 默认编码会把非 ASCII 转成
+   unicode 转义），raw-text 比较会误报「方案外内容」；改为递归语义比较。
+2. `MutateCreationRun` 事务内**所有读写必须走同一连接**——回调里经
+   `_repository.*` 的辅助查询会开新连接，SQLite 下死锁/超时；
+   统一改走 `CreationRunMutationContext` 的事务内方法（含 UserStorageUsage）。
+3. `MutateCreationRun` 的 UPDATE 需覆盖 `canvas_id`（CreateRunCanvas 会改它）。
+
+### 验证结果（488/488 通过）
+
+新增 2 项测试（未批准 409 → 批准后创建画布 → 快照 → 原样提交 → 过期哈希 409；401）。
+
+---
+
 ## 创作运行（阶段 4.15 主体，已端到端打通）
 
 本轮打通 **13 条路由**：`GET/POST /creation-runs`、`GET/PATCH /creation-runs/:id`、
