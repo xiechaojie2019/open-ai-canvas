@@ -78,6 +78,77 @@ public static class TaskEndpoints
         api.MapPost("/timeline/transcriptions", async (HttpContext context, CancellationToken cancellationToken) =>
             await TimelineTranscriptionHandler(context, service, limiter, policyProvider, cancellationToken));
 
+        // ------------------------------------------------------------ 重试 / 取消 / 上游查询
+
+        api.MapPost("/tasks/{id}/retry", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                TaskEntity task;
+                try
+                {
+                    task = await service.TaskLifecycle.RetryAsync(
+                        user.ID, id, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    // Go handler 对 RetryTask 的所有错误统一 fail(c, 400, err)。
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, error);
+                }
+                return ApiResults.Ok(task);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/tasks/{id}/cancel", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                TaskEntity task;
+                try
+                {
+                    task = await service.TaskLifecycle.CancelAsync(
+                        user.ID, id, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    // Go handler 对 CancelTask 的所有错误统一 fail(c, 400, err)。
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, error);
+                }
+                return ApiResults.Ok(task);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/tasks/{id}/query-provider", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProviderTaskQueryResultDto result = await service.TaskLifecycle.QueryProviderAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         // ------------------------------------------------------------ 任务列表
 
         api.MapGet("/tasks", async (HttpContext context, CancellationToken cancellationToken) =>

@@ -427,6 +427,21 @@
   项目归档守卫、内嵌媒体检查全部落地；471→477 项测试。
 - 剩余（下一批）：retry/cancel/query-provider 与 worker 执行引擎。
 
+### 61. `[取舍]` 取消任务的上游 HTTP 取消请求跳过
+- 位置：Go `task_lifecycle.go` cancelTask 的 requestProviderCancellation 后台调用
+- 现状：本批 cancel 已移植条件取消、幂等、账单退款/待核对、文本回放收尾；
+  带 ProviderRequestID 的任务在 Go 会后台请求上游取消（30s 超时，失败仅记日志）。
+  C# 无 provider 引擎，跳过该调用并记录 warn 日志；费用仍留给
+  人工核对/retry 对账（与 Go 的最终账务路径一致），任务侧状态无差异。
+- 处置建议：随 provider 引擎批次补齐。
+
+### 62. `[待移植]` query-provider 的上游状态查询
+- 位置：Go `provider_task_recovery.go` queryFailedVideoTask 后半段
+- 现状：四级准入门槛（失败态/视频类型/上游 ID/账单归属）与租约语义已移植；
+  实际上游查询依赖 declarative protocol adapter（provider 引擎）。
+  当前通过门槛后返回 Go 对非声明式协议的同文案
+  「该任务的请求协议不支持安全查询上游状态」。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

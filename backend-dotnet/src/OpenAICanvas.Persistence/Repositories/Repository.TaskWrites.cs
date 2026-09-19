@@ -133,4 +133,96 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated == 1;
     }
+
+    /// <summary>
+    /// 重试事务：活跃限额、计费预留、任务字段重置与 route_run 递增、文本增量清空。
+    /// 对应 Go: <c>RetryTaskWithBilling</c>。命中 0 行抛 task_not_retryable。
+    /// </summary>
+    public async Task<TaskEntity> RetryTaskWithBillingAsync(
+        string userId,
+        TaskEntity prepared,
+        BillingOrder? order,
+        int activeTaskLimit,
+        CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        long count = await ScalarAsync<long>(
+            connection,
+            "SELECT COUNT(*) FROM tasks WHERE user_id = @userId AND status IN ('queued', 'running')",
+            new { userId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        if (count >= activeTaskLimit)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("active_task_limit");
+        }
+        if (order is not null)
+        {
+            await ReserveBillingOrderInTransactionAsync(
+                connection, transaction, order, cancellationToken).ConfigureAwait(false);
+        }
+
+        DateTime now = DateTime.UtcNow;
+        int updated = await ExecuteAsync(
+            connection,
+            """
+            UPDATE tasks SET
+              status = 'queued', stage = '等待队列调度', progress = 5, error = '', result_json = '',
+              text_draft = '', started_at = NULL, completed_at = NULL,
+              provider_request_id = '', poll_stage = '', next_poll_at = NULL,
+              provider_cancel_status = '', provider_cancel_error = '', provider_cancel_attempts = 0,
+              provider_cancel_requested_at = NULL, provider_cancelled_at = NULL, provider_cancel_next_check_at = NULL,
+              route_run = route_run + 1,
+              logical_model_revision_id = @LogicalModelRevisionID, route_id = @RouteID,
+              channel_model_id = @ChannelModelID, input_json = @InputJSON,
+              model = @Model, provider = @Provider,
+              lease_owner = '', lease_expires_at = NULL, updated_at = @now,
+              billing_order_id = @billingOrderId
+            WHERE id = @ID AND user_id = @UserID AND status IN ('failed', 'cancelled')
+            """,
+            new
+            {
+                prepared.LogicalModelRevisionID,
+                prepared.RouteID,
+                prepared.ChannelModelID,
+                prepared.InputJSON,
+                prepared.Model,
+                prepared.Provider,
+                now,
+                billingOrderId = order is not null ? order.ID : "",
+                prepared.ID,
+                prepared.UserID,
+            },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        if (updated != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("task_not_retryable");
+        }
+        await ExecuteAsync(
+            connection,
+            "DELETE FROM task_text_delta WHERE user_id = @userId AND task_id = @taskId",
+            new { userId, taskId = prepared.ID },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        TaskEntity? task = await FirstOrDefaultAsync<TaskEntity>(
+            connection,
+            SqlBuilder.Select<TaskEntity>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            new { id = prepared.ID, userId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        if (task is null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("record not found");
+        }
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return task;
+    }
+
 }

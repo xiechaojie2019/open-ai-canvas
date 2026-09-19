@@ -793,6 +793,40 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 任务生命周期（阶段 4.3，已端到端打通）
+
+本轮打通 **3 条路由**：`POST /tasks/:id/retry`、`POST /tasks/:id/cancel`、
+`POST /tasks/:id/query-provider`（准入门槛 + 归属校验）。
+
+### 本轮交付物
+
+- `TaskLifecycleService` — retry：creation 冲突 409、cloud_agent 拒绝、
+  状态白名单（failed/cancelled）、上游取消待确认拒绝、计费核对
+  （uncertain → 费用核对文案）、内容审核拒绝、归档模型快照重试
+  （revision/route/channelModel/渠道四级失效文案 + 能力合同重匹配 + 价格配置检查）、
+  `RetryTaskWithBilling` 事务（限额 + 积分预留 + 字段重置 + route_run+1 +
+  文本增量清空，task_not_retryable 幂等冲突）
+- cancel：条件更新（CancelTaskIfStatus，用户/状态双守卫）、幂等返回、
+  状态漂移报错、ProviderRequestID 补齐（账单 + 最近请求日志）、
+  文本回放草稿保留（7 天）、排队取消直接退款 / 运行取消冻结待核对
+- query-provider：失败态/视频类型/上游 ID/账单归属四级门槛，
+  上游查询本身依赖 provider 引擎（PENDING #60，返回 Go 非声明式协议同文案）
+- `Repository.TaskWrites.RetryTaskWithBillingAsync` +
+  `Repository.TaskAdmission.LogicalModelRouteAsync`/`SystemChannelByIDAsync`/
+  `CreateTaskLogAsync`
+
+### 已知取舍（PENDING #60）
+
+取消时带 ProviderRequestID 的任务，Go 会后台请求上游取消；本批跳过该 HTTP 调用
+（费用留给人工核对/retry 对账，与 Go 的最终账务路径一致），记录 warn 日志。
+
+### 验证结果（483/483 通过）
+
+新增 6 项测试（取消排队任务退款+幂等、取消完成任务 400、
+重试失败任务重新入队+幂等冲突、重试运行中 400、查询非失败任务 400、401）。
+
+---
+
 ## 任务创建批 2（阶段 4.2，已端到端打通）
 
 本轮打通队列任务 admission：`POST /tasks` 队列路径全语义（与文本回放路径合计完成

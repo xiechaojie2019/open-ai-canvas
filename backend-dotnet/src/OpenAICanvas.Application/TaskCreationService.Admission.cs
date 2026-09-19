@@ -427,7 +427,7 @@ public sealed partial class TaskCreationService
     // ------------------------------------------------------------ 计费
 
     /// <summary>任务计费单。对应 Go: <c>taskBillingOrder</c>（credits 关闭时为 null）。</summary>
-    private async Task<BillingOrder?> TaskBillingOrderAsync(
+    internal async Task<BillingOrder?> TaskBillingOrderAsync(
         string userId, TaskEntity task, Dictionary<string, JsonElement> input, CancellationToken cancellationToken)
     {
         if (_features is null
@@ -605,7 +605,7 @@ public sealed partial class TaskCreationService
     // ------------------------------------------------------------ 项目守卫与谓词
 
     /// <summary>项目/画布归属与归档守卫。对应 Go: <c>ensureTaskProjectActive</c>。</summary>
-    private async Task EnsureTaskProjectActiveAsync(
+    internal async Task EnsureTaskProjectActiveAsync(
         string userId, string canvasOrProjectId, CancellationToken cancellationToken)
     {
         string id = canvasOrProjectId.Trim();

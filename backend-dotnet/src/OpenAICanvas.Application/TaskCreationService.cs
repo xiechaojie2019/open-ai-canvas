@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Platform;
 using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
@@ -335,6 +336,27 @@ public sealed partial class TaskCreationService
         };
 
     /// <summary>递归加密密钥字段。对应 Go: <c>protectTaskSecrets</c>。</summary>
+    internal void ProtectTaskSecretsPublic(Dictionary<string, JsonElement> input) => ProtectTaskSecrets(input);
+
+    internal static bool IsTaskSecretFieldPublic(string key) => IsTaskSecretField(key);
+
+    internal static Dictionary<string, JsonElement> ApplyRoutedProviderSelectionPublic(
+        Dictionary<string, JsonElement> input, RoutedModel routed) =>
+        ApplyRoutedProviderSelection(input, routed);
+
+    internal static TaskEntity TaskForOutputPublic(TaskEntity task) => TaskForOutput(task);
+
+    internal static bool TaskInputUsesCustomChannelPublic(Dictionary<string, JsonElement> input) =>
+        TaskInputUsesCustomChannel(input);
+
+    internal static ModelRequestIntent ModelRequestIntentFromTaskInputPublic(
+        Dictionary<string, JsonElement> input, string taskType, string operation) =>
+        ModelRequestIntentFromTaskInput(input, taskType, operation);
+
+    internal async Task<BillingOrder?> TaskBillingOrderAsyncPublic(
+        string userId, TaskEntity task, Dictionary<string, JsonElement> input, CancellationToken ct) =>
+        await TaskBillingOrderAsync(userId, task, input, ct).ConfigureAwait(false);
+
     private void ProtectTaskSecrets(Dictionary<string, JsonElement> input)
     {
         foreach (string key in input.Keys.ToList())
@@ -401,7 +423,7 @@ public sealed partial class TaskCreationService
     /// <summary>密钥字段名。对应 Go: <c>isTaskSecretField</c>。</summary>
     private static bool IsTaskSecretField(string key) => key is "apiKey" or "secretKey" or "accessKeySecret";
 
-    private string DataDir => _dataDir;
+    internal string DataDir => _dataDir;
 
     /// <summary>序列化输入（Ordinal 键序 + Go 转义）。与画布载荷保持一致。</summary>
     internal static string SerializeInput(Dictionary<string, JsonElement> input) =>

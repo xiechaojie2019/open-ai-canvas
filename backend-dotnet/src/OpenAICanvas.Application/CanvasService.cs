@@ -83,6 +83,7 @@ public sealed class CanvasService
         PromptTemplates = new Prompts.PromptTemplateService(repository);
         ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
         TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);
+        TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
         // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
         Payments = new PaymentService(
             repository,
@@ -617,6 +618,9 @@ public sealed class CanvasService
 
     /// <summary>任务创建准入。对应 Go: <c>app/task_creation.go</c>。</summary>
     public TaskCreationService TaskCreations { get; }
+
+    /// <summary>任务重试与取消。对应 Go: <c>app/task_lifecycle.go</c>。</summary>
+    public TaskLifecycleService TaskLifecycle { get; }
 
 
 
