@@ -442,6 +442,22 @@
   当前通过门槛后返回 Go 对非声明式协议的同文案
   「该任务的请求协议不支持安全查询上游状态」。
 
+### 63. `[待移植]` 创作画布提交三路由
+- 位置：Go `app/creation_canvas.go`（CreateRunCanvas / CreationCanvasSnapshot /
+  CommitCreationCanvas，571 行）
+- 内容：基于获批 ops 的画布创建（approvalBaseline 对比）、快照哈希读取、
+  期望哈希对比提交；依赖 cloudAgentNodeCapabilityForType 注册表与
+  creationApprovalBaseline/applyCreationOps。
+- 现状：创作运行生命周期与报价/执行已移植（13 条路由）；
+  画布三路由随下一批（可与 workflow v2 或 agent 画布工具同批）。
+
+### 64. `[取舍]` 创作报价 prepare 的 agentRequests 占位符水合
+- 位置：Go `creation_agent_references.go`（resolveAgentResourcePlaceholders）
+- 现状：创作仅允许 text 模式携带 agentRequests；本期 C# 未实现占位符水合，
+  携带 agentRequests + resource: 引用的请求会在 text 参考图检查处失败
+  （媒体模式直接拒绝 agentRequests，与 Go 一致）。
+- 处置建议：随云 Agent 批次补齐。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

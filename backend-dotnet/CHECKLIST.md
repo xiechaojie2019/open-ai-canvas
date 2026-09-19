@@ -793,6 +793,44 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 创作运行（阶段 4.15 主体，已端到端打通）
+
+本轮打通 **13 条路由**：`GET/POST /creation-runs`、`GET/PATCH /creation-runs/:id`、
+`POST /creation-runs/:id/{claim,heartbeat,release,proposal-approve,proposal-invalidate}`、
+`POST /creation-runs/:id/submissions/{prepare,approve,refresh}`、
+`POST /creation-runs/:id/execute`。
+
+### 本轮交付物
+
+- `Repository.CreationRuns` — 运行 CRUD（clientKey 幂等创建：同键同内容幂等返回、
+  不同内容冲突）、`MutateCreationRunAsync`（条件写入拿行锁 → 回调读写 → 统一保存，)
+  + `CreationRunMutationContext`（回调内读写同事务：提交读写/撤销/资源读取/
+  价格签名/任务+积分预留原子创建）、存储用量聚合
+- `CreationRunService` — 创建（state JSON 校验：≤1MB、密钥字段/内嵌媒体/
+  临时签名链接拒绝）、claim（代次 + 45s 租约）、save（revision 乐观锁 + 状态白名单 +
+  取消后不可恢复）、proposal-approve（操作校验 1-100、资源归属、版本/哈希幂等、
+  撤销旧报价）、proposal-invalidate、submissions/prepare（admission 不落库 + 
+  后置规格一致性与文本图片理解能力检查 + 报价 5 分钟过期 + 签名哈希）、
+  approve（重算报价哈希一致 + 价格签名复核 + 批准）、refresh（requote: 前缀继任项 + 
+  原报价撤销）、execute（事务内创建任务 + 提交绑定 TaskID 幂等）
+- 准入复用：`TaskCreationService.AdmitQueuedAsync`（admission 不落库变体）+ 
+  `TaskBillingOrderAsync`（credits 门控/channel+unified 计价）
+
+### 已知取舍（PENDING #63）
+
+1. 画布提交三路由（canvas / canvas-snapshot / canvas-commit）属 creation_canvas.go
+   （571 行，含 approvalBaseline / ops 应用 / 快照哈希），随下一批接入。
+2. prepareCreationTask 的 agentRequests 占位符水合（validateAgentResourcePlaceholders）
+   未移植——创作仅支持 text 模式携带 agentRequests 且本期默认不带。
+3. 报价/请求哈希采用 Ordinal 键序规范化 JSON 的 SHA-256；与 Go 的语义一致
+   （Go json.Marshal 也按键排序），但跨实现字节级一致性未验证（同 PENDING #47 家族）。
+
+### 验证结果（486/486 通过）
+
+新增 3 项测试（创建/claim/保存/心跳/release/幂等/冲突、密钥与内嵌媒体拒绝、401）。
+
+---
+
 ## 任务生命周期（阶段 4.3，已端到端打通）
 
 本轮打通 **3 条路由**：`POST /tasks/:id/retry`、`POST /tasks/:id/cancel`、

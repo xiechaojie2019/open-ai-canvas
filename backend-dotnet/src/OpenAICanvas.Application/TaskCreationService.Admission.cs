@@ -26,6 +26,10 @@ public sealed partial class TaskCreationService
         value.Trim().ToLowerInvariant() is "runninghub" or "runninghub_workflow";
 
     /// <summary>队列任务创建。对应 Go: <c>CreateTask</c> 的队列分支。</summary>
+    /// <summary>工作流协议或文本回放判定。对应 Go creation.go 的合并条件。</summary>
+    internal static bool CreationUsesWorkflowOrReplay(Dictionary<string, JsonElement> input) =>
+        TaskInputUsesWorkflowProvider(input) || IsTextReplayTaskRequest(input);
+
     internal async Task<TaskEntity> CreateQueuedAsync(
         string userId,
         CreateTaskRequestDto request,
@@ -139,10 +143,70 @@ public sealed partial class TaskCreationService
         return TaskForOutput(task);
     }
 
+    /// <summary>
+    /// 队列任务 admission（不落库、不计活动/日志）：供创作报价使用。
+    /// 返回已脱敏前的任务（InputJSON 已含加密后的密钥）与计费单。
+    /// 对应 Go: <c>prepareCreationTask</c> 里的 CreateTask creationPrepare 分支。
+    /// </summary>
+    internal async Task<(TaskEntity Task, BillingOrder? Order)> AdmitQueuedAsync(
+        string userId,
+        CreateTaskRequestDto request,
+        Dictionary<string, JsonElement> input,
+        string taskType,
+        string prompt,
+        string traceId,
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        (RoutedModel? routed, input) = await ResolveTaskModelSelectionAsync(
+            input, request.LogicalModelID.Trim(), taskType, request.Operation,
+            _features is not null && await _features.FeatureEnabledAsync(
+                OpenAICanvas.Platform.FeatureNames.FrontendModels, cancellationToken).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
+
+        TaskEntity task = new()
+        {
+            ID = IdGenerator.NewId(),
+            UserID = userId,
+            TraceID = traceId,
+            RequestID = requestId,
+            ProjectID = request.ProjectID,
+            Type = taskType,
+            Status = TaskStatus.TaskStatusQueued,
+            Stage = "等待队列调度",
+            Progress = 5,
+            Prompt = prompt,
+            Operation = request.Operation,
+            Provider = request.Provider,
+            Model = request.Model,
+        };
+        if (routed is not null)
+        {
+            task.LogicalModelID = routed.LogicalModel.ID;
+            task.LogicalModelRevisionID = routed.Revision.ID;
+            task.RouteID = routed.Route.ID;
+            task.ChannelModelID = routed.ChannelModel.ID;
+            task.RouteRun = 1;
+            task.Model = routed.LogicalModel.Code;
+            task.Provider = "managed";
+        }
+
+        await EnsureTaskProjectActiveAsync(userId, request.ProjectID, cancellationToken).ConfigureAwait(false);
+        BillingOrder? billingOrder = await TaskBillingOrderAsync(userId, task, input, cancellationToken)
+            .ConfigureAwait(false);
+        ProtectTaskSecrets(input);
+        task.InputJSON = SerializeInput(input);
+        if (billingOrder is not null)
+        {
+            task.BillingOrderID = billingOrder.ID;
+        }
+        return (task, billingOrder);
+    }
+
     // ------------------------------------------------------------ 选路
 
     /// <summary>按请求携带的模型选择决定路由方式。对应 Go: <c>resolveTaskModelSelection</c>。</summary>
-    private async Task<(RoutedModel? Routed, Dictionary<string, JsonElement> Input)> ResolveTaskModelSelectionAsync(
+    internal async Task<(RoutedModel? Routed, Dictionary<string, JsonElement> Input)> ResolveTaskModelSelectionAsync(
         Dictionary<string, JsonElement> input,
         string logicalModelId,
         string taskType,

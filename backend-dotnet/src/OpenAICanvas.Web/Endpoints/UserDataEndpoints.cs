@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using OpenAICanvas.Application;
 using OpenAICanvas.Application.Prompts;
+using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Platform;
@@ -2374,6 +2375,198 @@ public static class UserDataEndpoints
                 return ApiResults.FailService(error, context);
             }
         });
+    }
+
+    /// <summary>
+    /// 创作运行路由。对应 Go: <c>handler/creation.go</c>。
+    /// 画布提交三路由（canvas/canvas-snapshot/canvas-commit）随下一批接入（PENDING #63）。
+    /// </summary>
+    public static void MapCreationRunRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service)
+    {
+        async Task<User> CurrentUserAsync(HttpContext context, CancellationToken ct) =>
+            await service.CurrentUserAsync(SessionCookie.Read(context), ct).ConfigureAwait(false);
+
+        api.MapGet("/creation-runs", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                List<CreationRunOutputDto> runs = await service.CreationRuns.ListAsync(
+                    user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { runs });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/creation-runs", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                CreationDetailDto detail = await service.CreationRuns.CreateAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(detail);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/creation-runs/{id}", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationDetailDto detail = await service.CreationRuns.GetAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(detail);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/creation-runs/{id}", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+            await CreationChangeHandler(context, service, id, "save", cancellationToken));
+
+        foreach (string action in new[] { "claim", "heartbeat", "release", "proposal-approve", "proposal-invalidate" })
+        {
+            string captured = action;
+            api.MapPost($"/creation-runs/{{id}}/{action}", async (
+                HttpContext context, string id, CancellationToken cancellationToken) =>
+                await CreationChangeHandler(context, service, id, captured, cancellationToken));
+        }
+
+        api.MapPost("/creation-runs/{id}/submissions/prepare", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                CreationSubmissionOutputDto output = await service.CreationRuns.PrepareSubmissionAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(output);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/creation-runs/{id}/submissions/approve", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                List<CreationSubmissionOutputDto> submissions = await service.CreationRuns.ApproveSubmissionsAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { submissions });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/creation-runs/{id}/submissions/refresh", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                CreationSubmissionOutputDto output = await service.CreationRuns.RefreshSubmissionAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(output);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/creation-runs/{id}/execute", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await CurrentUserAsync(context, cancellationToken).ConfigureAwait(false);
+                CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                TaskEntity task = await service.CreationRuns.ExecuteSubmissionAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(task);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>变更分发公共体。对应 Go: <c>write("save"|action)</c>。</summary>
+    private static async Task<IResult> CreationChangeHandler(
+        HttpContext context,
+        CanvasService service,
+        string id,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                .ConfigureAwait(false);
+            CreationRequestDto? request = await ReadJsonAsync<CreationRequestDto>(
+                context, 2 << 20, cancellationToken).ConfigureAwait(false);
+            if (request is null)
+            {
+                return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+            }
+            object? result = await service.CreationRuns.ChangeAsync(
+                user.ID, id, action, request, cancellationToken).ConfigureAwait(false);
+            return ApiResults.Ok(result);
+        }
+        catch (Exception error)
+        {
+            return ApiResults.FailService(error, context);
+        }
     }
 
     /// <summary>对应 Go: <c>hasUserAssetPageFilters</c>。</summary>

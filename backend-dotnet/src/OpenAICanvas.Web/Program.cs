@@ -186,6 +186,8 @@ api.MapTaskCreationRoutes(
 api.MapPromptTemplateRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 // 用户提示词偏好路由。对应 Go 的 handler/user_data.go settings/prompt-templates 部分。
 api.MapUserPromptPreferenceRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+// 创作运行路由。对应 Go 的 handler/creation.go。
+api.MapCreationRunRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
 // 技能库读取与状态路由。对应 Go 的 handler.RegisterSkillRoutes。
 api.MapSkillsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());

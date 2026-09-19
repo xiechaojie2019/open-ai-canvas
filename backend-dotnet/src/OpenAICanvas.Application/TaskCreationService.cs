@@ -326,7 +326,7 @@ public sealed partial class TaskCreationService
     }
 
     /// <summary>replay 标记识别。对应 Go: <c>isTextReplayTaskRequest</c>。</summary>
-    private static bool IsTextReplayTaskRequest(Dictionary<string, JsonElement> input) =>
+    internal static bool IsTextReplayTaskRequest(Dictionary<string, JsonElement> input) =>
         input.TryGetValue("replay", out JsonElement value) && value.ValueKind switch
         {
             JsonValueKind.True => true,
