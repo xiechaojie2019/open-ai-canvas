@@ -249,11 +249,11 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 4.1 | 任务 CRUD | `handler/routes.go` | ☐ |
-| 4.2 | 任务文本增量与 SSE 流 | `app/text_replay.go` | ☐ |
-| 4.3 | 任务重试 / 取消 / 上游查询 | `app/task_*.go` (12 文件) | ☐ |
+| 4.1 | 任务 CRUD | `handler/routes.go` | ✅ 列表/详情/日志/文本增量/回放收尾/POST /tasks 全量（批 1+2） |
+| 4.2 | 任务文本增量与 SSE 流 | `app/text_replay.go` | ✅ text-events SSE（游标/心跳/轮询）+ AdminTextReplayStats |
+| 4.3 | 任务重试 / 取消 / 上游查询 | `app/task_*.go` (12 文件) | 🟡 retry/cancel 全量（#61 上游取消 HTTP 跳过）；query-provider 门槛+归属已通（#62 上游查询待 provider 引擎） |
 | 4.4 | Worker 调度与租约 | `app/task_worker.go` | ☐ |
-| 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` | ☐ |
+| 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` | 🟡 仓储层 MarkRunning/Settle/Restore/Refund/Uncertain 已通（worker 接入待 4.4） |
 | 4.6 | 文本协议 | `app/provider_text.go` | ☐ |
 | 4.7 | 图片协议 | `app/provider_image.go` | ☐ |
 | 4.8 | 视频协议（含遗留） | `app/provider_video.go` | ☐ |
@@ -262,7 +262,7 @@ backend-dotnet/
 | 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ☐ |
 | 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ☐ |
 | 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ☐ |
-| 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | ☐ |
+| 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 transcription 创建已通（whisper 执行待）；render 创建待做 |
 | 4.15 | 创作运行与提交 | `app/creation*.go` | ☐ |
 
 ### 阶段 5 · 资源、素材与存储
@@ -273,10 +273,10 @@ backend-dotnet/
 | 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
 | 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ☐ |
-| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | 🟡 全量 CRUD/分页/facets/分类/移动完成；资源上传已通，素材库侧的资源下发仍待接线 |
+| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5） |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | ☐ |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |
-| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布 CRUD/素材/快照/分享、资源上传（5.1）与文件下发（`/resources/:id/file`、`/public/resources/:id/file`，含 ETag/Range）已通（约 22 条）；OSS 相关与导出待做 |
+| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布/素材/分享/资源 CRUD/导入/用量/OSS 直链/提示词偏好已通（约 27 条）；OSS 用户设置 3 条与导出待做 |
 
 ### 阶段 6 · 项目与短剧工作流（47 条路由）
 
@@ -305,24 +305,24 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 8.1 | 积分账户与账本 | `app/finance.go` | ☐ |
-| 8.2 | 充值商品 | `app/payment.go` | ☐ |
-| 8.3 | 支付订单与通知 | `internal/payment` + `cmd/payment-*` | ☐ |
-| 8.4 | 对账 | `app/payment_reconciliation.go` | ☐ |
-| 8.5 | 兑换码批次 | `app/redeem*.go` | ☐ |
-| 8.6 | 支付宝 / 微信支付适配 | `payment-sdk/` `payment-plugins/` | ☐ |
+| 8.1 | 积分账户与账本 | `app/finance.go` | ✅ wallet/redeem/checkin/adjust + 管理端批次/账单/人工核对 |
+| 8.2 | 充值商品 | `app/payment.go` | ✅ products/providers/checkout/refresh |
+| 8.3 | 支付订单与通知 | `internal/payment` + `cmd/payment-*` | ✅ orders/notify/return/query/close |
+| 8.4 | 对账 | `app/payment_reconciliation.go` | ✅ reconciliations + 手动核对/批量解决 |
+| 8.5 | 兑换码批次 | `app/redeem*.go` | ✅ 批次/码/禁用/兑换 |
+| 8.6 | 支付宝 / 微信支付适配 | `payment-sdk/` `payment-plugins/` | 🟡 注册表/清单/插件宿主已通；内置 SDK 适配器未移植（#33） |
 
 ### 阶段 9 · 管理后台
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
 | 9.1 | 管理员审计事件 | `model.AdminAuditEvent` | ✅ 写入/分页/按目标查询 |
-| 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | 🟡 API 日志/导出/存储统计完成；overview 待活跃表写入（#20） |
+| 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | ✅ overview/models/users/export.csv + API 日志/导出/存储统计 + 模型价格 CRUD |
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
 | 9.5 | 系统性能 | `handler/admin_system_performance.go` | ☐ |
-| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/公告完成；OSS/外观/响应拦截/ARK/LibTV 待做 |
-| 9.7 | 公告与已读 | `app/announcement.go` | 🟡 feed/已读/CRUD/关闭/配图草稿消费与丢弃完成；配图上传待资源链路（#28） |
+| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库完成；OSS/LibTV 待做（依赖云 SDK/外部服务） |
+| 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 
 ### 阶段 10 · 插件、技能与提示词
 
@@ -332,7 +332,7 @@ backend-dotnet/
 | 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；执行引擎待做 |
 | 10.3 | 技能库 | `internal/skills` + `app/skills.go` | ☐ |
 | 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ |
-| 10.5 | 提示词模板与用户定制 | `internal/prompts` | 🟡 结构化画风校验/用户风格归一化完成；模板渲染与偏好待做 |
+| 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |
 | 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | ☐ |
 | 10.7 | 自定义渠道中转 | `handler/custom_proxy.go` | ☐ |
 | 10.8 | 系统代理与路径转发 | `handler/system_proxy_stream.go` | ☐ |
@@ -362,7 +362,7 @@ backend-dotnet/
 | 12.5 | `reseed-logical-model-sources` | 同名 cmd | ☐ |
 | 12.6 | `host-updater` | `cmd/host-updater` | ☐ |
 | 12.7 | Dockerfile / Compose 对齐 | `backend/Dockerfile` | ☐ |
-| 12.8 | 契约回归测试 | `*_test.go` | 🟡 266 项端到端契约测试通过（随节点持续补充） |
+| 12.8 | 契约回归测试 | `*_test.go` | 🟡 483 项端到端契约测试通过（随节点持续补充） |
 | 12.9 | 双跑对比验收 | — | ☐ |
 
 ---
