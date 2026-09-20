@@ -698,16 +698,164 @@ public sealed class ProviderImageTaskTests
         Assert.Contains("火山方舟图片结果无效", error.Message, StringComparison.Ordinal);
     }
 
-    // ------------------------------------------------------------ 即梦未实现
+    // ------------------------------------------------------------ 即梦（JiMeng）
+
+    private static TextTaskInput JiMengInput()
+    {
+        TextTaskInput input = Input(ChannelInterfaceType.ChannelInterfaceVolcengineJiMengImage);
+        input.Config.Model = "jimeng_seedream46_cvtob";
+        input.Config.APIKey = "AKID";
+        input.Config.SecretKey = "SECRET";
+        input.Config.Size = "1024x1024";
+        return input;
+    }
+
+    /// <summary>轮询总时限压到 5 秒内，避免桩异常时测试干等 1 小时。</summary>
+    private static VideoPollPolicy ShortTimeoutPolicy() => new() { TotalTimeout = TimeSpan.FromSeconds(5) };
+
+    private static bool HasAction(HttpRequestMessage request, string action) =>
+        (request.RequestUri?.ToString() ?? "").Contains(action, StringComparison.Ordinal);
 
     [Fact]
-    public async Task 即梦_明确报未实现而非走错协议()
+    public async Task 即梦_签名提交与轮询返回内联图片()
     {
-        StubHandler handler = new(_ => Json(OneImage));
+        StubHandler handler = null!;
+        handler = new StubHandler(request =>
+        {
+            string authorization = request.Headers.TryGetValues("Authorization", out IEnumerable<string>? values)
+                ? string.Join(",", values)
+                : "";
+            Assert.StartsWith("HMAC-SHA256 Credential=AKID/", authorization, StringComparison.Ordinal);
+            if (HasAction(request, "Action=CVSync2AsyncSubmitTask"))
+            {
+                Assert.Contains("\"req_key\":\"jimeng_seedream46_cvtob\"", handler.LastBody ?? "", StringComparison.Ordinal);
+                Assert.Contains("\"width\":1024", handler.LastBody ?? "", StringComparison.Ordinal);
+                Assert.Contains("\"height\":1024", handler.LastBody ?? "", StringComparison.Ordinal);
+                Assert.Contains("\"force_single\":true", handler.LastBody ?? "", StringComparison.Ordinal);
+                return Json("""{"code":10000,"message":"Success","data":{"task_id":"task-1"}}""");
+            }
+            Assert.True(HasAction(request, "Action=CVSync2AsyncGetResult"), "poll 应走 GetResult Action");
+            Assert.Contains("\"task_id\":\"task-1\"", handler.LastBody ?? "", StringComparison.Ordinal);
+            Assert.Contains("req_json", handler.LastBody ?? "", StringComparison.Ordinal);
+            Assert.Contains("return_url", handler.LastBody ?? "", StringComparison.Ordinal);
+            return Json("""{"code":10000,"message":"Success","data":{"status":"done","binary_data_base64":["aGVsbG8="]}}""");
+        });
+
+        Dictionary<string, object?> result = await new ProviderImageTask(
+            null, () => new HttpClient(handler), ShortTimeoutPolicy()).RunAsync(JiMengInput());
+
+        Assert.Equal("image", result["mode"]);
+        List<Dictionary<string, string>> images =
+            Assert.IsType<List<Dictionary<string, string>>>(result["images"]);
+        Assert.Single(images);
+        Assert.StartsWith("data:image/png;base64,", images[0]["dataUrl"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 即梦_image_urls外链下载内联()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        StubHandler handler = new(request =>
+        {
+            if (HasAction(request, "Action=CVSync2AsyncSubmitTask"))
+            {
+                return Json("""{"code":10000,"message":"Success","data":{"task_id":"task-1"}}""");
+            }
+            if (HasAction(request, "Action=CVSync2AsyncGetResult"))
+            {
+                return Json("""{"code":10000,"message":"Success","data":{"status":"done","image_urls":["https://cdn.example.com/a.png"]}}""");
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(png) };
+        });
+
+        Dictionary<string, object?> result = await new ProviderImageTask(
+            null, () => new HttpClient(handler), ShortTimeoutPolicy()).RunAsync(JiMengInput());
+
+        List<Dictionary<string, string>> images =
+            Assert.IsType<List<Dictionary<string, string>>>(result["images"]);
+        Assert.StartsWith("data:image/png;base64,", images[0]["dataUrl"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 即梦_code非10000时报错带request_id()
+    {
+        StubHandler handler = new(_ => Json(
+            """{"code":10001,"message":"quota exceeded","request_id":"req-9"}"""));
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task(handler).RunAsync(Input(ChannelInterfaceType.ChannelInterfaceVolcengineJiMengImage)));
+            () => new ProviderImageTask(null, () => new HttpClient(handler)).RunAsync(JiMengInput()));
 
-        Assert.Contains("即梦图片协议", error.Message, StringComparison.Ordinal);
+        Assert.Equal("即梦接口返回错误 10001：quota exceeded（request_id: req-9）", error.Message);
+    }
+
+    [Fact]
+    public async Task 即梦_任务失效时报错()
+    {
+        StubHandler handler = new(request => HasAction(request, "Action=CVSync2AsyncSubmitTask")
+            ? Json("""{"code":10000,"message":"Success","data":{"task_id":"task-1"}}""")
+            : Json("""{"code":10000,"message":"Success","data":{"status":"expired"}}"""));
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new ProviderImageTask(null, () => new HttpClient(handler), ShortTimeoutPolicy())
+                .RunAsync(JiMengInput()));
+
+        Assert.Equal("即梦图片任务 task-1 已失效，请重新生成", error.Message);
+    }
+
+    [Fact]
+    public async Task 即梦_超时报错()
+    {
+        StubHandler handler = new(_ => Json(
+            """{"code":10000,"message":"Success","data":{"task_id":"task-1","status":"generating"}}"""));
+        VideoPollPolicy policy = new()
+        {
+            TotalTimeout = TimeSpan.Zero,
+            // 与视频测试一致：Sleep 注入为立即完成，不真的等 30 秒。
+            Sleep = (_, _) => System.Threading.Tasks.Task.CompletedTask,
+        };
+
+        TimeoutException error = await Assert.ThrowsAsync<TimeoutException>(
+            () => new ProviderImageTask(null, () => new HttpClient(handler), policy).RunAsync(JiMengInput()));
+
+        Assert.Equal("即梦图片生成超时（任务 task-1）", error.Message);
+    }
+
+    [Fact]
+    public async Task 即梦_蒙版报错()
+    {
+        StubHandler handler = new(_ => Json(OneImage));
+        TextTaskInput input = JiMengInput();
+        input.Mask = new ProviderMedia { DataURL = PngDataUrl() };
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Task(handler).RunAsync(input));
+
+        Assert.Equal("即梦图片协议不支持蒙版编辑，请移除蒙版后重试", error.Message);
+    }
+
+    [Fact]
+    public async Task 即梦_参考图超过14张报错()
+    {
+        StubHandler handler = new(_ => Json(OneImage));
+        TextTaskInput input = JiMengInput();
+        for (int i = 0; i < 15; i++)
+        {
+            input.ReferenceImages.Add(new ProviderMedia { DataURL = PngDataUrl() });
+        }
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Task(handler).RunAsync(input));
+
+        Assert.Equal("即梦图片协议最多支持 14 张参考图", error.Message);
+    }
+
+    [Fact]
+    public void 即梦_尺寸面积越界时不传宽高()
+    {
+        Assert.Equal((1024, 1024), ProviderImageTask.JiMengImageDimensions("1024x1024"));
+        Assert.Equal((1824, 1024), ProviderImageTask.JiMengImageDimensions("16:9"));
+        Assert.Equal((0, 0), ProviderImageTask.JiMengImageDimensions("100x100"));
+        Assert.Equal((0, 0), ProviderImageTask.JiMengImageDimensions("5000x5000"));
+        Assert.Equal((0, 0), ProviderImageTask.JiMengImageDimensions("auto"));
     }
 }

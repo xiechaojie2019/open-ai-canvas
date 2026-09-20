@@ -1,6 +1,7 @@
 ﻿#nullable enable
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Outbound;
 using OpenAICanvas.Protocol;
@@ -11,23 +12,24 @@ namespace OpenAICanvas.Providers;
 /// 图片任务的协议分发与实现。
 /// 对应 Go: <c>internal/app/provider_image.go</c> 的
 /// <c>runImageTask</c> / <c>runGeminiImageTask</c> / <c>runGrokImageTask</c> /
-/// <c>runVolcengineArkImageTask</c>。
+/// <c>runVolcengineArkImageTask</c> / <c>runVolcengineJiMengImageTask</c>。
 /// </summary>
-/// <remarks>
-/// 即梦（JiMeng）分支依赖任务轮询与下载（4.8 的轮询循环），本类未实现 ——
-/// 遇到该 interfaceType 会明确报错，而不是静默走错协议。
-/// </remarks>
 public sealed class ProviderImageTask
 {
     private const string OpenAIImageProtocolPath = "/images/generations";
 
     private readonly Func<HttpClient>? _clientFactory;
     private readonly IProviderRequestContext? _context;
+    private readonly VideoPollPolicy? _pollPolicy;
 
-    public ProviderImageTask(IProviderRequestContext? context = null, Func<HttpClient>? clientFactory = null)
+    public ProviderImageTask(
+        IProviderRequestContext? context = null,
+        Func<HttpClient>? clientFactory = null,
+        VideoPollPolicy? pollPolicy = null)
     {
         _context = context;
         _clientFactory = clientFactory;
+        _pollPolicy = pollPolicy;
     }
 
     /// <summary>
@@ -55,8 +57,7 @@ public sealed class ProviderImageTask
             ChannelInterfaceType.ChannelInterfaceVolcengineArkImage =>
                 await RunVolcengineArkAsync(input, cancellationToken).ConfigureAwait(false),
             ChannelInterfaceType.ChannelInterfaceVolcengineJiMengImage =>
-                throw new InvalidOperationException(
-                    "即梦图片协议依赖任务轮询与下载（4.8 未完成），暂不可用"),
+                await RunJiMengAsync(input, cancellationToken).ConfigureAwait(false),
             _ => await RunOpenAiAsync(input, cancellationToken).ConfigureAwait(false),
         };
     }
@@ -652,6 +653,342 @@ public sealed class ProviderImageTask
             request, ProviderTransport.DefaultMaxResponseBytes, null, cancellationToken, _clientFactory)
             .ConfigureAwait(false);
         return (result.Data, result.MIMEType);
+    }
+
+    // ------------------------------------------------------------ 即梦（JiMeng）
+
+    /// <summary>即梦异步协议的 Action 名。对应 Go: <c>jiMengSubmitAction</c>。</summary>
+    private const string JiMengSubmitAction = "CVSync2AsyncSubmitTask";
+
+    /// <summary>对应 Go: <c>jiMengResultAction</c>。</summary>
+    private const string JiMengResultAction = "CVSync2AsyncGetResult";
+
+    /// <summary>对应 Go: <c>jiMengAPIVersion</c>。</summary>
+    private const string JiMengAPIVersion = "2022-08-31";
+
+    /// <summary>即梦像素下限（1MP）。对应 Go: <c>jiMengImageMinPixels</c>。</summary>
+    private const long JiMengMinPixels = 1_048_576;
+
+    /// <summary>即梦像素上限（16MP）。对应 Go: <c>jiMengImageMaxPixels</c>。</summary>
+    private const long JiMengMaxPixels = 16_777_216;
+
+    /// <summary>即梦 API 要求的 JSON 载荷。对应 Go: <c>jiMengAPIJSONPayload</c>。</summary>
+    private const string JiMengAPIJSONPayload = "{\"return_url\":true}";
+
+    /// <summary>
+    /// 即梦异步图片协议：JSON 提交 + 轮询 + 结果内联。
+    /// 对应 Go: <c>runVolcengineJiMengImageTask</c>。
+    /// </summary>
+    /// <remarks>
+    /// 返回的 <c>dataUrl</c> 键与 OpenAI / 方舟分支一致，供上层消费方统一读取。
+    /// </remarks>
+    public async Task<Dictionary<string, object?>> RunJiMengAsync(
+        TextTaskInput input, CancellationToken cancellationToken = default)
+    {
+        if (input.Mask is not null)
+        {
+            throw new InvalidOperationException("即梦图片协议不支持蒙版编辑，请移除蒙版后重试");
+        }
+
+        Dictionary<string, object?> body = new(StringComparer.Ordinal)
+        {
+            ["req_key"] = input.Config.Model,
+            ["prompt"] = ProviderHelpers.WithSystemPrompt(input.Config.SystemPrompt, input.Prompt),
+            ["force_single"] = true,
+        };
+        (int width, int height) = JiMengImageDimensions(input.Config.Size);
+        if (width > 0 && height > 0)
+        {
+            body["width"] = width;
+            body["height"] = height;
+        }
+        if (input.ReferenceImages.Count > 14)
+        {
+            throw new InvalidOperationException("即梦图片协议最多支持 14 张参考图");
+        }
+        if (input.ReferenceImages.Count > 0)
+        {
+            List<string> images = new(input.ReferenceImages.Count);
+            foreach (ProviderMedia image in input.ReferenceImages)
+            {
+                (byte[] raw, _) = ProviderMediaCodec.Bytes(image);
+                images.Add(Convert.ToBase64String(raw));
+            }
+            body["binary_data_base64"] = images;
+        }
+
+        string taskID = await SubmitJiMengTaskAsync(input.Config, body, cancellationToken).ConfigureAwait(false);
+        VideoPollPolicy policy = ProviderVideoPolling.Normalize(_pollPolicy);
+        while (DateTimeOffset.UtcNow < JiMengPollingDeadline(policy))
+        {
+            Dictionary<string, object?> result = await PollJiMengTaskAsync(
+                input.Config, taskID, cancellationToken).ConfigureAwait(false);
+            JiMengResponse payload = ParseJiMengResponse(result);
+            switch (payload.Data.Status.Trim().ToLowerInvariant())
+            {
+                case "done":
+                    List<Dictionary<string, string>> dataUrls = await JiMengImageDataURLsAsync(
+                        input.Config, payload, cancellationToken).ConfigureAwait(false);
+                    if (dataUrls.Count == 0)
+                    {
+                        throw new InvalidOperationException("任务已完成但没有返回图片");
+                    }
+                    return new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["mode"] = "image",
+                        ["images"] = dataUrls,
+                    };
+                case "not_found":
+                case "expired":
+                    throw new InvalidOperationException($"即梦图片任务 {taskID} 已失效，请重新生成");
+            }
+            await policy.Sleep(policy.Interval, cancellationToken).ConfigureAwait(false);
+        }
+        throw new TimeoutException($"即梦图片生成超时（任务 {taskID}）");
+    }
+
+    /// <summary>
+    /// 轮询截止时间：测试注入的 <see cref="VideoPollPolicy.TotalTimeout"/> 优先，
+    /// 生产回落 1 小时。对应 Go: <c>providerPollingDeadline(ctx)</c>。
+    /// </summary>
+    private static DateTimeOffset JiMengPollingDeadline(VideoPollPolicy policy) =>
+        DateTimeOffset.UtcNow.Add(policy.TotalTimeout ?? VideoPollPolicy.PollTimeout);
+
+    /// <summary>对应 Go: <c>jiMengResponse</c>。</summary>
+    private sealed record JiMengResponse
+    {
+        [JsonPropertyName("code")]
+        public int Code { get; init; }
+
+        [JsonPropertyName("message")]
+        public string Message { get; init; } = "";
+
+        [JsonPropertyName("request_id")]
+        public string RequestID { get; init; } = "";
+
+        [JsonPropertyName("data")]
+        public JiMengResponseData Data { get; init; } = new();
+    }
+
+    private sealed record JiMengResponseData
+    {
+        [JsonPropertyName("task_id")]
+        public string TaskID { get; init; } = "";
+
+        [JsonPropertyName("status")]
+        public string Status { get; init; } = "";
+
+        [JsonPropertyName("binary_data_base64")]
+        public List<string> BinaryDataBase64 { get; init; } = [];
+
+        [JsonPropertyName("image_urls")]
+        public List<string> ImageURLs { get; init; } = [];
+    }
+
+    /// <summary>把上游载荷投影到 <see cref="JiMengResponse"/>；非对象直接失败。</summary>
+    private static JiMengResponse ParseJiMengResponse(Dictionary<string, object?> payload)
+    {
+        try
+        {
+            string json = OpenAICanvas.Protocol.ProtocolJson.Serialize(payload);
+            JiMengResponse? parsed = JsonSerializer.Deserialize<JiMengResponse>(
+                json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return parsed ?? new JiMengResponse();
+        }
+        catch (JsonException error)
+        {
+            throw new ProviderResponseDecodeException(error);
+        }
+    }
+
+    /// <summary>对应 Go: <c>submitJiMengTask</c>。</summary>
+    private async Task<string> SubmitJiMengTaskAsync(
+        ProviderConfig config, Dictionary<string, object?> body, CancellationToken cancellationToken)
+    {
+        Dictionary<string, object?> payload = await PostJiMengAsync(
+            config, JiMengSubmitAction, body, cancellationToken).ConfigureAwait(false);
+        JiMengResponse parsed = ParseJiMengResponse(payload);
+        ValidateJiMengResponse(parsed);
+        string taskID = parsed.Data.TaskID.Trim();
+        if (taskID.Length == 0)
+        {
+            throw new InvalidOperationException("即梦接口没有返回任务 ID");
+        }
+        return taskID;
+    }
+
+    /// <summary>对应 Go: <c>pollJiMengTask</c>。</summary>
+    private async Task<Dictionary<string, object?>> PollJiMengTaskAsync(
+        ProviderConfig config, string taskID, CancellationToken cancellationToken)
+    {
+        Dictionary<string, object?> body = new(StringComparer.Ordinal)
+        {
+            ["req_key"] = config.Model,
+            ["task_id"] = taskID,
+            ["req_json"] = JiMengAPIJSONPayload,
+        };
+        Dictionary<string, object?> payload = await PostJiMengAsync(
+            config, JiMengResultAction, body, cancellationToken).ConfigureAwait(false);
+        ValidateJiMengResponse(ParseJiMengResponse(payload));
+        return payload;
+      }
+
+    /// <summary>对应 Go: <c>postJiMengJSON</c>（V4 签名 Service=cv、Region=cn-north-1）。</summary>
+    private async Task<Dictionary<string, object?>> PostJiMengAsync(
+        ProviderConfig config, string action, Dictionary<string, object?> body, CancellationToken cancellationToken)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(OpenAICanvas.Protocol.ProtocolJson.Serialize(body));
+        UriBuilder endpoint = new(BaseJiMengEndpoint(config.BaseURL));
+        List<(string Key, string Value)> query = ParseQueryString(endpoint.Query);
+        query.RemoveAll(item => item.Key == "Action" || item.Key == "Version");
+        query.Add(("Action", action));
+        query.Add(("Version", JiMengAPIVersion));
+        endpoint.Query = string.Join("&", query.Select(item =>
+            Uri.EscapeDataString(item.Key) + "=" + Uri.EscapeDataString(item.Value)));
+
+        using HttpRequestMessage request = new(HttpMethod.Post, endpoint.Uri)
+        {
+            Content = new ByteArrayContent(data),
+        };
+        request.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+        OutboundHttpClient.ApplyHeaders(request, config.Headers);
+        ProviderTransport.ApplyDefaultHeaders(request);
+        ProtocolRequestBuilder.SignVolcV4(
+            request, config.APIKey, config.SecretKey, "cv", "cn-north-1", data);
+
+        using (request)
+        {
+            return await ProviderTransport.SendJsonAsync(
+                request,
+                _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
+                cancellationToken,
+                _clientFactory).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 即梦端点：解析 BaseURL 后路径固定为 <c>/</c>；非法/空 BaseURL 失败。
+    /// 对应 Go: <c>url.Parse</c> + <c>endpoint.Path = "/"</c>。
+    /// </summary>
+    private static Uri BaseJiMengEndpoint(string baseURL)
+    {
+        string trimmed = baseURL.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new InvalidOperationException("即梦渠道缺少 BaseURL");
+        }
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? parsed)
+            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException("即梦渠道 BaseURL 无效");
+        }
+        return parsed;
+    }
+
+    /// <summary>解析 <c>?a=b</c> 形式的查询串（保留原始顺序；值保持原样）。</summary>
+    private static List<(string Key, string Value)> ParseQueryString(string query)
+    {
+        List<(string Key, string Value)> result = [];
+        string trimmed = query.TrimStart('?');
+        if (trimmed.Length == 0)
+        {
+            return result;
+        }
+        foreach (string segment in trimmed.Split('&'))
+        {
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+            int equals = segment.IndexOf('=');
+            if (equals < 0)
+            {
+                result.Add((Uri.UnescapeDataString(segment), ""));
+            }
+            else
+            {
+                result.Add((
+                    Uri.UnescapeDataString(segment[..equals]),
+                    Uri.UnescapeDataString(segment[(equals + 1)..])));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>对应 Go: <c>validateJiMengResponse</c>（code==10000 通过）。</summary>
+    private static void ValidateJiMengResponse(JiMengResponse payload)
+    {
+        if (payload.Code == 10000)
+        {
+            return;
+        }
+        string message = payload.Message.Trim();
+        if (message.Length == 0)
+        {
+            message = "未知错误";
+        }
+        throw new InvalidOperationException(
+            payload.RequestID.Length > 0
+                ? $"即梦接口返回错误 {payload.Code}：{message}（request_id: {payload.RequestID}）"
+                : $"即梦接口返回错误 {payload.Code}：{message}");
+    }
+
+    /// <summary>对应 Go: <c>jiMengImageDataURLs</c>。</summary>
+    private async Task<List<Dictionary<string, string>>> JiMengImageDataURLsAsync(
+        ProviderConfig config, JiMengResponse payload, CancellationToken cancellationToken)
+    {
+        List<Dictionary<string, string>> images = [];
+        foreach (string rawURL in payload.Data.ImageURLs)
+        {
+            (byte[] data, string mimeType) = await DownloadExternalAsync(
+                config, rawURL, cancellationToken).ConfigureAwait(false);
+            images.Add(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["dataUrl"] = ProviderHelpers.DataUrl(
+                    ProviderMediaCodec.NormalizedMediaMimeType(mimeType, data), data),
+            });
+        }
+        foreach (string encoded in payload.Data.BinaryDataBase64)
+        {
+            byte[] data;
+            try
+            {
+                data = Convert.FromBase64String(encoded.Trim());
+            }
+            catch (FormatException error)
+            {
+                throw new InvalidOperationException("即梦结果 base64 解码失败", error);
+            }
+            images.Add(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["dataUrl"] = ProviderHelpers.DataUrl(
+                    ProviderMediaCodec.NormalizedMediaMimeType("image/png", data), data),
+            });
+        }
+        return images;
+    }
+
+    /// <summary>
+    /// 即梦只接受像素尺寸，且总像素须在 [1MP, 16MP]；越界不发送 width/height。
+    /// 对应 Go: <c>jiMengImageDimensions</c>。
+    /// </summary>
+    public static (int Width, int Height) JiMengImageDimensions(string? value)
+    {
+        string size = ProviderImageOptions.NormalizePixelSize(value).ToLowerInvariant();
+        string[] parts = size.Split('x');
+        if (parts.Length != 2
+            || !int.TryParse(parts[0], out int width)
+            || !int.TryParse(parts[1], out int height)
+            || width <= 0 || height <= 0)
+        {
+            return (0, 0);
+        }
+        long area = (long)width * height;
+        if (area < JiMengMinPixels || area > JiMengMaxPixels)
+        {
+            return (0, 0);
+        }
+        return (width, height);
     }
 
     // ------------------------------------------------------------ 通用响应解析
