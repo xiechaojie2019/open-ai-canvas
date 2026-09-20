@@ -19,6 +19,12 @@ public sealed class TextTaskInput
     /// <summary>图像编辑的蒙版素材。对应 Go: <c>canvasGenerationInput.Mask</c>。</summary>
     public ProviderMedia? Mask { get; set; }
 
+    /// <summary>
+    /// 图片参数能力声明。<c>null</c> 表示未声明（按支持全量参数处理）。
+    /// 对应 Go: <c>canvasGenerationInput.ImageCapability</c>。
+    /// </summary>
+    public ImageCapabilityConfig? ImageCapability { get; set; }
+
     /// <summary>画布节点元信息（视频首尾帧、编辑操作、插件自定义 providerOptions 等）。</summary>
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
 

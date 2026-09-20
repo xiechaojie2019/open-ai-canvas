@@ -187,6 +187,30 @@ public static class ProviderHelpers
         StringField(metadata, key).Trim();
 
     /// <summary>
+    /// 判断两个地址是否同源（scheme + host 都相同）。
+    /// 对应 Go: <c>sameProviderOrigin</c>。
+    /// </summary>
+    /// <remarks>
+    /// 用于决定是否把渠道鉴权带给下载地址：<b>跨源绝不带鉴权</b>，
+    /// 否则等于把渠道密钥送给第三方 CDN。任一侧无法解析出 scheme+host 时都返回 false。
+    /// </remarks>
+    public static bool IsSameProviderOrigin(string baseUrl, string rawUrl)
+    {
+        if (!Uri.TryCreate((baseUrl ?? "").Trim(), UriKind.Absolute, out Uri? baseUri)
+            || !Uri.TryCreate((rawUrl ?? "").Trim(), UriKind.Absolute, out Uri? targetUri))
+        {
+            return false;
+        }
+        if (baseUri.Scheme.Length == 0 || baseUri.Host.Length == 0
+            || targetUri.Scheme.Length == 0 || targetUri.Host.Length == 0)
+        {
+            return false;
+        }
+        return string.Equals(baseUri.Scheme, targetUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(baseUri.Host, targetUri.Host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// 把字符串值解析为整数（失败为 0），对应 Go 中忽略错误的 <c>strconv.Atoi</c> 用法。
     /// </summary>
     public static int AtoiOrZero(string? value) =>

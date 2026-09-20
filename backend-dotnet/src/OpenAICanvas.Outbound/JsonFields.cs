@@ -162,6 +162,24 @@ public static class JsonFields
         }
     }
 
+    /// <summary>
+    /// 把字段取为对象列表。非数组一律返回空列表。
+    /// 对应 Go 的 <c>interfaceSlice</c> 与 <c>payload[key].([]interface{})</c> 断言。
+    /// </summary>
+    public static List<object?> InterfaceSlice(IReadOnlyDictionary<string, object?>? payload, string key)
+    {
+        if (payload is null || !payload.TryGetValue(key, out object? value) || value is null)
+        {
+            return [];
+        }
+        return value switch
+        {
+            List<object?> list => list,
+            System.Collections.IEnumerable items and not string => [.. items.Cast<object?>()],
+            _ => [],
+        };
+    }
+
     private static string TypeName(object value) => value switch
     {
         string => "string",
