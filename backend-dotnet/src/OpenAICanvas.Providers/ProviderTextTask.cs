@@ -31,19 +31,47 @@ public sealed class ProviderTextTask
     private long MaxResponseBytes => _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes;
 
     /// <summary>
-    /// 执行文本任务：按协议构造请求体并解析结果。
-    /// 对应 Go: <c>runTextTask</c> 的 chat-completion / openai-response / claude-api 分支。
+    /// 文本任务总入口：按渠道 <c>interfaceType</c> 分发到对应协议实现。
+    /// 对应 Go: <c>runTextTask</c>。
     /// </summary>
+    /// <remarks>
+    /// 未识别（含空）的 interfaceType 走 legacy 分支 —— 即先试 Responses、
+    /// 遇到路径不存在再回落 Chat Completions。这与 Go 的 <c>default</c> 分支一致。
+    /// </remarks>
+    public Task<Dictionary<string, object?>> RunTextTaskAsync(
+        TextTaskInput input,
+        Action<string>? onDelta = null,
+        Action<string>? onReasoningDelta = null,
+        CancellationToken cancellationToken = default)
+    {
+        string interfaceType = (input.Config.InterfaceType ?? "").Trim();
+        return interfaceType switch
+        {
+            ProviderTextOrchestration.ChatCompletionProtocol =>
+                RunAsync(input, ProviderTextOrchestration.ChatCompletionProtocol, onDelta, onReasoningDelta, cancellationToken),
+            "openai-response" =>
+                RunAsync(input, ProviderTextOrchestration.ResponsesProtocol, onDelta, onReasoningDelta, cancellationToken),
+            ProviderTextOrchestration.ClaudeProtocol =>
+                RunAsync(input, ProviderTextOrchestration.ClaudeProtocol, onDelta, onReasoningDelta, cancellationToken),
+            _ => RunLegacyAsync(input, onDelta, onReasoningDelta, cancellationToken),
+        };
+    }
+
+    /// <summary>
+    /// 执行文本任务：按协议构造请求体并解析结果。
+    /// 对应 Go: <c>runResponsesTextTask</c> / <c>runChatCompletionsTextTask</c> / <c>runClaudeTextTask</c>。
+    /// </summary>
+    /// <remarks>流式与否取自 <see cref="TextTaskInput"/> 的 <c>TextOptions.Stream</c>，与 Go 的 <c>input.StreamText</c> 对应。</remarks>
     public async Task<Dictionary<string, object?>> RunAsync(
         TextTaskInput input,
         string protocol,
-        bool stream,
         Action<string>? onDelta = null,
         Action<string>? onReasoningDelta = null,
         CancellationToken cancellationToken = default)
     {
         ProviderTextResult result = await RequestAsync(
-            input, protocol, stream, onDelta, onReasoningDelta, cancellationToken).ConfigureAwait(false);
+            input, protocol, input.TextOptions.Stream ?? false, onDelta, onReasoningDelta, cancellationToken)
+            .ConfigureAwait(false);
         return ProviderTextOrchestration.TextTaskResult(result);
     }
 
@@ -59,9 +87,56 @@ public sealed class ProviderTextTask
         Action<string>? onReasoningDelta = null,
         CancellationToken cancellationToken = default)
     {
-        return stream
-            ? await StreamingAsync(input, protocol, onDelta, onReasoningDelta, cancellationToken).ConfigureAwait(false)
-            : await NonStreamingAsync(input, protocol, cancellationToken).ConfigureAwait(false);
+        string channelId = input.Config.ChannelID;
+
+        // 熔断前置检查：打开时直接短路，不再占用并发槽、不再发出请求。
+        if (_context is not null
+            && channelId.Length > 0
+            && await _context.IsCircuitOpenAsync(channelId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new ProviderCircuitOpenException();
+        }
+
+        // 并发槽可能为 null（无协调器或未配置限流），此时直接执行。
+        Func<ValueTask>? release = _context is null
+            ? null
+            : await _context.AcquireChannelSlotAsync(channelId, "", cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            ProviderTextResult result = stream
+                ? await StreamingAsync(input, protocol, onDelta, onReasoningDelta, cancellationToken).ConfigureAwait(false)
+                : await NonStreamingAsync(input, protocol, cancellationToken).ConfigureAwait(false);
+
+            if (_context is not null && channelId.Length > 0)
+            {
+                await _context.RecordChannelResultAsync(channelId, false, cancellationToken).ConfigureAwait(false);
+            }
+            return result;
+        }
+        catch (Exception)
+        {
+            // 与 Go 一致：记录失败但不吞掉原始异常（熔断记账失败也不影响主流程）。
+            if (_context is not null && channelId.Length > 0)
+            {
+                try
+                {
+                    await _context.RecordChannelResultAsync(channelId, true, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 忽略：熔断记账是旁路，不能影响原始错误的传播。
+                }
+            }
+            throw;
+        }
+        finally
+        {
+            if (release is not null)
+            {
+                await release().ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>非流式：<c>postJSON</c> + <c>parseAgentToolPayload</c>。</summary>
@@ -131,7 +206,6 @@ public sealed class ProviderTextTask
     /// </summary>
     public async Task<Dictionary<string, object?>> RunLegacyAsync(
         TextTaskInput input,
-        bool stream,
         Action<string>? onDelta = null,
         Action<string>? onReasoningDelta = null,
         CancellationToken cancellationToken = default)
@@ -139,7 +213,7 @@ public sealed class ProviderTextTask
         try
         {
             return await RunAsync(
-                input, ProviderTextOrchestration.ResponsesProtocol, stream,
+                input, ProviderTextOrchestration.ResponsesProtocol,
                 onDelta, onReasoningDelta, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (ProviderTextOrchestration.ShouldFallbackTextToChat(error))
@@ -147,7 +221,7 @@ public sealed class ProviderTextTask
             try
             {
                 return await RunAsync(
-                    input, ProviderTextOrchestration.ChatCompletionProtocol, stream,
+                    input, ProviderTextOrchestration.ChatCompletionProtocol,
                     onDelta, onReasoningDelta, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception chatError)
@@ -173,10 +247,32 @@ public sealed class ProviderTextTask
 /// 对应 Go 的 <c>providerAnalyticsContext</c>。
 /// </summary>
 /// <remarks>
-/// 4.10 落地渠道协调器时实现本接口并注入 <see cref="ProviderTextTask"/>。
+/// 由 <c>Application</c> 层的适配器实现（那里能同时引用 <c>Platform</c> 与 <c>Providers</c>）。
 /// </remarks>
 public interface IProviderRequestContext
 {
     /// <summary>上游响应字节上限（取自运行时策略的生成文件大小限制）。</summary>
     long MaxResponseBytes { get; }
+
+    /// <summary>
+    /// 渠道熔断是否打开。对应 Go: <c>Coordinator.CircuitOpen</c>。
+    /// </summary>
+    /// <remarks>默认实现返回未打开，便于无熔断场景（如本地测试）直接构造。</remarks>
+    Task<bool> IsCircuitOpenAsync(string channelId, CancellationToken cancellationToken) =>
+        Task.FromResult(false);
+
+    /// <summary>
+    /// 获取渠道并发槽。返回的委托用于释放；<c>null</c> 表示不限流。
+    /// 对应 Go: <c>Service.AcquireChannelSlot</c>。
+    /// </summary>
+    Task<Func<ValueTask>?> AcquireChannelSlotAsync(
+        string channelId, string fallbackScope, CancellationToken cancellationToken) =>
+        Task.FromResult<Func<ValueTask>?>(null);
+
+    /// <summary>
+    /// 记录一次渠道调用结果（驱动熔断状态机）。
+    /// 对应 Go: <c>Service.RecordChannelResult</c>。
+    /// </summary>
+    Task RecordChannelResultAsync(string channelId, bool failed, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 }

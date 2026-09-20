@@ -137,6 +137,22 @@ public sealed class MediaReference
 
     [JsonPropertyName("durationMs")]
     public long DurationMs { get; set; }
+
+    /// <summary>
+    /// 素材在请求中的角色（<c>reference_image</c> / <c>edit_source</c> / <c>mask</c> /
+    /// <c>start_frame</c> / <c>end_frame</c> / <c>reference_video</c> / <c>reference_audio</c>）。
+    /// 对应 Go: <c>MediaReference.Role</c>（由宿主按模式赋值，不由插件声明）。
+    /// </summary>
+    [JsonPropertyName("role")]
+    public string Role { get; set; } = "";
+
+    /// <summary>素材在同类中的序号。对应 Go: <c>MediaReference.Order</c>。</summary>
+    [JsonPropertyName("order")]
+    public int Order { get; set; }
+
+    /// <summary>宿主补充的素材元信息（字节数/宽高/时长/存储键）。对应 Go: <c>MediaReference.Metadata</c>。</summary>
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, object?>? Metadata { get; set; }
 }
 
 /// <summary>Provider 凭证（对应 Go: <c>providerConfig</c> 中参与鉴权与签名的字段子集）。</summary>

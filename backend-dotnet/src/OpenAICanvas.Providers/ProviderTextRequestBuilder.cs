@@ -4,13 +4,24 @@ using OpenAICanvas.Protocol;
 
 namespace OpenAICanvas.Providers;
 
-/// <summary>参考素材输入（文本多模态）。对应 Go 的 <c>ReferenceImages</c> / <c>ReferenceVideos</c>。</summary>
+/// <summary>参考素材输入（文本多模态）。对应 Go 的 <c>canvasGenerationInput</c>。</summary>
 public sealed class TextTaskInput
 {
+    /// <summary>任务模式。对应 Go: <c>Mode</c>（文本任务为 <c>"text"</c>）。</summary>
+    public string Mode { get; set; } = "";
+
     public string Prompt { get; set; } = "";
     public ProviderConfig Config { get; set; } = new();
     public List<ProviderMedia> ReferenceImages { get; set; } = [];
     public List<ProviderMedia> ReferenceVideos { get; set; } = [];
+    public List<ProviderMedia> ReferenceAudios { get; set; } = [];
+
+    /// <summary>图像编辑的蒙版素材。对应 Go: <c>canvasGenerationInput.Mask</c>。</summary>
+    public ProviderMedia? Mask { get; set; }
+
+    /// <summary>画布节点元信息（视频首尾帧、编辑操作、插件自定义 providerOptions 等）。</summary>
+    public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
+
     public List<ProviderTextMessage> TextHistory { get; set; } = [];
     public CanvasTextOptions TextOptions { get; set; } = new();
     public int MaxOutputTokens { get; set; }

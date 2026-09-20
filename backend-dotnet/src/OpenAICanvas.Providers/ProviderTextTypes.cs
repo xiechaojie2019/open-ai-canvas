@@ -49,6 +49,48 @@ public sealed class ProviderConfig
 
     [JsonPropertyName("systemPrompt")]
     public string SystemPrompt { get; set; } = "";
+
+    // ---- 生成参数（文本任务不读，声明式协议与图/视频/音频任务读取）----
+    // 与 Go 的 json tag 逐字对齐；注意 VQuality 的 tag 是全小写 "vquality"。
+
+    [JsonPropertyName("size")]
+    public string Size { get; set; } = "";
+
+    [JsonPropertyName("quality")]
+    public string Quality { get; set; } = "";
+
+    [JsonPropertyName("transparentBackground")]
+    public string TransparentBackground { get; set; } = "";
+
+    [JsonPropertyName("count")]
+    public string Count { get; set; } = "";
+
+    [JsonPropertyName("videoSeconds")]
+    public string VideoSeconds { get; set; } = "";
+
+    [JsonPropertyName("vquality")]
+    public string VQuality { get; set; } = "";
+
+    [JsonPropertyName("videoGenerateAudio")]
+    public string VideoGenerateAudio { get; set; } = "";
+
+    [JsonPropertyName("videoWatermark")]
+    public string VideoWatermark { get; set; } = "";
+
+    [JsonPropertyName("videoArkPrivateAssetUpload")]
+    public string ArkPrivateAssetUpload { get; set; } = "";
+
+    [JsonPropertyName("audioVoice")]
+    public string AudioVoice { get; set; } = "";
+
+    [JsonPropertyName("audioFormat")]
+    public string AudioFormat { get; set; } = "";
+
+    [JsonPropertyName("audioSpeed")]
+    public string AudioSpeed { get; set; } = "";
+
+    [JsonPropertyName("audioInstructions")]
+    public string AudioInstructions { get; set; } = "";
 }
 
 /// <summary>文本历史消息。对应 Go: <c>providerTextMessage</c>。</summary>

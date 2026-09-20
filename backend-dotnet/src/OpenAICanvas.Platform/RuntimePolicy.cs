@@ -138,8 +138,8 @@ public sealed class RuntimeRequestPolicy
     [JsonPropertyName("channelCircuitOpenSeconds")]
     public int ChannelCircuitOpenSeconds { get; init; } = 60;
 
-    /// <summary>策略上限。对应 Go: <c>maxRuntimeRate</c>。</summary>
-    public const int MaxRuntimeRate = 100_000;
+    /// <summary>频控上限。对应 Go: <c>maxRuntimeRate</c>（Go 侧为 999999）。</summary>
+    public const int MaxRuntimeRate = 999_999;
 }
 
 /// <summary>
@@ -246,8 +246,8 @@ public sealed class DefaultRuntimePolicyProvider : IRuntimePolicyProvider
         };
     }
 
-    /// <summary>对应 Go: <c>maxRuntimeConcurrency</c>。</summary>
-    public const int MaxRuntimeConcurrency = 64;
+    /// <summary>对应 Go: <c>maxRuntimeConcurrency</c>（Go 侧为 999）。</summary>
+    public const int MaxRuntimeConcurrency = 999;
 
     public RuntimePolicySetting Current() => _policy;
 

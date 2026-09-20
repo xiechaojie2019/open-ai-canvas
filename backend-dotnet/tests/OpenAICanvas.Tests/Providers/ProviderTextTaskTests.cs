@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System.Net;
 using System.Text;
 using OpenAICanvas.Providers;
@@ -42,7 +42,7 @@ public sealed class ProviderTextTaskTests
     private static HttpResponseMessage Sse(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/event-stream") };
 
-    private static TextTaskInput Input() => new()
+    private static TextTaskInput Input(bool stream = false) => new()
     {
         Prompt = "问题",
         Config = new ProviderConfig
@@ -52,6 +52,7 @@ public sealed class ProviderTextTaskTests
             APIKey = "k",
             SystemPrompt = "你是助手",
         },
+        TextOptions = new CanvasTextOptions { Stream = stream },
     };
 
     private static ProviderTextTask Task(StubHandler handler, long? maxBytes = null) =>
@@ -83,7 +84,7 @@ public sealed class ProviderTextTaskTests
             """{"choices":[{"message":{"content":"你好"}}]}"""));
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunAsync(Input(), "chat-completion", stream: false);
+            .RunAsync(Input(), "chat-completion");
 
         Assert.Equal("text", result["mode"]);
         Assert.Equal("你好", result["text"]);
@@ -95,7 +96,7 @@ public sealed class ProviderTextTaskTests
         StubHandler handler = new(_ => Json(HttpStatusCode.OK, """{"output_text":"回答"}"""));
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunAsync(Input(), "responses", stream: false);
+            .RunAsync(Input(), "responses");
 
         Assert.Equal("回答", result["text"]);
     }
@@ -107,7 +108,7 @@ public sealed class ProviderTextTaskTests
             """{"content":[{"type":"text","text":"Claude 回答"}]}"""));
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunAsync(Input(), "claude-api", stream: false);
+            .RunAsync(Input(), "claude-api");
 
         Assert.Equal("Claude 回答", result["text"]);
     }
@@ -120,7 +121,8 @@ public sealed class ProviderTextTaskTests
         TextTaskInput input = Input();
         input.TextOptions.Stream = true;
 
-        await Task(handler).RunAsync(input, "chat-completion", stream: false);
+        // 直接调用非流式协议分支（模拟分镜等调用方强制非流式）。
+        await Task(handler).RequestAsync(input, "chat-completion", stream: false);
 
         // 非流式分支必须移除 stream，避免上游按 SSE 返回。
         Assert.DoesNotContain("\"stream\"", handler.LastBody!, StringComparison.Ordinal);
@@ -133,7 +135,7 @@ public sealed class ProviderTextTaskTests
             """{"choices":[{"message":{"content":""}}]}"""));
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task(handler).RunAsync(Input(), "chat-completion", stream: false));
+            () => Task(handler).RunAsync(Input(), "chat-completion"));
 
         Assert.Equal("文本接口没有返回内容", error.Message);
     }
@@ -143,7 +145,7 @@ public sealed class ProviderTextTaskTests
     {
         StubHandler handler = new(_ => Json(HttpStatusCode.OK, """{"output_text":"x"}"""));
 
-        await Task(handler).RunAsync(Input(), "responses", stream: false);
+        await Task(handler).RunAsync(Input(), "responses");
 
         Assert.Equal("https://api.example.com/v1/responses", handler.LastRequest!.RequestUri!.ToString());
     }
@@ -160,7 +162,7 @@ public sealed class ProviderTextTaskTests
         List<string> deltas = [];
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunAsync(Input(), "chat-completion", stream: true, onDelta: deltas.Add);
+            .RunAsync(Input(stream: true), "chat-completion", onDelta: deltas.Add);
 
         Assert.Equal("你好", result["text"]);
         Assert.Equal(["你", "好"], deltas);
@@ -171,7 +173,7 @@ public sealed class ProviderTextTaskTests
     {
         StubHandler handler = new(_ => Sse("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"));
 
-        await Task(handler).RunAsync(Input(), "chat-completion", stream: true);
+        await Task(handler).RunAsync(Input(stream: true), "chat-completion");
 
         Assert.Contains("\"stream\":true", handler.LastBody!, StringComparison.Ordinal);
         Assert.Contains("include_usage", handler.LastBody!, StringComparison.Ordinal);
@@ -184,7 +186,7 @@ public sealed class ProviderTextTaskTests
             "event: response.output_text.delta\ndata: {\"delta\":\"部分\"}\n\n"));
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunAsync(Input(), "responses", stream: true);
+            .RunAsync(Input(stream: true), "responses");
 
         Assert.Equal("部分", result["text"]);
     }
@@ -197,7 +199,7 @@ public sealed class ProviderTextTaskTests
             "data: {\"choices\":[{\"delta\":{\"content\":\"答\"}}]}\n\n"));
         List<string> reasoning = [];
 
-        await Task(handler).RunAsync(Input(), "chat-completion", stream: true, onReasoningDelta: reasoning.Add);
+        await Task(handler).RunAsync(Input(stream: true), "chat-completion", onReasoningDelta: reasoning.Add);
 
         Assert.Equal(["想"], reasoning);
     }
@@ -207,7 +209,7 @@ public sealed class ProviderTextTaskTests
     {
         StubHandler handler = new(_ => Sse("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"));
 
-        await Task(handler).RunAsync(Input(), "chat-completion", stream: true);
+        await Task(handler).RunAsync(Input(stream: true), "chat-completion");
 
         Assert.Equal("text/event-stream", handler.LastRequest!.Headers.GetValues("Accept").Single());
     }
@@ -219,7 +221,7 @@ public sealed class ProviderTextTaskTests
             """{"choices":[{"message":{"content":"退化为JSON"}}]}"""));
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunAsync(Input(), "chat-completion", stream: true);
+            .RunAsync(Input(stream: true), "chat-completion");
 
         Assert.Equal("退化为JSON", result["text"]);
     }
@@ -230,7 +232,7 @@ public sealed class ProviderTextTaskTests
         StubHandler handler = new(_ => Sse("data: [DONE]\n\n"));
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task(handler).RunAsync(Input(), "chat-completion", stream: true));
+            () => Task(handler).RunAsync(Input(stream: true), "chat-completion"));
 
         Assert.Equal("流式文本接口没有返回内容", error.Message);
     }
@@ -243,7 +245,7 @@ public sealed class ProviderTextTaskTests
         StubHandler handler = new(_ => Json(HttpStatusCode.TooManyRequests, "{}"));
 
         ProviderHttpException error = await Assert.ThrowsAsync<ProviderHttpException>(
-            () => Task(handler).RunAsync(Input(), "chat-completion", stream: false));
+            () => Task(handler).RunAsync(Input(), "chat-completion"));
 
         Assert.Equal(429, error.StatusCode);
     }
@@ -255,7 +257,7 @@ public sealed class ProviderTextTaskTests
 
         // 上限 8 字节，响应体远超。
         ProviderTransportException error = await Assert.ThrowsAsync<ProviderTransportException>(
-            () => Task(handler, maxBytes: 8).RunAsync(Input(), "chat-completion", stream: false));
+            () => Task(handler, maxBytes: 8).RunAsync(Input(), "chat-completion"));
 
         Assert.Contains("上游响应超过", error.Message, StringComparison.Ordinal);
     }
@@ -275,7 +277,7 @@ public sealed class ProviderTextTaskTests
         });
 
         Dictionary<string, object?> result = await Task(handler)
-            .RunLegacyAsync(Input(), stream: false);
+            .RunLegacyAsync(Input());
 
         Assert.Equal("回落成功", result["text"]);
         Assert.Equal(2, calls);
@@ -292,7 +294,7 @@ public sealed class ProviderTextTaskTests
         });
 
         await Assert.ThrowsAsync<ProviderHttpException>(
-            () => Task(handler).RunLegacyAsync(Input(), stream: false));
+            () => Task(handler).RunLegacyAsync(Input()));
 
         // 502/503/504 是瞬时故障，换协议修不好，不能触发第二次请求。
         Assert.Equal(1, calls);
@@ -304,7 +306,7 @@ public sealed class ProviderTextTaskTests
         StubHandler handler = new(_ => Json(HttpStatusCode.NotFound, "{}"));
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => Task(handler).RunLegacyAsync(Input(), stream: false));
+            () => Task(handler).RunLegacyAsync(Input()));
 
         Assert.Contains("Responses API", error.Message, StringComparison.Ordinal);
         Assert.Contains("Chat Completions", error.Message, StringComparison.Ordinal);
