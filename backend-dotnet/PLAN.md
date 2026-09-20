@@ -415,3 +415,34 @@ backend-dotnet/
 - [ ] 同一 SQLite 文件与 PostgreSQL 库，两种实现读写互认
 - [ ] 环境变量名全部一致，无新增必填项
 - [ ] 全量 `openapi.yaml` 输出一致
+
+
+---
+
+## 九、部署与生产修复日志
+
+### 2026-09-20 · 首次部署 192.168.0.211 与 Dapper 集合参数修复（e94b54cb）
+
+**部署链路**：本地 publish linux-x64，tar 打包后 SCP 上传 /opt/open-ai-canvas-dotnet/，
+docker compose 重建 backend。容器 healthy，/api/health/live 与 /api/health/ready 均 200。
+
+**生产暴露并修复的问题**（PostgreSQL 日志取证 + 端点测试复现）：
+
+1. Dapper 不展开匿名对象里的集合参数：生产 PG 实测产生 IN $1 语法错误，
+   SQLite 下落入 IN ((?,?)) 行值误用。修复：RepositoryBase 五个查询入口统一过
+   ExpandCollectionParameters——IN (@name) 与 gorm 风格 IN @name（无括号，必须补上）
+   统一展开为逐元素占位符；空集合展开为恒假空子查询（IN (NULL) / NOT IN (NULL)
+   会因 UNKNOWN 过滤掉所有行）；未被 SQL 以 IN 引用的集合参数直接丢弃；
+   DynamicParameters 通道维持只传标量约定（配合 Placeholders 手写展开）。
+2. 参数对象本身是实体集合（分批多行 INSERT）被误反射：Dapper 原生列表展开通道
+   （每个元素才是参数模板）被顶层属性扫描整体替换为垃圾参数。修复：参数本身是
+   IEnumerable 且非 Dictionary 时直接放行。
+3. user_daily_activities 的 login_count 列歧义（PG 要求 DO UPDATE 右侧限定表名），
+   且 VALUES 首插写 0 吞掉首次登录计数。修复：首插 @initialLogin + 限定表名。
+4. admin_analytics 过滤列 record_type 不存在。修复：改用 request_kind 语义
+   （download 仅 download；all 不过滤；默认排除 poll/download）。
+
+**验证**：持久层 38/38，全量 1375/1375 通过；生产冒烟登录（code:0，login upsert 生效）
+与管理端分析总览（KPI/趋势正常返回）通过。Endpoint 组失败定位的关键经验：
+ApiResults.FailService 对未分类异常只回固定文案，error_type 进 CanvasLog，
+测试侧直接调 service（DI 解析 CanvasService）可拿到原始异常栈。
