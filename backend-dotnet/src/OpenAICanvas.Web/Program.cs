@@ -108,6 +108,13 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<OpenAICanvas.Application.UploadQuota>(),
         env.DataDir));
 builder.Services.AddSingleton(new OpenAICanvas.Application.ChunkedUploadSessions());
+// 孤儿资源清理后台作业。对应 Go 的 app/resource_deletion_worker.go。
+// 可用 CANVAS_DISABLE_BACKGROUND_WORKERS=true 关闭（测试环境避免与手动触发竞争）。
+if (!string.Equals(Environment.GetEnvironmentVariable("CANVAS_DISABLE_BACKGROUND_WORKERS"), "true",
+        StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHostedService<OpenAICanvas.Web.Workers.ResourceCleanupWorker>();
+}
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
@@ -125,6 +132,12 @@ builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDeleteService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         env.DataDir));
+// 孤儿资源清理。对应 Go 的 app/resource_deletion_worker.go。
+builder.Services.AddSingleton(serviceProvider =>
+    new OpenAICanvas.Application.ResourceCleanupService(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDeleteService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.Appearance.AppearanceService>()));
 // 管理端存储管理（资源分页 / 批量删除 / 直连下发）。对应 Go 的 app/admin_storage*.go。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.AdminStorageService(

@@ -272,7 +272,7 @@ backend-dotnet/
 | 5.1 | 资源上传（含分片） | `handler/resource_upload_session.go` | ✅ 三件套路由 + 幂等/配额/本地落盘完成（对象存储通道待 #25） |
 | 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
-| 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ☐ |
+| 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ✅ 候选筛选（未完成 1h / 就绪 24h）+ 引用快照与外观检查 + 事务删除 + Outbox 物理清理，含后台周期作业（公告草稿与回收站过期清理待接，#30） |
 | 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5） |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | ☐ |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |
@@ -330,7 +330,7 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ☐ |
 | 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；执行引擎待做 |
-| 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/添加/点赞已通；file 5 条读 + create/update/install/sync 4 条写待做 |
+| 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/删除/加入/点赞 + 包文件读取 5 条 + 创建/更新完成（15 条路由）；install/sync 待做 |
 | 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ 包目录布局与 manifest 解析待移植（install/sync/file 读的前置） |
 | 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |
 | 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | ☐ |
