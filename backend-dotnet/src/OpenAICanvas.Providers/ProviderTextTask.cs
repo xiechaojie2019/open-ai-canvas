@@ -275,4 +275,10 @@ public interface IProviderRequestContext
     /// </summary>
     Task RecordChannelResultAsync(string channelId, bool failed, CancellationToken cancellationToken) =>
         Task.CompletedTask;
+
+    /// <summary>
+    /// 当前生效的声明式协议适配器注册表；<c>null</c> 表示未注入（等价 Go 的裸 ctx，
+    /// 图片走手写协议）。生产实现返回官方插件包注册表，测试保持 <c>null</c> 或注入自定义表。
+    /// </summary>
+    ProtocolAdapterRegistry? DeclarativeAdapter => null;
 }

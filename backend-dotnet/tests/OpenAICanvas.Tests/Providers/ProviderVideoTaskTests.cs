@@ -1,6 +1,7 @@
 ﻿#nullable enable
 using System.Net;
 using System.Text;
+using OpenAICanvas.Protocol;
 using OpenAICanvas.Providers;
 using Xunit;
 
@@ -62,6 +63,17 @@ public sealed class ProviderVideoTaskTests
     };
 
     private static ProviderVideoTask NewTask(StubHandler handler) => new(null, () => new HttpClient(handler));
+
+    /// <summary>显式空注册表：等价 Go 的 <c>withProtocolRegistry(ctx, emptyProtocolRegistry)</c>。</summary>
+    private sealed class EmptyRegistryContext : IProviderRequestContext
+    {
+        public long MaxResponseBytes => ProviderTransport.DefaultMaxResponseBytes;
+
+        public ProtocolAdapterRegistry DeclarativeAdapter => new();
+    }
+
+    private static ProviderVideoTask NewTask(StubHandler handler, IProviderRequestContext context) =>
+        new(context, () => new HttpClient(handler));
 
     private static HttpResponseMessage Json(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
@@ -689,19 +701,20 @@ public sealed class ProviderVideoTaskTests
         Assert.Equal("Seedance任务成功但没有返回视频 URL", error.Message);
     }
 
+    // 说明：ark-video + /api/plan/v3 组合在任何注册表状态下都无法到达 ArkPlan 手写分支
+    // （声明式命中走 manifest 协议；未安装报"插件未安装"），与 Go 路由一致，无对应测试。
     [Fact]
-    public async Task AgentPlan_方舟渠道名称为火山方舟()
+    public async Task 火山方舟视频_注入空注册表时报插件未安装()
     {
-        StubHandler handler = new(request => request.Method == HttpMethod.Post
-            ? Json("""{"id":"plan-1"}""")
-            : Json("""{"status":"succeeded","content":{}}"""));
-        TextTaskInput input = Input("seedance-1.0", "https://ark.example.com/api/plan/v3");
+        StubHandler handler = new(_ => Json("{}"));
+        TextTaskInput input = Input();
         input.Config.InterfaceType = "volcengine-ark-video";
 
         InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => NewTask(handler).RunAsync(input, "", Policy()));
+            () => NewTask(handler, new EmptyRegistryContext()).RunAsync(input, "", Policy()));
 
-        Assert.Equal("火山方舟任务成功但没有返回视频 URL", error.Message);
+        Assert.Contains("插件未安装", error.Message);
+        Assert.Empty(handler.Requests);
     }
 
     [Fact]

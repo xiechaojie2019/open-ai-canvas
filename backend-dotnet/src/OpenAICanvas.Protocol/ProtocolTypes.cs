@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text.Json.Serialization;
+using OpenAICanvas.Domain.Serialization;
 
 namespace OpenAICanvas.Protocol;
 
@@ -68,24 +69,31 @@ public sealed class ManifestAuth
     public string Field { get; set; } = "";
 
     [JsonPropertyName("secretField")]
+    [GoOmitEmpty]
     public string SecretField { get; set; } = "";
 
     [JsonPropertyName("header")]
+    [GoOmitEmpty]
     public string Header { get; set; } = "";
 
     [JsonPropertyName("prefix")]
+    [GoOmitEmpty]
     public string Prefix { get; set; } = "";
 
     [JsonPropertyName("query")]
+    [GoOmitEmpty]
     public string Query { get; set; } = "";
 
     [JsonPropertyName("username")]
+    [GoOmitEmpty]
     public string Username { get; set; } = "";
 
     [JsonPropertyName("service")]
+    [GoOmitEmpty]
     public string Service { get; set; } = "";
 
     [JsonPropertyName("region")]
+    [GoOmitEmpty]
     public string Region { get; set; } = "";
 }
 
@@ -116,6 +124,10 @@ public sealed class MediaReference
 
     [JsonPropertyName("dataUrl")]
     public string DataURL { get; set; } = "";
+
+    /// <summary>媒体种类（<c>image</c> / <c>video</c> / <c>audio</c> / <c>file</c>）。对应 Go: <c>MediaReference.Kind</c>。</summary>
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = "";
 
     [JsonPropertyName("url")]
     public string URL { get; set; } = "";
@@ -150,9 +162,20 @@ public sealed class MediaReference
     [JsonPropertyName("order")]
     public int Order { get; set; }
 
+    /// <summary>权重（部分 provider 的参考图优先级）。对应 Go: <c>MediaReference.Weight</c>。</summary>
+    [JsonPropertyName("weight")]
+    public double Weight { get; set; }
+
     /// <summary>宿主补充的素材元信息（字节数/宽高/时长/存储键）。对应 Go: <c>MediaReference.Metadata</c>。</summary>
     [JsonPropertyName("metadata")]
     public Dictionary<string, object?>? Metadata { get; set; }
+
+    /// <summary>
+    /// 临时地址：结果只在下游可访问期间有效，宿主必须立即下载而不是长期保存 URL。
+    /// 对应 Go: <c>MediaReference.Ephemeral</c>。
+    /// </summary>
+    [JsonPropertyName("ephemeral")]
+    public bool Ephemeral { get; set; }
 }
 
 /// <summary>Provider 凭证（对应 Go: <c>providerConfig</c> 中参与鉴权与签名的字段子集）。</summary>

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Outbound;
+using OpenAICanvas.Protocol;
 
 namespace OpenAICanvas.Providers;
 
@@ -44,6 +45,26 @@ public sealed class ProviderVideoTask
         if (input.Mode.Length == 0)
         {
             input.Mode = "video";
+        }
+
+        // 与 Go 一致：未注入注册表时补官方插件包（ensureOfficialProtocolAdapter）；
+        // 显式注入（含空表）则尊重注入 —— 空表表示"插件未安装"，绝不静默退回手写协议。
+        ProtocolAdapterRegistry? registry = _context?.DeclarativeAdapter
+            ?? ((input.Config.InterfaceType ?? "").Trim().Length == 0
+                ? null
+                : ProtocolAdapterLookup.OfficialFallback);
+        IProtocolAdapter? declarative = registry?.Resolve(input.Config.InterfaceType ?? "");
+        if (declarative is not null)
+        {
+            return await new ProviderProtocolTask(_context, _clientFactory)
+                .RunAsync(input, declarative, resumedProviderRequestId, policy, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        // 官方声明式接口但插件包未安装：直接失败，绝不静默退回手写协议（协议边界）。
+        if (ProtocolAdapterLookup.OfficialDeclarativeVideoInterface(input.Config.InterfaceType ?? "") is not null)
+        {
+            string label = ProtocolAdapterLookup.OfficialDeclarativeVideoInterface(input.Config.InterfaceType ?? "")!;
+            throw new InvalidOperationException($"{label} 视频插件未安装");
         }
 
         if (IsArkPlanVideo(input.Config))

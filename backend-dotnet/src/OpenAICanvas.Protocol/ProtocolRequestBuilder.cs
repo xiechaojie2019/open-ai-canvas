@@ -463,6 +463,87 @@ public static class ProtocolRequestBuilder
     }
 
     /// <summary>
+    /// 火山引擎 V4 签名。对应 Go 侧 <c>volc-sdk-golang/base.Credentials.Sign</c>
+    /// （<c>volcengine-v4</c> 鉴权驱动，即梦官方协议使用）。
+    /// </summary>
+    /// <param name="timestamp">用于测试注入；传 <c>null</c> 取当前 UTC。</param>
+    /// <remarks>
+    /// 与 AWS SigV4 的关键差异：算法标识为 <c>HMAC-SHA256</c>、签名串以 <c>request</c> 结尾、
+    /// 参与签名的头固定为 content-type/content-md5/host/x-security-token 及全部 <c>x-</c> 前缀头。
+    /// </remarks>
+    public static void SignVolcV4(
+        HttpRequestMessage request,
+        string accessKey,
+        string secretKey,
+        string service,
+        string region,
+        byte[]? payload = null,
+        DateTimeOffset? timestamp = null)
+    {
+        if (accessKey.Trim().Length == 0 || secretKey.Trim().Length == 0)
+        {
+            throw new InvalidOperationException("火山引擎 V4 鉴权需要 Access Key 和 Secret Key");
+        }
+        if (service.Trim().Length == 0)
+        {
+            throw new InvalidOperationException("火山引擎 V4 鉴权缺少 service");
+        }
+
+        DateTimeOffset now = timestamp ?? DateTimeOffset.UtcNow;
+        string xDate = now.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        string dateStamp = xDate[..8];
+        string scope = string.Join('/', dateStamp, region, service, "request");
+        byte[] body = payload ?? [];
+        string bodyHash = Sha256Hex(body);
+
+        request.Headers.TryAddWithoutValidation("X-Date", xDate);
+        request.Headers.TryAddWithoutValidation("X-Content-Sha256", bodyHash);
+
+        // Go SDK 的 sortHeaders：content-type / content-md5 / host / x-security-token 恒定参与，
+        // 其余仅取 x- 前缀头；小写排序后逐个 "key:value\n" 拼接。
+        SortedDictionary<string, string> signed = new(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)
+        {
+            string lowered = header.Key.ToLowerInvariant();
+            bool always = lowered is "content-type" or "content-md5" or "host" or "x-security-token";
+            if (!always && !lowered.StartsWith("x-", StringComparison.Ordinal))
+            {
+                continue;
+            }
+            signed[lowered] = string.Join(",", header.Value);
+        }
+        signed["host"] = (request.RequestUri?.Host ?? "").ToLowerInvariant();
+        signed["content-type"] = request.Content?.Headers.ContentType?.ToString() ?? "application/x-www-form-urlencoded; charset=utf-8";
+        signed["x-date"] = xDate;
+        signed["x-content-sha256"] = bodyHash;
+        string signedHeaders = string.Join(';', signed.Keys);
+        StringBuilder canonicalHeaders = new();
+        foreach ((string name, string value) in signed)
+        {
+            canonicalHeaders.Append(name).Append(':').Append(value.Trim()).Append('\n');
+        }
+
+        string canonicalRequest = string.Join('\n',
+            request.Method.Method,
+            EscapedPath(request.RequestUri),
+            CanonicalQuery(request.RequestUri),
+            canonicalHeaders.ToString(),
+            signedHeaders,
+            bodyHash);
+        string stringToSign = string.Join('\n',
+            "HMAC-SHA256", xDate, scope, Sha256Hex(Encoding.UTF8.GetBytes(canonicalRequest)));
+
+        byte[] dateKey = HmacSha256(Encoding.UTF8.GetBytes(secretKey), dateStamp);
+        byte[] regionKey = HmacSha256(dateKey, region);
+        byte[] serviceKey = HmacSha256(regionKey, service);
+        byte[] signingKey = HmacSha256(serviceKey, "request");
+        string signature = Convert.ToHexString(HmacSha256(signingKey, stringToSign)).ToLowerInvariant();
+
+        request.Headers.TryAddWithoutValidation("Authorization",
+            $"HMAC-SHA256 Credential={accessKey}/{scope}, SignedHeaders={signedHeaders}, Signature={signature}");
+    }
+
+    /// <summary>
     /// 构造 SigV4 的 canonical headers 与 signed headers。
     /// 对应 Go: <c>protocolCanonicalHeaders</c>。
     /// </summary>

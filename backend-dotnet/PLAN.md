@@ -239,7 +239,7 @@ backend-dotnet/
 | 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；models 子资源路由已通（见 3.2） |
 | 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | 🟡 列表/排序/价格档附着已通；保存/删除/fetch/import/test 待做 |
 | 3.3 | 逻辑模型与版本 | `app/logical_models.go` | 🟡 公开目录/管理端 CRUD/模拟/报价已通；工作流选路待做 |
-| 3.4 | 模型目录发现 | `provider/registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式执行引擎待做 |
+| 3.4 | 模型目录发现 | `provider/registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest wire 类型/校验归一化/ManifestAdapter/适配器注册表）；声明式 Providers 执行接入完成（`ProviderProtocolTask` create→poll→download 编排，图片/视频入口按 ctx 注册表路由）；剩余：运行时注册表动态注入（随 10.1/10.2） |
 | 3.5 | 模型能力矩阵 | `app/model_capability.go` | ✅ 读路径完成（解码/归一化/投影/校验） |
 | 3.6 | 路由目录快照与健康度 | `app/model_router.go` | ✅ 快照/匹配/选路/模拟完成（Redis 协调待接） |
 | 3.7 | 模型 SKU 选择器 | `model/model_sku.go` | ✅ |
@@ -255,10 +255,10 @@ backend-dotnet/
 | 4.4 | Worker 调度与租约 | `app/task_worker.go` | ☐ |
 | 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` | 🟡 仓储层 MarkRunning/Settle/Restore/Refund/Uncertain 已通（worker 接入待 4.4） |
 | 4.6 | 文本协议 | `app/provider_text.go` | ✅ 具备端到端执行能力：错误体系（失败识别/错误码归一化/HTTP 与正文归类/四类异常）、`ProviderHelpers`、`ProviderRequestTypes`、`ProviderMedia`、`ContentTypeSniffer`、`ParseRetryAfter`、`ProtocolRequestBuilder`（四类请求体 + URL/OriginPath + AWS SigV4/腾讯 TC3 签名）、`StreamingAgentParser`（chat/responses/claude 三协议 SSE 流式解析，含工具调用累积与 `[DONE]`）、`AgentToolPayload`（非流式统一解析）、`ProviderTextOrchestration`（协议归一/思考模式/工具选择归一/输出上限/`stream_options` 用量/结果整形/空正文校验/Responses 回落判定/历史过滤）、`ProviderTextRequestBuilder`（三协议请求体与多模态内容块）、**`ProviderTransport`（出站安全边界：大小上限/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配，共 42 条线级测试）+ `ProviderTextTask`（`requestTextProvider` 端到端：非流式 postJSON、流式 SSE、非 event-stream 退化、legacy 回落；**`RunTextTaskAsync` = `runTextTask` 按 interfaceType 分发，未识别类型走 legacy**）**；剩余：挂到任务 Worker（依赖 4.4/4.5） |
-| 4.7 | 图片协议 | `app/provider_image.go` | 🟡 `ProviderImageTask` 已通：OpenAI Images（生成/蒙版编辑 + multipart 手写构造 + 按能力裁剪参数）、Gemini Images（`/v1beta` + inlineData + 双向 MIME 签名校验）、Grok Images（`aspect_ratio`/`resolution` 归一化）、火山方舟（尺寸像素区间夹取 + 外链下载内联，跨源不带鉴权）；`ProviderImageOptions` 提供尺寸/质量归一化与能力裁剪；**剩余：即梦（需 4.8 轮询）+ 声明式适配器注册表 + `ImageCapability` 的 Application→Providers 投影** |
-| 4.8 | 视频协议（含遗留） | `app/provider_video.go` | ✅ 全通：`ProviderVideoPolling`（`runVideoPollLoop`：初始延迟/间隔、**两个独立计数器**（未找到/畸形响应）、Retry-After 拉长等待、重试态与恢复播报、可取消等待；`runVideoDownload`：有限次重试 + `VideoDownloadException`；`retryableVideoPollError` 全分类；`isProviderTaskNotReadyError` 固定短语判定）；`ProviderVideoTask`（OpenAI 风格 multipart+轮询+content 回落、Seedance `/videos`、Agent Plan `/contents/generations/tasks`、xAI `/videos` JSON；恢复任务只查询不重建；下载跨源不带鉴权）；`ProviderVideoOptions`（分辨率名匹配与固定分辨率、Seedance 时长/比例/分辨率归一化、首尾帧排序、素材 URL 策略）；剩余：官方声明式视频插件适配器注册表 |
+| 4.7 | 图片协议 | `app/provider_image.go` | 🟡 `ProviderImageTask` 已通：OpenAI Images（生成/蒙版编辑 + multipart 手写构造 + 按能力裁剪参数）、Gemini Images（`/v1beta` + inlineData + 双向 MIME 签名校验）、Grok Images（`aspect_ratio`/`resolution` 归一化）、火山方舟（尺寸像素区间夹取 + 外链下载内联，跨源不带鉴权）；`ProviderImageOptions` 提供尺寸/质量归一化与能力裁剪；声明式接入完成：入口只查 ctx 注入注册表（裸 ctx 走手写协议，与 Go 一致）；**剩余：即梦手写协议（插件未安装时的回落）** |
+| 4.8 | 视频协议（含遗留） | `app/provider_video.go` | ✅ 全通：`ProviderVideoPolling`（`runVideoPollLoop`：初始延迟/间隔、**两个独立计数器**（未找到/畸形响应）、Retry-After 拉长等待、重试态与恢复播报、可取消等待；`runVideoDownload`：有限次重试 + `VideoDownloadException`；`retryableVideoPollError` 全分类；`isProviderTaskNotReadyError` 固定短语判定）；`ProviderVideoTask`（OpenAI 风格 multipart+轮询+content 回落、Seedance `/videos`、Agent Plan `/contents/generations/tasks`、xAI `/videos` JSON；恢复任务只查询不重建；下载跨源不带鉴权）；`ProviderVideoOptions`（分辨率名匹配与固定分辨率、Seedance 时长/比例/分辨率归一化、首尾帧排序、素材 URL 策略）；声明式接入完成：未注入注册表补官方包（ensureOfficialProtocolAdapter）、显式空表报"插件未安装"、官方映射未安装时报错，均与 Go 路由边界一致 |
 | 4.9 | 音频协议 | `app/provider_audio.go` | ☐ |
-| 4.10 | HTTP 客户端与声明式协议 | `app/provider_http_client.go` `provider_protocol.go` | 🟡 出站安全边界已通（`ProviderTransport`：响应大小上限两道检查/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配/渠道 URL 版本前缀归一）；**协调层已通（`Platform/Coordinator`：固定窗口限流、并发租约与退避等待、渠道熔断、路由目录版本与路由屏蔽、`Application/ProviderRequestContext` 适配器）**，并已接入 `ProviderTextTask`（熔断前置短路 → 占槽 → 请求 → 记结果 → 释放）；**声明式协议执行已通（`ProviderProtocolExecutor`：白名单 method 校验、body/URL/头装配、10 类鉴权驱动含 AWS SigV4/TC3、multipart 媒体加载；`ProviderProtocolPayload`：`protocolRequestFromInput` 投影、素材角色判定、`finishProtocolResult` 结果整形）**；剩余：create→poll→download 三阶段轮询循环（依赖 4.8 的 `videoPollPolicy`）+ Redis Lua 脚本的集成测试 |
+| 4.10 | HTTP 客户端与声明式协议 | `app/provider_http_client.go` `provider_protocol.go` | 🟡 出站安全边界已通（`ProviderTransport`：响应大小上限两道检查/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配/渠道 URL 版本前缀归一）；**协调层已通（`Platform/Coordinator`：固定窗口限流、并发租约与退避等待、渠道熔断、路由目录版本与路由屏蔽、`Application/ProviderRequestContext` 适配器）**，并已接入 `ProviderTextTask`（熔断前置短路 → 占槽 → 请求 → 记结果 → 释放）；**声明式协议执行已通（`ProviderProtocolExecutor`：白名单 method 校验、body/URL/头装配、11 类鉴权驱动含 AWS SigV4/TC3/火山 V4、multipart 媒体加载；`ProviderProtocolPayload`：`protocolRequestFromInput` 投影、素材角色判定、`finishProtocolResult` 结果整形；`ProviderProtocolTask`：create→poll→download 三阶段编排、幂等键、ExtractProviderTaskID 回落、结果下载与 media 归一）**；剩余：Redis Lua 脚本的集成测试 |
 | 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ☐ |
 | 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ☐ |
 | 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ☐ |
@@ -329,7 +329,7 @@ backend-dotnet/
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
 | 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ☐ |
-| 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；执行引擎待做 |
+| 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest 线格式/校验归一化/适配器注册表 + 官方 fallback 加载）；Providers 执行层完成（`ProviderProtocolTask` 三阶段编排 + 图片/视频入口注册表路由，ctx 注入语义与 Go 一致）；运行时管理（安装/启停/删除）待做 |
 | 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/删除/加入/点赞 + 包文件读取 5 条 + 创建/更新完成（15 条路由）；install/sync 待做 |
 | 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ 包目录布局与 manifest 解析待移植（install/sync/file 读的前置） |
 | 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |

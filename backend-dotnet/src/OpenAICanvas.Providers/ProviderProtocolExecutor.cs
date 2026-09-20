@@ -26,10 +26,12 @@ public static class ProviderProtocolExecutor
         ProviderConfig config,
         RequestSpec spec,
         ProviderProtocolMediaLoader? mediaLoader = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<HttpClient>? clientFactory = null)
     {
         (byte[] data, _) = await ExecuteWithMimeTypeAsync(
-            config, spec, null, mediaLoader, ProtocolCredentialsFor(config), cancellationToken).ConfigureAwait(false);
+            config, spec, null, mediaLoader, ProtocolCredentialsFor(config), cancellationToken,
+            clientFactory).ConfigureAwait(false);
         return data;
     }
 
@@ -187,6 +189,22 @@ public static class ProviderProtocolExecutor
             case "gemini":
                 SetHeader(request, DefaultString(auth.Header.Trim(), "x-goog-api-key"), credential);
                 return;
+            case "volcengine-v4":
+            {
+                string secret = ProtocolRequestBuilder.CredentialField(credentials, auth.SecretField);
+                if (credential.Length == 0 || secret.Length == 0)
+                {
+                    throw new InvalidOperationException("火山引擎 V4 鉴权需要 Access Key 和 Secret Key");
+                }
+                string service = auth.Service.Trim();
+                if (service.Length == 0)
+                {
+                    throw new InvalidOperationException("火山引擎 V4 鉴权缺少 service");
+                }
+                string region = DefaultString(auth.Region.Trim(), "cn-north-1");
+                ProtocolRequestBuilder.SignVolcV4(request, credential, secret, service, region, payload);
+                return;
+            }
             case "aws-sigv4":
             {
                 string secret = ProtocolRequestBuilder.CredentialField(credentials, auth.SecretField);

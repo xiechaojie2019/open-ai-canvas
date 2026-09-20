@@ -26,6 +26,7 @@ public sealed class ProtocolGenerationRequest
     public string Operation { get; set; } = "";
     public int Duration { get; set; }
     public int ImageCount { get; set; }
+    public OutputOptions Output { get; set; } = new();
     public Dictionary<string, object?> Extra { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, Dictionary<string, object?>> ProviderOptions { get; set; } = new(StringComparer.Ordinal);
 }
@@ -50,6 +51,15 @@ public static class ProviderProtocolPayload
     {
         Dictionary<string, object?> metadata = input.Metadata;
         ProviderConfig config = input.Config;
+        string resolution = config.VQuality.Trim();
+        if (input.Mode == "video")
+        {
+            string declared = ProviderVideoOptions.VideoResolutionNameRequest(input.VideoCapability, resolution);
+            if (declared.Length > 0)
+            {
+                resolution = declared;
+            }
+        }
 
         ProtocolGenerationRequest request = new()
         {
@@ -61,7 +71,7 @@ public static class ProviderProtocolPayload
             Videos = MediaReferences(input.ReferenceVideos, "video"),
             Audios = MediaReferences(input.ReferenceAudios, "audio"),
             AspectRatio = config.Size,
-            Resolution = config.VQuality.Trim(),
+            Resolution = resolution,
             Quality = config.Quality,
             GenerateAudio = ParseBool(config.VideoGenerateAudio),
             Watermark = ParseBool(config.VideoWatermark),
@@ -111,6 +121,17 @@ public static class ProviderProtocolPayload
         {
             request.ImageCount = count;
         }
+        request.Output = new OutputOptions
+        {
+            Count = request.ImageCount,
+            Duration = request.Duration,
+            AspectRatio = request.AspectRatio,
+            Resolution = request.Resolution,
+            Quality = request.Quality,
+            GenerateAudio = request.GenerateAudio,
+            Watermark = request.Watermark,
+            Format = config.AudioFormat,
+        };
 
         if (metadata.TryGetValue("providerOptions", out object? configured)
             && configured is Dictionary<string, object?> namespaces)
@@ -233,6 +254,7 @@ public static class ProviderProtocolPayload
         URL = (value.URL ?? "").Trim(),
         DataURL = (value.DataURL ?? "").Trim(),
         Type = kind,
+        Kind = kind,
         MIMEType = ProviderHelpers.FirstNonEmpty((value.MIMEType ?? "").Trim(), (value.Type ?? "").Trim()),
         Name = (value.Name ?? "").Trim(),
         StorageKey = (value.StorageKey ?? "").Trim(),
@@ -343,6 +365,9 @@ public sealed class ProtocolResult
     public List<MediaReference> Images { get; set; } = [];
     public List<MediaReference> Videos { get; set; } = [];
     public List<MediaReference> Audios { get; set; } = [];
+
+    /// <summary>用量信息（manifest 的 usage 声明求值结果）。对应 Go: <c>protocol.Result.Usage</c>。</summary>
+    public Dictionary<string, object?>? Usage { get; set; }
 }
 
 /// <summary>下载后的媒体条目。对应 Go 的 <c>dataUrl</c>/<c>mimeType</c> 二元组。</summary>

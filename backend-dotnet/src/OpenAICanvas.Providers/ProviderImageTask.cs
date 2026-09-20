@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Outbound;
+using OpenAICanvas.Protocol;
 
 namespace OpenAICanvas.Providers;
 
@@ -33,14 +34,18 @@ public sealed class ProviderImageTask
     /// 图片任务入口：按 <c>interfaceType</c> 分发。
     /// 对应 Go: <c>runImageTask</c>。
     /// </summary>
-    /// <remarks>
-    /// 声明式协议分支需要适配器注册表（未移植），因此不在本方法内处理；
-    /// 调用方应先查询注册表，命中时走 <see cref="ProviderProtocolExecutor"/>。
-    /// </remarks>
     public async Task<Dictionary<string, object?>> RunAsync(
         TextTaskInput input, CancellationToken cancellationToken = default)
     {
         string interfaceType = input.Config.InterfaceType ?? "";
+        // 与 Go 一致：只查上下文注入的注册表。生产 ctx 携带官方插件包，测试裸 ctx 走手写协议。
+        IProtocolAdapter? declarative = _context?.DeclarativeAdapter?.Resolve(interfaceType);
+        if (declarative is not null)
+        {
+            return await new ProviderProtocolTask(_context, _clientFactory)
+                .RunAsync(input, declarative, "", ProviderProtocolTask.DeclarativePollPolicy("image"), cancellationToken)
+                .ConfigureAwait(false);
+        }
         return interfaceType switch
         {
             ChannelInterfaceType.ChannelInterfaceGrokImage =>
