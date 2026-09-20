@@ -80,6 +80,28 @@ public sealed partial class Repository
     }
 
     /// <summary>
+    /// 回收站过期素材：状态为 archived 且 updated_at 早于 cutoff。
+    /// 对应 Go: <c>Repository.FindExpiredArchivedAssets</c>（limit ≤0 或 &gt;200 时回落 100）。
+    /// </summary>
+    public async Task<IReadOnlyList<Asset>> ExpiredArchivedAssetsAsync(
+        DateTime cutoff, int limit, CancellationToken cancellationToken = default)
+    {
+        if (limit is <= 0 or > 200)
+        {
+            limit = 100;
+        }
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await QueryAsync<Asset>(
+            connection,
+            SqlBuilder.Select<Asset>(
+                "status = @status AND updated_at <= @cutoff",
+                "updated_at ASC, id ASC",
+                Dialect.LimitOffset(limit, null)),
+            new { status = AssetVersionStatus.AssetVersionStatusArchived, cutoff },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 事务内删除孤儿资源并写入物理删除任务。
     /// 对应 Go: <c>Repository.DeleteDetachedResources</c>。
     /// </summary>

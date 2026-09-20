@@ -499,14 +499,18 @@
   10MB 上限、品牌名来自外观设置均与 Go 一致。
 - 备注：JSON 数字/转义与 Go 有细微差异（同 #47 家族）。
 
-### 67. `[待移植]` 资源删除后台作业的两项附带职责
+### 67. `[已解决]` 资源删除后台作业的两项附带职责
 - 位置：`src/OpenAICanvas.Web/Workers/ResourceCleanupWorker.cs`
-- 现状：Go 的 `startResourceDeletionWorker`（`app/resource_deletion_worker.go`）除
-  **孤儿资源清理**（本次已移植，阶段 5.4 ✅）与 **drain 删除任务**（已移植）外，
-  还兼任两项清理，**本次未移植**：
-  1. `cleanupStaleAnnouncementImageDrafts` —— 清理超期的公告配图草稿；
+- 内容：Go 的 `startResourceDeletionWorker`（`app/resource_deletion_worker.go`）除
+  **孤儿资源清理**与 **drain 删除任务**外，还兼任两项清理：
+  1. `cleanupStaleAnnouncementImageDrafts` —— 清理超期（24h）的公告配图草稿；
   2. `cleanupExpiredArchivedAssets` —— 按 `RecycleBinRetentionDays` 清理回收站过期素材。
-- 影响：公告配图草稿与回收站过期素材目前**不会自动清理**；两者均可由用户/管理员显式操作，
-  仅缺自动回收。数据一致性不受影响（不会误删，只是不回收）。
-- 处置建议：随公告配图上传（#28）与回收站策略一并补齐；worker 骨架与调用位点已就绪，
-  只需在 `RunPeriodicAsync` 中追加两个调用。
+- **已于 2026-09-20 补齐**（阶段 5.4 收尾）：
+  - `ResourceCleanupService` 新增 `CleanupStaleAnnouncementImageDraftsAsync`（分批循环，
+    每批 50，直到无剩余或无可清理项）与 `CleanupExpiredArchivedAssetsAsync`
+    （保留天数取自运行时策略，≤0 时不回收）。
+  - 为让后台作业可复用草稿丢弃逻辑，把 `AnnouncementService.DiscardAnnouncementImageAsync`
+    的核心抽出为 `DiscardAnnouncementImageDraftCoreAsync`（不含角色校验，与 Go 的
+    `discardAnnouncementImageDraft` 对齐）。
+  - worker 的启动轮与每小时轮现已按 Go 顺序执行：**草稿 → 回收站 → 孤儿**，三者互不影响。
+  - 仓储新增 `ExpiredArchivedAssetsAsync`（`status = archived AND updated_at <= cutoff`）。

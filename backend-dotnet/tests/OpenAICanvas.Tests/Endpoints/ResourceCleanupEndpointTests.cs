@@ -330,6 +330,129 @@ public sealed class ResourceCleanupEndpointTests : IDisposable
         Assert.Equal(0, jobs);
     }
 
+    [Fact]
+    public async Task 公告草稿清理_超期草稿被清理且物理文件删除()
+    {
+        HttpClient user = await SignInAsync();
+        byte[] payload = new byte[128];
+        new Random(81).NextBytes(payload);
+        (string id, string objectKey) = await CreateResourceAsync(user, payload);
+
+        // 造一条超期草稿（created_at 早于 24h）。
+        await WithServicesAsync<object?>(async (repository, _, _) =>
+        {
+            await repository.CreateAsync(new AnnouncementImageDraft
+            {
+                ResourceID = id,
+                UserID = (await repository.ResourceAsync(id))!.UserID,
+                CreatedAt = DateTime.UtcNow.AddHours(-48),
+            });
+            return null;
+        });
+
+        int cleaned = await WithServicesAsync(async (_, _, cleanup) =>
+            await cleanup.CleanupStaleAnnouncementImageDraftsAsync());
+
+        Assert.Equal(1, cleaned);
+
+        // 与 Go 一致：草稿清理只写 Outbox 任务，物理删除由 worker 下一轮 drain 完成（异步）。
+        // 这里补一次 drain，验证链路能真正落地。
+        await WithServicesAsync<object?>(async (_, deletions, _) =>
+        {
+            await deletions.DrainResourceDeletionJobsAsync();
+            return null;
+        });
+        Assert.False(File.Exists(PhysicalPathOf(objectKey)), "drain 后草稿资源的物理文件应被清理");
+        Assert.Null(await WithServicesAsync(async (repository, _, _) =>
+            await repository.ResourceAsync(id)));
+    }
+
+    [Fact]
+    public async Task 公告草稿清理_未超期草稿保留()
+    {
+        HttpClient user = await SignInAsync();
+        byte[] payload = new byte[128];
+        (string id, string objectKey) = await CreateResourceAsync(user, payload);
+
+        // created_at 仅 1 小时前（未超 24h）。
+        await WithServicesAsync<object?>(async (repository, _, _) =>
+        {
+            await repository.CreateAsync(new AnnouncementImageDraft
+            {
+                ResourceID = id,
+                UserID = (await repository.ResourceAsync(id))!.UserID,
+                CreatedAt = DateTime.UtcNow.AddHours(-1),
+            });
+            return null;
+        });
+
+        int cleaned = await WithServicesAsync(async (_, _, cleanup) =>
+            await cleanup.CleanupStaleAnnouncementImageDraftsAsync());
+
+        Assert.Equal(0, cleaned);
+        Assert.True(File.Exists(PhysicalPathOf(objectKey)), "未超期草稿不应被清理");
+    }
+
+    [Fact]
+    public async Task 回收站清理_超期归档素材被删除()
+    {
+        HttpClient user = await SignInAsync();
+        byte[] payload = new byte[128];
+        (string id, string objectKey) = await CreateResourceAsync(user, payload);
+        string assetId = await CreateArchivedAssetAsync(id, DateTime.UtcNow.AddDays(-60));
+
+        int deleted = await WithServicesAsync(async (_, _, cleanup) =>
+            await cleanup.CleanupExpiredArchivedAssetsAsync());
+
+        Assert.True(deleted >= 1, "超期归档素材应被清理");
+        // 素材记录与资源一起级联删除。
+        await WithServicesAsync<object?>(async (repository, _, _) =>
+        {
+            Assert.Null(await repository.AssetForUserAsync(
+                (await repository.ResourceAsync(id))?.UserID ?? "", assetId));
+            return null;
+        });
+    }
+
+    [Fact]
+    public async Task 回收站清理_未超期归档素材保留()
+    {
+        HttpClient user = await SignInAsync();
+        byte[] payload = new byte[128];
+        (string id, string objectKey) = await CreateResourceAsync(user, payload);
+        await CreateArchivedAssetAsync(id, DateTime.UtcNow.AddDays(-1));
+
+        int deleted = await WithServicesAsync(async (_, _, cleanup) =>
+            await cleanup.CleanupExpiredArchivedAssetsAsync());
+
+        Assert.Equal(0, deleted);
+        Assert.True(File.Exists(PhysicalPathOf(objectKey)), "未超期归档素材不应被清理");
+    }
+
+    /// <summary>造一条归档素材（可选指定 updated_at），返回素材 ID。</summary>
+    private async Task<string> CreateArchivedAssetAsync(string resourceId, DateTime updatedAt) =>
+        await WithServicesAsync(async (repository, _, _) =>
+        {
+            Resource resource = (await repository.ResourceAsync(resourceId))!;
+            DateTime now = DateTime.UtcNow;
+            Asset asset = new()
+            {
+                ID = IdGenerator.NewId(),
+                UserID = resource.UserID,
+                Kind = "image",
+                Category = "image",
+                Status = AssetVersionStatus.AssetVersionStatusArchived,
+                Title = "回收站里的素材",
+                PayloadJSON = $$"""{"nodes":[{"storageKey":"resource:{{resourceId}}"}]}""",
+                CreatedAt = now,
+                UpdatedAt = updatedAt,
+            };
+            await repository.CreateAsync(asset);
+            // 让资源本身仍指向该素材，形成"素材->资源"引用，模拟真实归档形态。
+            await repository.UpdateResourceLifetimeAsync(resourceId, null, null);
+            return asset.ID;
+        });
+
     // ------------------------------------------------------------ 纯函数契约（不经数据库）
 
     [Fact]

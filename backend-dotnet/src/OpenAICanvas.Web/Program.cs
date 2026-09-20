@@ -137,7 +137,9 @@ builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceCleanupService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDeleteService>(),
-        serviceProvider.GetRequiredService<OpenAICanvas.Application.Appearance.AppearanceService>()));
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.Appearance.AppearanceService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>().Announcements,
+        serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>()));
 // 管理端存储管理（资源分页 / 批量删除 / 直连下发）。对应 Go 的 app/admin_storage*.go。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.AdminStorageService(

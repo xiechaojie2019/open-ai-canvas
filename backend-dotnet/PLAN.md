@@ -272,7 +272,7 @@ backend-dotnet/
 | 5.1 | 资源上传（含分片） | `handler/resource_upload_session.go` | ✅ 三件套路由 + 幂等/配额/本地落盘完成（对象存储通道待 #25） |
 | 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
-| 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ✅ 候选筛选（未完成 1h / 就绪 24h）+ 引用快照与外观检查 + 事务删除 + Outbox 物理清理，含后台周期作业（公告草稿与回收站过期清理待接，#30） |
+| 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ✅ 候选筛选（未完成 1h / 就绪 24h）+ 引用快照与外观检查 + 事务删除 + Outbox 物理清理；后台作业含公告草稿超期清理与回收站过期素材清理（保留天数取运行时策略），顺序与 Go 一致 |
 | 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5） |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | ☐ |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |

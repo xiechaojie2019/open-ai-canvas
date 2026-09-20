@@ -4,6 +4,7 @@ using OpenAICanvas.Application.Appearance;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Platform;
 
 namespace OpenAICanvas.Application;
 
@@ -34,13 +35,21 @@ public sealed class ResourceCleanupService
     private readonly Repository _repository;
     private readonly ResourceDeleteService _deletions;
     private readonly AppearanceService _appearance;
+    private readonly AnnouncementService _announcements;
+    private readonly OpenAICanvas.Platform.IRuntimePolicyProvider _policyProvider;
 
     public ResourceCleanupService(
-        Repository repository, ResourceDeleteService deletions, AppearanceService appearance)
+        Repository repository,
+        ResourceDeleteService deletions,
+        AppearanceService appearance,
+        AnnouncementService announcements,
+        OpenAICanvas.Platform.IRuntimePolicyProvider policyProvider)
     {
         _repository = repository;
         _deletions = deletions;
         _appearance = appearance;
+        _announcements = announcements;
+        _policyProvider = policyProvider;
     }
 
     /// <summary>
@@ -178,6 +187,85 @@ public sealed class ResourceCleanupService
             StorageMutex.Release();
         }
     }
+
+    /// <summary>
+    /// 清理超期的公告配图草稿（分批循环，直到无剩余或无可清理项）。
+    /// 对应 Go: <c>cleanupStaleAnnouncementImageDrafts</c>。
+    /// </summary>
+    public async Task<int> CleanupStaleAnnouncementImageDraftsAsync(
+        DateTime? now = null, CancellationToken cancellationToken = default)
+    {
+        DateTime cutoff = (now ?? DateTime.UtcNow) - AnnouncementImageDraftTtl;
+        int total = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            IReadOnlyList<AnnouncementImageDraft> drafts = await _repository.StaleAnnouncementImageDraftsAsync(
+                cutoff, 50, cancellationToken).ConfigureAwait(false);
+            if (drafts.Count == 0)
+            {
+                break;
+            }
+            int cleaned = 0;
+            foreach (AnnouncementImageDraft draft in drafts)
+            {
+                try
+                {
+                    await _announcements.DiscardAnnouncementImageDraftCoreAsync(
+                        draft.UserID, draft.ResourceID, cancellationToken).ConfigureAwait(false);
+                    cleaned++;
+                }
+                catch (Exception)
+                {
+                    // 与 Go 一致：单条失败只记日志，继续处理其余。
+                }
+            }
+            total += cleaned;
+            if (drafts.Count < 50 || cleaned == 0)
+            {
+                break;
+            }
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// 清理回收站中超过保留期的素材（自动清理与用户手动删除走同一条强校验路径）。
+    /// 对应 Go: <c>cleanupExpiredArchivedAssets</c>。
+    /// </summary>
+    /// <remarks>保留天数取自运行时策略；≤0 表示不自动回收。</remarks>
+    public async Task<int> CleanupExpiredArchivedAssetsAsync(
+        DateTime? now = null, CancellationToken cancellationToken = default)
+    {
+        int retentionDays = _policyProvider.Current().Resource.RecycleBinRetentionDays;
+        if (retentionDays <= 0)
+        {
+            return 0;
+        }
+        DateTime cutoff = (now ?? DateTime.UtcNow) - TimeSpan.FromDays(retentionDays);
+        IReadOnlyList<Asset> expired = await _repository.ExpiredArchivedAssetsAsync(
+            cutoff, 100, cancellationToken).ConfigureAwait(false);
+
+        int deleted = 0;
+        foreach (Asset asset in expired)
+        {
+            try
+            {
+                await _deletions.DeleteUserAssetWithResourcesAsync(asset.UserID, asset.ID, cancellationToken)
+                    .ConfigureAwait(false);
+                deleted++;
+            }
+            catch (Exception)
+            {
+                // 与 Go 一致：单条失败只记日志，继续处理其余。
+            }
+        }
+        return deleted;
+    }
+
+    // ------------------------------------------------------------ 内部
+
+    /// <summary>公告配图草稿的存活时长。对应 Go: <c>announcementImageDraftTTL</c>。</summary>
+    private static readonly TimeSpan AnnouncementImageDraftTtl = TimeSpan.FromHours(24);
 
     /// <summary>对应 Go: <c>resourceDeletionJobs(userID, physicalObjects)</c>（按身份排序）。</summary>
     private static List<ResourceDeletionJob> ResourceDeletionJobsForUser(

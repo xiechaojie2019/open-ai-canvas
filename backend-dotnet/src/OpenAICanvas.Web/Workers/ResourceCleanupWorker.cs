@@ -38,8 +38,8 @@ public sealed class ResourceCleanupWorker : BackgroundService
         ResourceDeleteService deletions = scope.ServiceProvider.GetRequiredService<ResourceDeleteService>();
         ResourceCleanupService cleanup = scope.ServiceProvider.GetRequiredService<ResourceCleanupService>();
 
-        // 启动即做一轮：先 drain 积压的删除任务，再清理孤儿资源。
-        await RunStartupAsync(deletions, cleanup, stoppingToken).ConfigureAwait(false);
+        // 启动即做完整一轮（与 Go 的 runWorkerLoop 一致，顺序固定）。
+        await RunOnceAsync(deletions, cleanup, stoppingToken).ConfigureAwait(false);
 
         DateTime lastPeriodicCleanup = DateTime.UtcNow;
         using PeriodicTimer timer = new(DrainInterval);
@@ -56,12 +56,13 @@ public sealed class ResourceCleanupWorker : BackgroundService
                     _logger.LogWarning(error, "资源删除任务清理失败");
                 }
 
+                // 重型清理每小时才做一次（与 Go 的 lastPeriodicCleanup 判定一致）。
                 if (DateTime.UtcNow - lastPeriodicCleanup < CleanupInterval)
                 {
                     continue;
                 }
                 lastPeriodicCleanup = DateTime.UtcNow;
-                await RunPeriodicAsync(cleanup, stoppingToken).ConfigureAwait(false);
+                await RunCleanupPassAsync(cleanup, stoppingToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -70,7 +71,8 @@ public sealed class ResourceCleanupWorker : BackgroundService
         }
     }
 
-    private async Task RunStartupAsync(
+    /// <summary>完整一轮：drain → 草稿 → 回收站 → 孤儿。对应 Go 的启动分支。</summary>
+    private async Task RunOnceAsync(
         ResourceDeleteService deletions, ResourceCleanupService cleanup, CancellationToken cancellationToken)
     {
         try
@@ -81,11 +83,43 @@ public sealed class ResourceCleanupWorker : BackgroundService
         {
             _logger.LogWarning(error, "资源删除任务启动清理失败");
         }
-        await RunPeriodicAsync(cleanup, cancellationToken).ConfigureAwait(false);
+        await RunCleanupPassAsync(cleanup, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task RunPeriodicAsync(ResourceCleanupService cleanup, CancellationToken cancellationToken)
+    /// <summary>
+    /// 三项重型清理，顺序与 Go 一致：草稿 → 回收站 → 孤儿。
+    /// 三项互相独立，单次失败不影响其余。
+    /// </summary>
+    private async Task RunCleanupPassAsync(ResourceCleanupService cleanup, CancellationToken cancellationToken)
     {
+        try
+        {
+            int drafts = await cleanup.CleanupStaleAnnouncementImageDraftsAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            if (drafts > 0)
+            {
+                _logger.LogInformation("公告配图草稿清理：删除 {Count} 条超期草稿", drafts);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning(error, "公告配图草稿清理失败");
+        }
+
+        try
+        {
+            int assets = await cleanup.CleanupExpiredArchivedAssetsAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            if (assets > 0)
+            {
+                _logger.LogInformation("回收站清理：删除 {Count} 条过期素材", assets);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogWarning(error, "回收站过期素材清理失败");
+        }
+
         try
         {
             (int removed, int jobs) = await cleanup.CleanupDetachedResourcesAsync(

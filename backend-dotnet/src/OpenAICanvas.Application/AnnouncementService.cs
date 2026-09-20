@@ -366,26 +366,37 @@ public sealed class AnnouncementService
         return unreadCount;
     }
 
-    /// <summary>丢弃配图草稿。对应 Go: <c>DiscardAnnouncementImage</c>。</summary>
+    /// <summary>丢弃配图草稿（管理员路径）。对应 Go: <c>DiscardAnnouncementImage</c>。</summary>
     public async Task DiscardAnnouncementImageAsync(
         User actor, string resourceId, CancellationToken cancellationToken = default)
     {
         CanvasService.RequireAdmin(actor);
+        await DiscardAnnouncementImageDraftCoreAsync(actor.ID, resourceId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 丢弃配图草稿的核心逻辑（不含角色校验，供后台清理作业调用）。
+    /// 对应 Go: <c>discardAnnouncementImageDraft</c>（该函数本身不校验角色）。
+    /// </summary>
+    public async Task DiscardAnnouncementImageDraftCoreAsync(
+        string userId, string resourceId, CancellationToken cancellationToken = default)
+    {
         string id = resourceId.Trim();
         if (id.Length == 0 || id.Length > 64)
         {
             throw AppError.BadAuthRequest("公告配图资源 ID 无效");
         }
-        if (await _repository.AnnouncementImageDraftForUserAsync(actor.ID, id, cancellationToken)
+        if (await _repository.AnnouncementImageDraftForUserAsync(userId, id, cancellationToken)
                 .ConfigureAwait(false) is null)
         {
             throw AppError.NotFound("公告配图草稿不存在");
         }
-        Resource? resource = await _repository.ResourceForUserAsync(actor.ID, id, cancellationToken)
+        Resource? resource = await _repository.ResourceForUserAsync(userId, id, cancellationToken)
             .ConfigureAwait(false);
         if (resource is null)
         {
-            await _repository.DeleteAnnouncementImageDraftAsync(actor.ID, id, cancellationToken)
+            await _repository.DeleteAnnouncementImageDraftAsync(userId, id, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -397,7 +408,7 @@ public sealed class AnnouncementService
             ? ResourceDeleteService.BuildDeletionJob(resource)
             : null;
         bool discarded = await _repository.DiscardAnnouncementImageDraftAsync(
-            actor.ID, resource, deletionJob, cancellationToken).ConfigureAwait(false);
+            userId, resource, deletionJob, cancellationToken).ConfigureAwait(false);
         if (!discarded)
         {
             throw AppError.BadAuthRequest("公告配图已经发布，不能按草稿删除");
