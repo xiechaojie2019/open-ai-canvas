@@ -126,4 +126,75 @@ public static class OutboundHttpClient
             }
         }
     }
+
+    /// <summary>
+    /// 解析 <c>Retry-After</c>：优先按秒数，其次按 HTTP 日期（仅当晚于 <paramref name="now"/>）。
+    /// 无法解析或已过期一律返回 <see cref="TimeSpan.Zero"/>。
+    /// 对应 Go: <c>parseRetryAfter</c>。
+    /// </summary>
+    public static TimeSpan ParseRetryAfter(string? value, DateTimeOffset now)
+    {
+        string raw = (value ?? "").Trim();
+        if (raw.Length == 0)
+        {
+            return TimeSpan.Zero;
+        }
+        // Go 用 strconv.Atoi：只接受可选符号 + 数字，不接受小数或前后缀。
+        if (IsInteger(raw, out long seconds))
+        {
+            return seconds > 0 ? TimeSpan.FromSeconds(seconds) : TimeSpan.Zero;
+        }
+        if (DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out DateTimeOffset at))
+        {
+            if (at > now)
+            {
+                return at - now;
+            }
+        }
+        return TimeSpan.Zero;
+    }
+
+    private static bool IsInteger(string value, out long result)
+    {
+        result = 0;
+        if (value.Length == 0)
+        {
+            return false;
+        }
+        int index = 0;
+        bool negative = false;
+        if (value[0] is '+' or '-')
+        {
+            negative = value[0] == '-';
+            index = 1;
+            if (value.Length == 1)
+            {
+                return false;
+            }
+        }
+        long accumulated = 0;
+        for (int position = index; position < value.Length; position++)
+        {
+            char ch = value[position];
+            if (ch is < '0' or > '9')
+            {
+                return false;
+            }
+            checked
+            {
+                try
+                {
+                    accumulated = (accumulated * 10) + (ch - '0');
+                }
+                catch (OverflowException)
+                {
+                    return false;
+                }
+            }
+        }
+        result = negative ? -accumulated : accumulated;
+        return true;
+    }
 }

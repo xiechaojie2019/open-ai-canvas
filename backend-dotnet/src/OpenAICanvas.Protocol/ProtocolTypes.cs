@@ -1,0 +1,143 @@
+#nullable enable
+using System.Text.Json.Serialization;
+
+namespace OpenAICanvas.Protocol;
+
+/// <summary>
+/// 声明式协议清单的出站请求相关类型。
+/// 对应 Go: <c>internal/protocol/types.go</c>（RequestSpec / RequestFilePart / ManifestAuth 等）。
+/// </summary>
+/// <remarks>
+/// 字段名与 <c>omitempty</c> 必须与 Go 的 json tag 逐字对齐 —— 插件清单是外部输入，
+/// 反序列化行为直接决定宿主能否正确理解 manifest。
+/// </remarks>
+public sealed class RequestSpec
+{
+    [JsonPropertyName("method")]
+    public string Method { get; set; } = "";
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = "";
+
+    /// <summary>是否忽略 BaseURL 的既有路径，直接以本 spec 的 path 作为根路径。</summary>
+    [JsonPropertyName("originPath")]
+    public bool OriginPath { get; set; }
+
+    [JsonPropertyName("contentType")]
+    public string ContentType { get; set; } = "";
+
+    [JsonPropertyName("headers")]
+    public Dictionary<string, string>? Headers { get; set; }
+
+    [JsonPropertyName("query")]
+    public Dictionary<string, List<string>>? Query { get; set; }
+
+    [JsonPropertyName("body")]
+    public object? Body { get; set; }
+
+    [JsonPropertyName("files")]
+    public List<RequestFilePart>? Files { get; set; }
+
+    [JsonPropertyName("auth")]
+    public ManifestAuth Auth { get; set; } = new();
+}
+
+/// <summary>对应 Go: <c>RequestFilePart</c>。</summary>
+public sealed class RequestFilePart
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("filename")]
+    public string Filename { get; set; } = "";
+
+    [JsonPropertyName("mimeType")]
+    public string MIMEType { get; set; } = "";
+
+    [JsonPropertyName("reference")]
+    public MediaReference Reference { get; set; } = new();
+}
+
+/// <summary>对应 Go: <c>ManifestAuth</c>。</summary>
+public sealed class ManifestAuth
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("field")]
+    public string Field { get; set; } = "";
+
+    [JsonPropertyName("secretField")]
+    public string SecretField { get; set; } = "";
+
+    [JsonPropertyName("header")]
+    public string Header { get; set; } = "";
+
+    [JsonPropertyName("prefix")]
+    public string Prefix { get; set; } = "";
+
+    [JsonPropertyName("query")]
+    public string Query { get; set; } = "";
+
+    [JsonPropertyName("username")]
+    public string Username { get; set; } = "";
+
+    [JsonPropertyName("service")]
+    public string Service { get; set; } = "";
+
+    [JsonPropertyName("region")]
+    public string Region { get; set; } = "";
+}
+
+/// <summary>状态机取值。对应 Go: <c>Status</c>。</summary>
+public static class ProtocolStatus
+{
+    public const string Pending = "pending";
+    public const string Processing = "processing";
+    public const string Succeeded = "succeeded";
+    public const string Failed = "failed";
+    public const string Cancelled = "cancelled";
+}
+
+/// <summary>
+/// 参考素材引用。对应 Go: <c>MediaReference</c>。
+/// 与 <c>Providers.ProviderMedia</c> 形态相同，属于跨层契约。
+/// </summary>
+public sealed class MediaReference
+{
+    [JsonPropertyName("id")]
+    public string ID { get; set; } = "";
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("dataUrl")]
+    public string DataURL { get; set; } = "";
+
+    [JsonPropertyName("url")]
+    public string URL { get; set; } = "";
+
+    [JsonPropertyName("storageKey")]
+    public string StorageKey { get; set; } = "";
+
+    [JsonPropertyName("mimeType")]
+    public string MIMEType { get; set; } = "";
+
+    [JsonPropertyName("bytes")]
+    public long Bytes { get; set; }
+
+    [JsonPropertyName("width")]
+    public int Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; set; }
+
+    [JsonPropertyName("durationMs")]
+    public long DurationMs { get; set; }
+}
+
+/// <summary>Provider 凭证（对应 Go: <c>providerConfig</c> 中参与鉴权与签名的字段子集）。</summary>
+public sealed record ProviderCredentials(string APIKey, string SecretKey);

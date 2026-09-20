@@ -236,7 +236,7 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；models/test 路由待做（出站调用） |
+| 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；models 子资源路由已通（见 3.2） |
 | 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | 🟡 列表/排序/价格档附着已通；保存/删除/fetch/import/test 待做 |
 | 3.3 | 逻辑模型与版本 | `app/logical_models.go` | 🟡 公开目录/管理端 CRUD/模拟/报价已通；工作流选路待做 |
 | 3.4 | 模型目录发现 | `provider/registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式执行引擎待做 |
@@ -254,7 +254,7 @@ backend-dotnet/
 | 4.3 | 任务重试 / 取消 / 上游查询 | `app/task_*.go` (12 文件) | ✅ retry/cancel/query-provider 三路由全通（#61/#62 上游部分待 provider 引擎） |
 | 4.4 | Worker 调度与租约 | `app/task_worker.go` | ☐ |
 | 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` | 🟡 仓储层 MarkRunning/Settle/Restore/Refund/Uncertain 已通（worker 接入待 4.4） |
-| 4.6 | 文本协议 | `app/provider_text.go` | ☐ |
+| 4.6 | 文本协议 | `app/provider_text.go` | ✅ 具备端到端执行能力：错误体系（失败识别/错误码归一化/HTTP 与正文归类/四类异常）、`ProviderHelpers`、`ProviderRequestTypes`、`ProviderMedia`、`ContentTypeSniffer`、`ParseRetryAfter`、`ProtocolRequestBuilder`（四类请求体 + URL/OriginPath + AWS SigV4/腾讯 TC3 签名）、`StreamingAgentParser`（chat/responses/claude 三协议 SSE 流式解析，含工具调用累积与 `[DONE]`）、`AgentToolPayload`（非流式统一解析）、`ProviderTextOrchestration`（协议归一/思考模式/工具选择归一/输出上限/`stream_options` 用量/结果整形/空正文校验/Responses 回落判定/历史过滤）、`ProviderTextRequestBuilder`（三协议请求体与多模态内容块）、**`ProviderTransport`（出站安全边界：大小上限/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配，共 42 条线级测试）+ `ProviderTextTask`（`requestTextProvider` 端到端：非流式 postJSON、流式 SSE、非 event-stream 退化、legacy 回落）**；剩余：`runTextTask` 挂到任务 Worker（依赖 4.4/4.5） |
 | 4.7 | 图片协议 | `app/provider_image.go` | ☐ |
 | 4.8 | 视频协议（含遗留） | `app/provider_video.go` | ☐ |
 | 4.9 | 音频协议 | `app/provider_audio.go` | ☐ |
@@ -320,7 +320,7 @@ backend-dotnet/
 | 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | ✅ overview/models/users/export.csv + API 日志/导出/存储统计 + 模型价格 CRUD |
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
-| 9.5 | 系统性能 | `handler/admin_system_performance.go` | ☐ |
+| 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览与缓存清理已通；Redis 维度为单实例本地降级（多实例协调待 #17） |
 | 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库完成；OSS 6 条/LibTV 3 条待做（test 依赖云 SDK/外部服务） |
 | 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 

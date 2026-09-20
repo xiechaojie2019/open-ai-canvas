@@ -657,84 +657,13 @@ public sealed class ResourceUploadService
         body.CopyTo(file);
     }
 
-    /// <summary>对应 Go 的 <c>http.DetectContentType</c>（仅覆盖 Go 嗅探表命中的常见类型）。</summary>
-    private static string SniffContentType(ReadOnlySpan<byte> data)
-    {
-        if (data.Length >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0x00)
-        {
-            return "image/x-icon";
-        }
-        if (data.Length >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
-        {
-            return "image/png";
-        }
-        if (data.Length >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
-        {
-            return "image/jpeg";
-        }
-        if (data.Length >= 6 && (data[0] == 'G' && data[1] == 'I' && data[2] == 'F' && data[3] == '8'))
-        {
-            return "image/gif";
-        }
-        if (data.Length >= 4 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
-            && data.Length >= 12 && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P')
-        {
-            return "image/webp";
-        }
-        if (data.Length >= 5 && data[0] == '%' && data[1] == 'P' && data[2] == 'D' && data[3] == 'F' && data[4] == '-')
-        {
-            return "application/pdf";
-        }
-        if (data.Length >= 4 && data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3)
-        {
-            return "video/webm";
-        }
-        if (data.Length >= 12 && data[4] == 'f' && data[5] == 't' && data[6] == 'y' && data[7] == 'p')
-        {
-            return "video/mp4";
-        }
-        if (data.Length >= 4 && data[0] == 'I' && data[1] == 'D' && data[2] == '3')
-        {
-            return "audio/mpeg";
-        }
-        if (data.Length >= 2 && data[0] == 'B' && data[1] == 'M')
-        {
-            return "image/bmp";
-        }
-        if (data.Length >= 4 && data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04)
-        {
-            return "application/zip";
-        }
-        if (data.Length >= 5 && data[0] == '<' && data[1] == '!' && data[2] == 'D' && data[3] == 'O' && data[4] == 'C')
-        {
-            return "text/html; charset=utf-8";
-        }
-        if (data.Length >= 4 && data[0] == 'S' && data[1] == 'Q' && data[2] == 'L' && data[3] == 'i')
-        {
-            return "application/vnd.sqlite3";
-        }
-        if (IsPlainText(data))
-        {
-            return "text/plain; charset=utf-8";
-        }
-        return "application/octet-stream";
-    }
-
-    private static bool IsPlainText(ReadOnlySpan<byte> data)
-    {
-        if (data.Length == 0)
-        {
-            return false;
-        }
-        foreach (byte value in data)
-        {
-            if (value <= 0x08 || (value >= 0x0B && value <= 0x0C) || (value >= 0x0E && value <= 0x1B) || value == 0x7F)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
+    /// <summary>
+    /// 对应 Go 的 <c>http.DetectContentType</c>。
+    /// 实现已下移到 <see cref="OpenAICanvas.Outbound.ContentTypeSniffer"/>，
+    /// 供 Provider 媒体编码共用同一张魔数表（避免 Application ↔ Providers 循环依赖）。
+    /// </summary>
+    public static string SniffContentType(ReadOnlySpan<byte> data) =>
+        OpenAICanvas.Outbound.ContentTypeSniffer.Sniff(data);
 
     /// <summary>对应 Go 的 <c>mime.TypeByExtension</c>（常用子集）。</summary>
     private static string MimeTypeFromExtension(string extension) =>
