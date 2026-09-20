@@ -572,7 +572,13 @@ public sealed partial class Repository
             parameters.Add("running", BillingStatus.BillingStatusRunning);
             parameters.Add("staleBefore", now.AddMinutes(-40));
             parameters.Add("reserved", BillingStatus.BillingStatusReserved);
-            parameters.Add("terminalStatuses", new[] { TaskStatus.TaskStatusFailed, TaskStatus.TaskStatusCancelled });
+            // DynamicParameters 通道只传标量：集合用 Placeholders 手写展开。
+            string[] terminalStatuses = [TaskStatus.TaskStatusFailed, TaskStatus.TaskStatusCancelled];
+            conditions[^1] = conditions[^1].Replace("IN @terminalStatuses", "IN (" + Placeholders(terminalStatuses.Length) + ")");
+            for (int index = 0; index < terminalStatuses.Length; index++)
+            {
+                parameters.Add("p" + index, terminalStatuses[index]);
+            }
         }
         else if (status.Length > 0 && status != "all")
         {

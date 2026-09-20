@@ -91,10 +91,22 @@ public sealed partial class Repository
             conditions.Add("\"capability\" = @capability");
             parameters.Add("capability", filter.Analytics.Capability);
         }
-        if (filter.RecordType is "request" or "download")
+        // 对应 Go filteredAPICallLogQuery 的 RecordType 分支：
+        // download → 仅 request_kind='download'；all → 不过滤；
+        // 默认 → 排除轮询（poll）与下载记录。
+        switch (filter.RecordType)
         {
-            conditions.Add("\"record_type\" = @recordType");
-            parameters.Add("recordType", filter.RecordType);
+            case "download":
+                conditions.Add("\"request_kind\" = @requestKindDownload");
+                parameters.Add("requestKindDownload", "download");
+                break;
+            case "all":
+                break;
+            default:
+                conditions.Add("(\"request_kind\" IS NULL OR (\"request_kind\" <> @requestKindPoll AND \"request_kind\" <> @requestKindDownload))");
+                parameters.Add("requestKindPoll", "poll");
+                parameters.Add("requestKindDownload", "download");
+                break;
         }
         if (filter.Status.Length > 0)
         {

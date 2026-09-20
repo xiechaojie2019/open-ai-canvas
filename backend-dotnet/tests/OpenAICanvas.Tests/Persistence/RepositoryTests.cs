@@ -1,3 +1,4 @@
+using Dapper;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Persistence;
 using OpenAICanvas.Persistence.Repositories;
@@ -269,6 +270,84 @@ public class RepositoryTests : IDisposable
         // 排除自己后没有其他管理员 → 用于禁止禁用最后一个管理员。
         Assert.Equal(0, await _repository.ActiveAdminCountExcludingAsync("USR_00000A"));
         Assert.Equal(1, await _repository.ActiveAdminCountExcludingAsync("USR_000008"));
+    }
+
+    [Fact]
+    public async Task 集合参数在IN子句中逐元素展开()
+    {
+        await MigrateAsync();
+
+        // 复现生产 PostgreSQL 的 IN $1 崩溃路径：Dapper 不展开包在
+        // 匿名对象里的集合参数，仓储层必须在 SQL 与参数两侧展开。
+        DateTime now = DateTime.UtcNow;
+        Resource first = new()
+        {
+            ID = "RES_000001",
+            UserID = "USR_UPSERT",
+            Status = "ready",
+            Endpoint = "http://localhost:9000",
+            Bucket = "canvas",
+            ObjectKey = "obj-a.png",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        // second 与 first 共享同一物理对象（历史数据复用对象路径的场景）。
+        Resource second = new()
+        {
+            ID = "RES_000002",
+            UserID = "USR_UPSERT",
+            Status = "ready",
+            Endpoint = "http://localhost:9000",
+            Bucket = "canvas",
+            ObjectKey = "obj-a.png",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        // third 指向另一个物理对象。
+        Resource third = new()
+        {
+            ID = "RES_000003",
+            UserID = "USR_UPSERT",
+            Status = "ready",
+            Endpoint = "http://localhost:9000",
+            Bucket = "canvas",
+            ObjectKey = "obj-b.png",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        await _repository.CreateAsync(first);
+        await _repository.CreateAsync(second);
+        await _repository.CreateAsync(third);
+
+        // IN 展开命中：同对象记录有 first/second，排除 first 后剩 second → 1。
+        Assert.Equal(1, await _repository.ResourceStorageReferenceCountAsync(
+            first, ["RES_000001"]));
+
+        // 空集合展开为空子查询：NOT IN 恒真 → first/second 都算 → 2。
+        Assert.Equal(2, await _repository.ResourceStorageReferenceCountAsync(
+            first, []));
+
+        // NOT IN 展开命中：third 是唯一指向自己对象的记录，排除自己后 → 0。
+        Assert.Equal(0, await _repository.ResourceStorageReferenceCountAsync(
+            third, ["RES_000003"]));
+    }
+
+    [Fact]
+    public async Task 用户日活跃计数upsert自增()
+    {
+        await MigrateAsync();
+
+        // 对应生产 PG 的 column reference "login_count" is ambiguous：
+        // DO UPDATE 右侧列引用必须限定表名。
+        DateTime now = DateTime.UtcNow;
+        await _repository.RecordUserActivityAsync("USR_UPSERT", "login", 1, now);
+        await _repository.RecordUserActivityAsync("USR_UPSERT", "login", 1, now);
+        await _repository.RecordUserActivityAsync("USR_UPSERT", "canvas", 1, now);
+
+        await using System.Data.Common.DbConnection connection = await _database.OpenAsync();
+        long loginCount = await connection.ExecuteScalarAsync<long>(
+            "SELECT \"login_count\" FROM \"user_daily_activities\" WHERE \"user_id\" = 'USR_UPSERT'");
+        Assert.Equal(2, loginCount);
     }
 
     [Fact]

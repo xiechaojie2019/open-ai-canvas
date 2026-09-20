@@ -55,15 +55,18 @@ public sealed partial class Repository
             UpdatedAt = now,
         };
 
-        // 未限定的列名在 DO UPDATE 里指向目标表当前值，SQLite 与 PostgreSQL 语法一致。
+        // DO UPDATE 右侧列引用必须带表名：目标行与 excluded 行都含同名列，
+        // 裸列名在 PostgreSQL 下报 column reference is ambiguous（生产实测）。
+        // 与 Go 的 gorm.Expr("user_daily_activities.login_count + ?", count) 一致。
+        string qualifiedColumn = "user_daily_activities." + Quote(column);
         string setClause = isCounter
-            ? $"{Quote(column)} = {Quote(column)} + @count"
+            ? $"{Quote(column)} = {qualifiedColumn} + @count"
             : $"{Quote(column)} = @activeValue";
 
         // login 不计入活跃窗口（Go 只在非 login 事件里写 first/last_active_at）。
         if (@event != "login")
         {
-            setClause += $",\n                \"first_active_at\" = COALESCE(\"first_active_at\", @now),\n                \"last_active_at\" = @now";
+            setClause += $",\n                \"first_active_at\" = COALESCE(\"user_daily_activities\".\"first_active_at\", @now),\n                \"last_active_at\" = @now";
         }
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -73,7 +76,7 @@ public sealed partial class Repository
                 ("id", "day", "user_id", "login_count", "task_count", "agent_message_count",
                  "canvas_active", "asset_count", "resource_count", "created_at", "updated_at")
             VALUES
-                (@ID, @Day, @UserID, 0, 0, 0, @initialBoolean, 0, 0, @CreatedAt, @UpdatedAt)
+                (@ID, @Day, @UserID, @initialLogin, 0, 0, @initialBoolean, 0, 0, @CreatedAt, @UpdatedAt)
             ON CONFLICT ("day", "user_id") DO UPDATE SET
                 {setClause},
                 "updated_at" = @now
@@ -89,6 +92,9 @@ public sealed partial class Repository
                 count,
                 activeValue = true,
                 initialBoolean = IsColumnBoolean(column),
+                // 首插即事件：把 count 写进对应计数列（与 Go 首插实体字段一致），
+                // 否则首次登录/操作的计数会被 VALUES 里的 0 吞掉。
+                initialLogin = @event == "login" ? count : 0,
             },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
     }

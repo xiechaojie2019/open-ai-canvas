@@ -67,7 +67,12 @@ public sealed partial class Repository
         DynamicParameters parameters = new();
         if (providerCondition.Contains("IN"))
         {
-            parameters.Add("providers", new[] { "", "local" });
+            // DynamicParameters 通道只传标量：集合用 Placeholders 手写展开。
+            providerCondition = providerCondition.Replace(
+                "IN @providers",
+                "IN (@prov0, @prov1)");
+            parameters.Add("prov0", "");
+            parameters.Add("prov1", "local");
         }
         else
         {
@@ -79,8 +84,11 @@ public sealed partial class Repository
         string excludeCondition = "";
         if (excludedResourceIds.Count > 0)
         {
-            excludeCondition = " AND \"id\" NOT IN @excluded";
-            parameters.Add("excluded", excludedResourceIds);
+            excludeCondition = " AND \"id\" NOT IN (" + Placeholders(excludedResourceIds.Count) + ")";
+            for (int index = 0; index < excludedResourceIds.Count; index++)
+            {
+                parameters.Add("p" + index, excludedResourceIds[index]);
+            }
         }
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);

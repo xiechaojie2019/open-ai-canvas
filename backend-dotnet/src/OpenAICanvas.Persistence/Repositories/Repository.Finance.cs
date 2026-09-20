@@ -36,16 +36,24 @@ public sealed partial class Repository
         switch (entryType)
         {
             case "income":
-                condition += " AND type IN @incomeTypes";
-                parameters.Add("incomeTypes", new[]
                 {
-                    CreditLedgerType.CreditLedgerRedeem,
-                    CreditLedgerType.CreditLedgerAdminGrant,
-                    CreditLedgerType.CreditLedgerAdminAdjust,
-                    CreditLedgerType.CreditLedgerSignupBonus,
-                    CreditLedgerType.CreditLedgerCheckinBonus,
-                });
-                break;
+                    // DynamicParameters 通道只传标量：集合用 Placeholders 手写展开。
+                    string[] incomeTypes =
+                    [
+                        CreditLedgerType.CreditLedgerRedeem,
+                        CreditLedgerType.CreditLedgerAdminGrant,
+                        CreditLedgerType.CreditLedgerAdminAdjust,
+                        CreditLedgerType.CreditLedgerSignupBonus,
+                        CreditLedgerType.CreditLedgerCheckinBonus,
+                    ];
+                    condition += " AND type IN (" + Placeholders(incomeTypes.Length) + ")";
+                    for (int index = 0; index < incomeTypes.Length; index++)
+                    {
+                        parameters.Add("p" + index, incomeTypes[index]);
+                    }
+
+                    break;
+                }
             case "consume":
                 condition += " AND type = @consume";
                 parameters.Add("consume", CreditLedgerType.CreditLedgerConsume);
