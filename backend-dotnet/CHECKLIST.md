@@ -816,6 +816,35 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
+## 系统性能与缓存清理（阶段 9.5，已端到端打通）
+
+本轮打通 **2 条路由**：`GET /admin/system-performance`、
+`POST /admin/system-performance/cache/clear`。
+
+### 本轮交付物
+
+- `Repository.SystemPerformance` — 数据库运行时统计（连通性/延迟、
+  SQLite PRAGMA 容量、Schema current/expected/ready；PG 容量统计）
+- `SystemPerformanceService` — 主机/内存/磁盘/.NET 等价指标
+  （goroutines→线程池线程数、gomaxprocs→ProcessorCount、GC 堆统计）、
+  状态 healthy/degraded 判定、Redis 恒为本地单实例模式、
+  缓存清理（scope=runtime 白名单 + 限流窗口计数 + 路由目录失效）
+- `InMemoryRateLimiter.CountWindows/ClearWindows`
+- 2 条路由接线（MapSystemPerformanceRoutes）
+
+### 已知取舍（PENDING #66 后续）
+
+`loadAverage` 恒为 [0,0,0]+unavailable（Windows 容器无 /proc/loadavg；
+Linux 侧可后续读 /proc/loadavg 增强）；连接池计数为 ADO.NET 简化；
+ActiveWorkerTasks 恒 0（worker 未移植）。
+
+### 验证结果（496/496 通过）
+
+新增 2 项测试（指标形状/磁盘/DB schema/本地 Redis 模式、
+缓存清理 scope 白名单/分组、401）。
+
+---
+
 ## 用户诊断包（阶段 10.x，已端到端打通）
 
 本轮打通 **2 条路由**：`POST /diagnostics/preview`、`POST /diagnostics/export`。

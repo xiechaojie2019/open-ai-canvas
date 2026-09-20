@@ -473,6 +473,17 @@
   技能，走 createSingleMarkdownSkill）随下批；install/sync 依赖出站与
   zip/markdown 解析器（archiveFromZip/archiveFromMarkdown/normalizeSkillArchiveRoot）。
 
+### 66. `[部分解决]` 系统性能与缓存清理
+- 现状：**2 条路由已移植**（GET /admin/system-performance、
+  POST /admin/system-performance/cache/clear）。
+  指标为 .NET 等价实现：goroutines→ThreadPool.ThreadCount、
+  gomaxprocs→ProcessorCount、GC 堆统计→GC API、磁盘→DriveInfo+写探针。
+- 剩余：loadAverage（Linux 可读 /proc/loadavg 增强）、
+  Redis 协调器统计（未移植，恒为本地模式）、
+  ActiveWorkerTasks（待 worker 批次）。
+- 备注：cache clear 的 Redis 分组删除未移植（无 Redis），本地限流窗口清零
+  与路由目录失效已接。
+
 ## 处置记录
 
 | 日期 | 条目 | 结论 |

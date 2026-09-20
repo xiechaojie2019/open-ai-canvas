@@ -197,6 +197,9 @@ api.MapAdminLogMediaRoute(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>());
 api.MapDiagnosticsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapSystemPerformanceRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    (OpenAICanvas.Web.Security.InMemoryRateLimiter)app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>());
 
 // 支付路由（渠道、商品、订单、回调）。对应 Go 的 handler.RegisterPaymentRoutes。
 api.MapPaymentRoutes(

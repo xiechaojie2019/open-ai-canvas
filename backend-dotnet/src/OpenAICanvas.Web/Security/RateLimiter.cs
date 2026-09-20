@@ -63,6 +63,17 @@ public sealed class InMemoryRateLimiter : IRateLimiter
         }
     }
 
+    /// <summary>当前窗口数量（管理端缓存清理用）。</summary>
+    public int CountWindows() => _windows.Count;
+
+    /// <summary>清空全部窗口并返回清理数量（管理端缓存清理用）。</summary>
+    public int ClearWindows()
+    {
+        int count = _windows.Count;
+        _windows.Clear();
+        return count;
+    }
+
     public TimeSpan RetryAfter(string key, TimeSpan window)
     {
         if (!_windows.TryGetValue(key, out Window? entry))

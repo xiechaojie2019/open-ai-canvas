@@ -89,6 +89,7 @@ public sealed class CanvasService
         CreationRuns = new CreationRunService(repository, TaskCreations, RuntimePolicy);
         CreationRuns.UserData = UserData;
         Diagnostics = new DiagnosticsService(repository, dataDir);
+        SystemPerformance = new SystemPerformanceService(repository, dataDir);
         // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
         Payments = new PaymentService(
             repository,
@@ -635,6 +636,16 @@ public sealed class CanvasService
 
     /// <summary>用户诊断包。对应 Go: <c>app/diagnostics.go</c>。</summary>
     public DiagnosticsService Diagnostics { get; }
+
+    /// <summary>系统性能与运行时缓存。对应 Go: <c>app/admin_system_performance.go</c>。</summary>
+    public SystemPerformanceService SystemPerformance { get; }
+
+    /// <summary>失效逻辑模型路由目录缓存。对应 Go: <c>invalidateRouteCatalog</c>。</summary>
+    public bool TryInvalidateRouteCatalog()
+    {
+        LogicalModels.InvalidateRouteCatalog();
+        return true;
+    }
 
 
 

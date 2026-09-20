@@ -1276,6 +1276,58 @@ public static class UserDataEndpoints
     }
 
     /// <summary>
+    /// 系统性能与缓存清理路由。对应 Go: <c>handler/admin_system_performance.go</c>。
+    /// </summary>
+    public static void MapSystemPerformanceRoutes(
+        this IEndpointRouteBuilder api,
+        CanvasService service,
+        OpenAICanvas.Web.Security.InMemoryRateLimiter limiter)
+    {
+        api.MapGet("/admin/system-performance", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AdminSystemPerformanceDto result = await service.SystemPerformance.PerformanceAsync(
+                    actor, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/system-performance/cache/clear", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AdminCacheClearRequestDto? request = await ReadJsonAsync<AdminCacheClearRequestDto>(
+                    context, 4 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("缓存清理请求无效"));
+                }
+                int cleared = limiter.ClearWindows();
+                bool catalogCleared = service.TryInvalidateRouteCatalog();
+                AdminCacheClearResultDto result = service.SystemPerformance.ClearRuntimeCache(
+                    actor, request.Scope, cleared, catalogCleared);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+    }
+
+    /// <summary>
     /// 管理端日志媒体路由。对应 Go: <c>GET /admin/api-logs/:id/media</c>。
     /// </summary>
     public static void MapAdminLogMediaRoute(
