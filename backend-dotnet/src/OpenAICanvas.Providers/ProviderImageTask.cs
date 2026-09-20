@@ -156,14 +156,10 @@ public sealed class ProviderImageTask
         using MemoryStream stream = new();
 
         void WriteField(string name, string value) =>
-            WritePart(stream, boundary, name, null, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(value));
+            ProviderMultipart.WriteField(stream, boundary, name, value);
 
-        void WriteMedia(string name, ProviderMedia media)
-        {
-            (byte[] raw, string mimeType) = ProviderMediaCodec.Bytes(media);
-            string filename = ProviderMediaCodec.MediaFilename(media, mimeType);
-            WritePart(stream, boundary, name, filename, mimeType, raw);
-        }
+        void WriteMedia(string name, ProviderMedia media) =>
+            ProviderMultipart.WriteMedia(stream, boundary, name, media);
 
         WriteField("model", input.Config.Model);
         WriteField("prompt", ProviderHelpers.WithSystemPrompt(input.Config.SystemPrompt, input.Prompt));
@@ -201,32 +197,10 @@ public sealed class ProviderImageTask
         {
             WriteMedia("mask", input.Mask);
         }
-        WriteBoundary(stream, boundary, closing: true);
+        ProviderMultipart.Close(stream, boundary);
 
         contentType = "multipart/form-data; boundary=" + boundary;
         return stream.ToArray();
-    }
-
-    private static void WritePart(
-        Stream stream, string boundary, string name, string? filename, string contentType, byte[] content)
-    {
-        WriteBoundary(stream, boundary, closing: false);
-        string disposition = filename is null
-            ? $"Content-Disposition: form-data; name=\"{name}\"\r\n"
-            : $"Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n";
-        WriteAscii(stream, disposition);
-        WriteAscii(stream, "Content-Type: " + contentType + "\r\n\r\n");
-        stream.Write(content);
-        WriteAscii(stream, "\r\n");
-    }
-
-    private static void WriteBoundary(Stream stream, string boundary, bool closing) =>
-        WriteAscii(stream, (closing ? "--" + boundary + "--\r\n" : "--" + boundary + "\r\n"));
-
-    private static void WriteAscii(Stream stream, string value)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(value);
-        stream.Write(bytes);
     }
 
     // ------------------------------------------------------------ Gemini Images

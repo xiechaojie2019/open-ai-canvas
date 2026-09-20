@@ -103,14 +103,11 @@ public sealed class ProviderRequestContext : IProviderRequestContext
                 .AcquireWithWaitAsync("channel:" + scope, limit, SlotTTL, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
         catch (Exception error)
         {
-            // 与 Go 的 channelSlotError 文案一致（超时/取消的细分由 OperationCanceledException 承担）。
-            throw new InvalidOperationException($"获取渠道并发配额失败（渠道 {scope}，并发上限 {limit}）：{error.Message}");
+            // 与 Go 的 channelSlotError 一致：抛可识别的类型，便于轮询逻辑判定为可重试。
+            throw ProviderChannelSlotException.Unavailable(
+                $"获取渠道并发配额失败（渠道 {scope}，并发上限 {limit}）：{error.Message}", error);
         }
     }
 

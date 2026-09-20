@@ -25,6 +25,12 @@ public sealed class TextTaskInput
     /// </summary>
     public ImageCapabilityConfig? ImageCapability { get; set; }
 
+    /// <summary>
+    /// 视频参数能力声明。<c>null</c> 表示未声明（保留历史协议字段）。
+    /// 对应 Go: <c>canvasGenerationInput.VideoCapability</c>。
+    /// </summary>
+    public VideoCapabilityConfig? VideoCapability { get; set; }
+
     /// <summary>画布节点元信息（视频首尾帧、编辑操作、插件自定义 providerOptions 等）。</summary>
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
 

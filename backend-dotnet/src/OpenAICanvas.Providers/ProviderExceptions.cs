@@ -76,6 +76,39 @@ public sealed class ProviderCircuitOpenException : Exception
 }
 
 /// <summary>
+/// 渠道并发配额获取失败（占槽超时 / 取消 / 协调器不可用）。
+/// 对应 Go: <c>platform.channelSlotError</c>，错误码见 <c>platform.ChannelSlotFailureDetails</c>。
+/// </summary>
+/// <remarks>
+/// 它属于<b>可重试的瞬时故障</b>：并发满载只是暂时的，换任务/稍后重试即可，
+/// 不应像"路径不存在"那样触发协议回落。
+/// </remarks>
+public sealed class ProviderChannelSlotException : Exception
+{
+    /// <summary>占槽等待超时。对应 Go: <c>channel_concurrency_wait_timeout</c>。</summary>
+    public const string WaitTimeoutCode = "channel_concurrency_wait_timeout";
+
+    /// <summary>占槽等待被取消。对应 Go: <c>channel_concurrency_wait_cancelled</c>。</summary>
+    public const string WaitCancelledCode = "channel_concurrency_wait_cancelled";
+
+    /// <summary>渠道并发不可用。对应 Go: <c>channel_concurrency_unavailable</c>。</summary>
+    public const string UnavailableCode = "channel_concurrency_unavailable";
+
+    public ProviderChannelSlotException(string code, string message, Exception? cause = null)
+        : base(message, cause) => Code = code;
+
+    public string Code { get; }
+
+    /// <summary>由 <see cref="OperationCanceledException"/> 归类出超时 / 取消。</summary>
+    public static ProviderChannelSlotException FromCancellation(Exception error) =>
+        new(error is TimeoutException ? WaitTimeoutCode : WaitCancelledCode, error.Message, error);
+
+    /// <summary>协调器不可用或其它失败。</summary>
+    public static ProviderChannelSlotException Unavailable(string message, Exception? cause = null) =>
+        new(UnavailableCode, message, cause);
+}
+
+/// <summary>
 /// 上游任务状态尚未同步（应继续查询原任务而非重新提交）。
 /// 对应 Go: <c>providerStatePendingError</c>。
 /// </summary>

@@ -130,8 +130,10 @@ public sealed class ProviderRequestContextTests
         using CancellationTokenSource source = new();
         source.CancelAfter(150);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+        // 与 Go 的 channelSlotError 一致：占槽失败归类为可识别的渠道并发异常。
+        ProviderChannelSlotException error = await Assert.ThrowsAsync<ProviderChannelSlotException>(
             () => waiter.AcquireChannelSlotAsync("chan-busy", "", source.Token));
+        Assert.False(string.IsNullOrEmpty(error.Code));
 
         await held();
     }
@@ -148,7 +150,7 @@ public sealed class ProviderRequestContextTests
         // 同一回落范围应被同一把槽约束。
         using CancellationTokenSource source = new();
         source.CancelAfter(150);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+        await Assert.ThrowsAsync<ProviderChannelSlotException>(
             () => context.AcquireChannelSlotAsync("", "fallback", source.Token));
 
         await first();
@@ -180,7 +182,7 @@ public sealed class ProviderRequestContextTests
 
         using CancellationTokenSource source = new();
         source.CancelAfter(150);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+        await Assert.ThrowsAsync<ProviderChannelSlotException>(
             () => context.AcquireChannelSlotAsync("chan-1", "", source.Token));
 
         await first();
