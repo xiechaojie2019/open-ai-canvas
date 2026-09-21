@@ -291,7 +291,7 @@ public sealed class TaskService
     /// 归并文本增量并续期。对应 Go: <c>finalizeTaskTextReplay</c>。
     /// 失败/取消态保留草稿（7 天），其余按成功态 24 小时。
     /// </summary>
-    private async Task FinalizeTaskTextReplayAsync(
+    internal async Task FinalizeTaskTextReplayAsync(
         string taskId, string status, CancellationToken cancellationToken)
     {
         bool keepDraft = status is TaskStatus.TaskStatusFailed or TaskStatus.TaskStatusCancelled;

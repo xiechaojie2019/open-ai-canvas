@@ -84,6 +84,15 @@ builder.Services.AddSingleton(corsPolicy);
 builder.Services.AddSingleton(database);
 builder.Services.AddSingleton(status);
 
+// 多实例协调器（Redis 可选；PostgreSQL 强制要求 REDIS_URL）。对应 Go 的 coordinator 装配。
+(OpenAICanvas.Platform.Coordinator platformCoordinator, string? coordinatorError) =
+    OpenAICanvas.Platform.Coordinator.Create(env.DatabaseDriver);
+if (coordinatorError is not null)
+{
+    Console.Error.WriteLine($"协调器初始化警告：{coordinatorError}");
+}
+builder.Services.AddSingleton(platformCoordinator);
+
 // 业务组合根与平台能力。后续模块继续往 CanvasService 上挂。
 builder.Services.AddSingleton(new OpenAICanvas.Persistence.Repositories.Repository(database));
 // 认证宿主桥接：注册奖励、活跃记录、品牌名都经它回到业务层（对应 Go 的 authHost）。
@@ -114,7 +123,13 @@ if (!string.Equals(Environment.GetEnvironmentVariable("CANVAS_DISABLE_BACKGROUND
         StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHostedService<OpenAICanvas.Web.Workers.ResourceCleanupWorker>();
+    builder.Services.AddHostedService<OpenAICanvas.Web.Workers.TaskDispatchWorker>();
 }
+// 任务 Worker：领取、租约维护与终态协调（对应 Go task_worker.go）。
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.TaskWorkerService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+    serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+    platformCoordinator));
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
