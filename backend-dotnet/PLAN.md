@@ -260,7 +260,7 @@ backend-dotnet/
 | 4.9 | 音频协议 | `app/provider_audio.go` | ✅ `ProviderAudioTask` 已通：同步 `/audio/speech` 二进制（body 含 model/input/voice/response_format/speed，AudioSpeed 覆盖默认 1、AudioInstructions 映射 instructions）+ 异步 `/audio/tasks`（`data`/`result`/`output` 包装展开、id/task_id/request_id 任务 ID 严格取字符串、成功态 done/completed/succeeded/success/done、失败态 failed/cancelled/canceled/expired/error 带上游错误文案、2.5s 轮询间隔 1h 超时）；结果下载三分支（data URL 解码 + 尺寸上限校验、公网 URL 外链下载、渠道 `/content` 回落）与 `validateGeneratedAudio` 魔数校验（pcm/mpeg/wav/ogg/flac/aac 签名、非音频内容与声明不符均报错、空 octet-stream 按格式回退）；中文错误文案逐字对齐 Go；声明式接入与图片一致（只查 ctx 注入注册表，无 official-fallback 报错路径）；剩余：挂到任务 Worker（依赖 4.4/4.5，与 4.6 相同） |
 | 4.10 | HTTP 客户端与声明式协议 | `app/provider_http_client.go` `provider_protocol.go` | 🟡 出站安全边界已通（`ProviderTransport`：响应大小上限两道检查/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配/渠道 URL 版本前缀归一）；**协调层已通（`Platform/Coordinator`：固定窗口限流、并发租约与退避等待、渠道熔断、路由目录版本与路由屏蔽、`Application/ProviderRequestContext` 适配器）**，并已接入 `ProviderTextTask`（熔断前置短路 → 占槽 → 请求 → 记结果 → 释放）；**声明式协议执行已通（`ProviderProtocolExecutor`：白名单 method 校验、body/URL/头装配、11 类鉴权驱动含 AWS SigV4/TC3/火山 V4、multipart 媒体加载；`ProviderProtocolPayload`：`protocolRequestFromInput` 投影、素材角色判定、`finishProtocolResult` 结果整形；`ProviderProtocolTask`：create→poll→download 三阶段编排、幂等键、ExtractProviderTaskID 回落、结果下载与 media 归一）**；剩余：Redis Lua 脚本的集成测试 |
 | 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ✅ `ProviderWorkflowTask` 全链路已通：JSON→节点表解析（含槽位计数与列表展开）、字段角色推断/覆盖安全性、分辨率默认值与槽位文案归一（与 Go 完全一致，无默认值返回原值）、`runninghub-workflow-{image,video,audio}` 三类 interfaceType 提交、轮询统一走 `ProviderVideoPolling`（声明式策略可注入，image 遗留分支固定 2.5s 间隔 1h 预算）、结果下载与 media 归一、协议信封解析；已挂接 Worker 执行分支与创建准入（`workflowPluginIDForInterface` 对齐 Go，仅认三类后缀）；28 条契约测试覆盖解析/归一/提交/轮询/下载/信封/SSRF 前置；剩余：插件启用校验留在 admission 层（与 Go 相同），插件注册表仍视为未启用（4.12 的 plugin runtime） |
-| 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ☐ |
+| 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ✅ `WorkflowPluginGate` 插件门控（平台/用户两级状态，创建准入与 Worker 执行双闸，默认禁用）、RunningHub 管理代理（workflow-info / app-info 拉取上游参数模板，SSRF 前置 + 128KB 上限）、`GET /plugins/status` 状态聚合；平台开关由 `plugin_platform_states` 数据行控制，插件中心安装/启停 UI 留 10.1 |
 | 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ☐ |
 | 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 transcription 创建已通（whisper 执行待）；render 创建待做 |
 | 4.15 | 创作运行与提交 | `app/creation*.go` | ✅ 运行生命周期/报价/批准/执行 13 条（批 1）+ 画布提交 3 条（批 2，#63 关闭）；agentRequests 占位符水合待（#64） |
@@ -420,6 +420,19 @@ backend-dotnet/
 ---
 
 ## 九、部署与生产修复日志
+
+### 2026-09-21 · 4.12 RunningHub 集成完成
+
+插件门控与 RunningHub 管理代理已通（Go `workflow_plugins.go` + `runninghub_management.go` 主路径）：
+
+- `Repository.PluginStates`：`plugin_platform_states` / `user_plugin_states` 读写与 upsert（UPDATE 0 行转 INSERT，插入时补主键），SQLite/PG 同源 SQL。
+- `WorkflowPluginGate`：白名单 `runninghub-workflow-{image,video,audio}` 归一到插件 ID `runninghub-workflow-provider`；平台状态行是唯一真源，无行 = 平台禁用（对齐 Go 内置清单 Enabled:false 的默认部署行为）；用户无记录时跟随平台状态，显式停用优先。创建准入 `RequireForUser`（EffectiveEnabled）与 Worker 执行 `RequireForInterface`（仅平台维度）双闸，未知 interfaceType 统一 403 文案。
+- `RunningHubManagementService` + `POST /runninghub/workflow-info`、`POST /runninghub/app-info`：服务端代理拉取上游参数模板（getJsonApiFormat / apiCallDemo），出站 URL 先过 SSRF 校验，API Key 缺失 400，上游异常统一 502；端点固定按 `runninghub-workflow-image` 门控（对齐 Go），请求体 128KB 上限。
+- `GET /plugins/status`：返回 statuses + states 聚合（平台可用、用户开关、生效状态、禁用原因），画布与插件中心的禁用提示直接消费。
+
+测试：新增 9 条（仓储 upsert 2、门控 4、端点 3），全量 1456/1456 通过（`ChannelOrderTests` 一轮并行噪音失败，单独复跑即过，与本次改动无关）。
+
+已知限制：插件中心安装/卸载/启停 UI 与管理端点属 10.1；平台开关当前仅能通过 `plugin_platform_states` 数据行开启。
 
 ### 2026-09-21 · 4.11 部署 211
 

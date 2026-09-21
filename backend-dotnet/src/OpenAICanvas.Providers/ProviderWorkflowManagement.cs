@@ -95,6 +95,109 @@ internal static class WorkflowProviderManagement
         return ApplyFieldDefaults(fields, capability);
     }
 
+    /// <summary>
+    /// AI App（webapp）的公开 nodeInfoList 归一。对应 Go: <c>normalizeManagementAppFields</c>。
+    /// 每项先复制原始字段，再补 id/enabled/fieldType/source/role 缺省值。
+    /// </summary>
+    internal static List<WorkflowField> FieldsFromAppNodeInfo(
+        List<Dictionary<string, object?>> nodeInfoList, string capability)
+    {
+        List<WorkflowField> fields = [];
+        foreach (Dictionary<string, object?> original in nodeInfoList)
+        {
+            Dictionary<string, object?> item = new(original, StringComparer.Ordinal);
+            string nodeID = MapString(item, "nodeId");
+            string fieldName = MapString(item, "fieldName");
+            if (nodeID.Length == 0 || fieldName.Length == 0)
+            {
+                continue;
+            }
+            if (MapString(item, "id").Length == 0)
+            {
+                item["id"] = nodeID + "::" + fieldName;
+            }
+            if (!item.ContainsKey("enabled"))
+            {
+                item["enabled"] = true;
+            }
+            string fieldType = MapString(item, "fieldType").ToUpperInvariant();
+            if (fieldType.Length == 0)
+            {
+                fieldType = WorkflowFieldType(fieldName, item.TryGetValue("fieldValue", out object? value) ? value : null, "");
+                item["fieldType"] = fieldType;
+            }
+            if (MapString(item, "source").Length == 0)
+            {
+                if (IsPromptFieldName(fieldName))
+                {
+                    item["source"] = "prompt";
+                    item["sourceAutomatic"] = true;
+                }
+                else if (AutomaticInputSource(fieldName, fieldType) is { Length: > 0 } source)
+                {
+                    item["source"] = source;
+                    item["sourceAutomatic"] = true;
+                }
+                else
+                {
+                    item["source"] = "";
+                    item["sourceAutomatic"] = false;
+                }
+            }
+            string resolvedSource = MapString(item, "source");
+            WorkflowField field = new()
+            {
+                ID = MapString(item, "id"),
+                NodeID = nodeID,
+                ClassType = MapString(item, "classType"),
+                FieldName = fieldName,
+                FieldValue = item.TryGetValue("fieldValue", out object? fieldValue) ? fieldValue : null,
+                FieldType = fieldType,
+                Label = MapString(item, "label"),
+                Role = FieldRole("", fieldName, fieldType, resolvedSource),
+                SafeToOverride = true,
+            };
+            if (item.TryGetValue("enabled", out object? enabledValue))
+            {
+                field.Enabled = enabledValue switch
+                {
+                    bool flag => flag,
+                    JsonElement { ValueKind: JsonValueKind.True } => true,
+                    JsonElement { ValueKind: JsonValueKind.False } => false,
+                    _ => true,
+                };
+            }
+            else
+            {
+                field.Enabled = true;
+            }
+            if (item.TryGetValue("sourceAutomatic", out object? automaticValue))
+            {
+                field.SourceAutomatic = automaticValue switch
+                {
+                    bool flag => flag,
+                    JsonElement { ValueKind: JsonValueKind.True } => true,
+                    JsonElement { ValueKind: JsonValueKind.False } => false,
+                    _ => null,
+                };
+            }
+            if (MapString(item, "label").Length == 0)
+            {
+                field.Label = fieldName;
+            }
+            if (IsSeedFieldForManagement(fieldName))
+            {
+                field.RandomEnabled = true;
+            }
+            fields.Add(field);
+        }
+        return ApplyFieldDefaults(fields, capability);
+    }
+
+    /// <summary>对应 Go: <c>isManagementSeedField</c>。</summary>
+    private static bool IsSeedFieldForManagement(string value) =>
+        WorkflowFieldInference.IsSeedField(value);
+
     /// <summary>对应 Go: <c>runningHubPromptFallback</c>。</summary>
     internal static List<Dictionary<string, object?>> PromptFallback(
         Dictionary<string, object?>? workflow, string prompt)

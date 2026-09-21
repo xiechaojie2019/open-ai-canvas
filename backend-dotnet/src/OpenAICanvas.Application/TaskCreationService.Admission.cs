@@ -45,12 +45,8 @@ public sealed partial class TaskCreationService
         if (workflowProviderTask)
         {
             string interfaceType = InputConfigString(input, "interfaceType").Trim().ToLowerInvariant();
-            if (!ProviderWorkflowValues.WorkflowPluginIDForInterface(interfaceType).Ok)
-            {
-                throw AppError.Forbidden("未知工作流插件");
-            }
-            // 插件注册表未移植：RunningHub 工作流默认未启用（与 Go 默认部署一致）。
-            throw AppError.Forbidden("RunningHub 工作流插件未启用");
+            // 插件门控（4.12）：平台状态行 + 用户安装状态共同决定放行。
+            await WorkflowPlugins.RequireForUserAsync(userId, interfaceType, cancellationToken).ConfigureAwait(false);
         }
 
         bool frontendEnabled = false;

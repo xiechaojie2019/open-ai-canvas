@@ -83,6 +83,8 @@ public sealed class CanvasService
         PromptTemplates = new Prompts.PromptTemplateService(repository);
         ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
         TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);
+        WorkflowPlugins = new WorkflowPluginGate(repository);
+        RunningHub = new RunningHubManagementService();
         TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
         AdminLogMedia = new AdminLogMediaService(repository,
             new ResourceDomainService(repository, RuntimePolicy, dataDir));
@@ -624,6 +626,12 @@ public sealed class CanvasService
 
     /// <summary>任务创建准入。对应 Go: <c>app/task_creation.go</c>。</summary>
     public TaskCreationService TaskCreations { get; }
+
+    /// <summary>工作流插件门控（4.12）。对应 Go 的 workflow_plugins + plugin_states 组合。</summary>
+    public WorkflowPluginGate WorkflowPlugins { get; }
+
+    /// <summary>RunningHub 管理代理（4.12）。对应 Go: <c>runninghub_management.go</c>。</summary>
+    public RunningHubManagementService RunningHub { get; }
 
     /// <summary>任务重试与取消。对应 Go: <c>app/task_lifecycle.go</c>。</summary>
     public TaskLifecycleService TaskLifecycle { get; }

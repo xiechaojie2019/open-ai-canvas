@@ -55,6 +55,10 @@ public sealed partial class TaskCreationService
     private readonly IRuntimePolicyProvider _runtimePolicy;
     private readonly Platform.FeatureAvailabilityService? _features;
     private readonly string _dataDir;
+    private WorkflowPluginGate? _workflowPlugins;
+
+    /// <summary>工作流插件门控；惰性初始化，与 CanvasService 共用同一仓储单例。</summary>
+    internal WorkflowPluginGate WorkflowPlugins => _workflowPlugins ??= new WorkflowPluginGate(_repository);
 
     public TaskCreationService(
         Repository repository,

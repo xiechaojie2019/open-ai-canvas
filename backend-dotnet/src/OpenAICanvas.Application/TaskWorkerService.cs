@@ -341,6 +341,10 @@ public sealed class TaskWorkerService
         ProviderRequestContext context = new(_policy, _coordinator);
         if (ProviderWorkflowValues.IsWorkflowProviderInterface(input.Config.InterfaceType))
         {
+            // 后台执行仍要过平台门控（对应 Go: provider.go 的 RequireWorkflowPluginForInterface）：
+            // 任务创建后被管理员停用时，执行侧以平台状态行为准拒绝并走失败路径。
+            await new WorkflowPluginGate(_repository)
+                .RequireForInterfaceAsync(input.Config.InterfaceType, cancellationToken).ConfigureAwait(false);
             // 工作流协议是独立执行器：三要素里只有 API Key 必填，模型能力校验
             // 全部由工作流字段定义承担，不能套用普通模型的三要素检查。
             return new(await new ProviderWorkflowTask(context).RunAsync(
