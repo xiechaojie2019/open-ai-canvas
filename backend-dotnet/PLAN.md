@@ -440,8 +440,18 @@ backend-dotnet/
 
 **验证**：新增 3 条端点契约测试（未登录 401 / 官方插件包目录字段与
 scope+capability 过滤 / 空结果边界），全量 1378/1378 通过。
-部署 211 冒烟：登录后 `GET /api/plugins/catalog?scope=admin.system-channel`
-返回 code:0 且 providers 非空（含 Adobe Firefly 等官方声明式接口），
+**部署 211（2026-09-21 完成）**：publish linux-x64 → tar SCP 上传
+/opt/open-ai-canvas-dotnet/ → 替换 linux/（旧目录保留为 linux.bak）→
+docker compose 重建 backend，容器 healthy。
+
+关键补充：生产容器原本没有 plugin-packages，OfficialFallback 注册表为空，
+接口虽不报 404 但 providers 会是空数组。本次将仓库 plugin-packages/（169 项）
+上传到服务器并在 docker-compose.yml 给 backend 增加挂载
+`./plugin-packages:/app/plugin-packages`（代码默认候选目录即 /app/plugin-packages）。
+
+冒烟结果：未登录 8081 直连与 5173 前端代理均 401（`请先登录`）；
+deploycheck 登录后 `GET /api/plugins/catalog?scope=admin.system-channel`
+返回 code:0 且 providers 共 82 个（Adobe Firefly、Agnes Image 等官方声明式接口），
 渠道模型弹窗协议下拉恢复正常。
 
 ### 2026-09-20 · 首次部署 192.168.0.211 与 Dapper 集合参数修复（e94b54cb）
