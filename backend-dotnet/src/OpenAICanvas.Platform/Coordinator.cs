@@ -94,7 +94,7 @@ public sealed class Coordinator
 
         try
         {
-            ConfigurationOptions options = ConfigurationOptions.Parse(redisUrl);
+            ConfigurationOptions options = BuildConnectionOptions(redisUrl);
             // 协调写操作不透明重试；限流/并发失败必须及时向调用方返回，不能放大故障流量。
             options.AbortOnConnectFail = false;
             options.ConnectTimeout = (int)CoordinationTimeout.TotalMilliseconds;
@@ -106,6 +106,59 @@ public sealed class Coordinator
         {
             return (new Coordinator(null, Guid.NewGuid().ToString("N")), $"Redis 不可用：{error.Message}");
         }
+    }
+
+    /// <summary>
+    /// 把 <c>REDIS_URL</c> 转成 SE.Redis 配置。对应 Go: <c>redis.ParseURL</c> ——
+    /// go-redis 原生支持 <c>redis://[[user][:pwd]@]host[:port][/db]</c>，
+    /// 而 SE.Redis 不注册 <c>redis://</c>/<c>rediss://</c> 协议，直接 Parse 会把整串 URL 当主机名，
+    /// DNS 永远解析失败并触发无限后台重连（AbortOnConnectFail=false），表现为协调槽永久不可用。
+    /// </summary>
+    public static ConfigurationOptions BuildConnectionOptions(string redisUrl)
+    {
+        string trimmed = redisUrl.Trim();
+        if (trimmed.StartsWith("redis://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("rediss://", StringComparison.OrdinalIgnoreCase))
+        {
+            return FromRedisScheme(trimmed);
+        }
+        return ConfigurationOptions.Parse(trimmed);
+    }
+
+    private static ConfigurationOptions FromRedisScheme(string redisUrl)
+    {
+        if (!Uri.TryCreate(redisUrl, UriKind.Absolute, out Uri? uri)
+            || (uri.Scheme != "redis" && uri.Scheme != "rediss")
+            || uri.HostNameType == UriHostNameType.Basic
+            || string.IsNullOrWhiteSpace(uri.Host))
+        {
+            throw new FormatException($"无法解析 REDIS_URL：{redisUrl}");
+        }
+
+        ConfigurationOptions options = new()
+        {
+            EndPoints = { $"{uri.Host}:{(uri.Port > 0 ? uri.Port : 6379)}" },
+            Ssl = uri.Scheme == "rediss",
+        };
+
+        // 与 go-redis.ParseURL 一致：userinfo 密码存在时，用户名缺省 default。
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            int separator = uri.UserInfo.IndexOf(':');
+            string userName = separator < 0 ? string.Empty : uri.UserInfo[..separator];
+            string password = separator < 0 ? uri.UserInfo : uri.UserInfo[(separator + 1)..];
+            options.User = userName.Length == 0 ? "default" : userName;
+            options.Password = password;
+        }
+
+        string databasePath = uri.AbsolutePath.TrimStart('/');
+        if (databasePath.Length > 0
+            && (!int.TryParse(databasePath, out int database) || database < 0))
+        {
+            throw new FormatException($"REDIS_URL 数据库序号无效：{databasePath}");
+        }
+        options.DefaultDatabase = databasePath.Length == 0 ? 0 : int.Parse(databasePath);
+        return options;
     }
 
     /// <summary>供测试与嵌入式部署使用（已连接的 Redis 客户端）。</summary>

@@ -421,6 +421,19 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-21 · 生图任务进程内秒败修复（JSON 注解 + 配置大小写失配）
+
+线上生图任务全部在 worker 内秒败并误报"连接模型服务失败"。诊断日志（任务失败诊断 error 级）拿到决定性堆栈，实际是两层问题叠加：
+
+1. WorkflowField 值类型成员（RandomEnabled/BindPrompt/SourceFromUpstream/Required/SourceIndex/ImageOrder）标注 [JsonIgnore(Condition = WhenWritingNull)]。System.Text.Json 为值类型成员构建元数据时直接抛 InvalidOperationException（.NET 8 起是硬错误），导致整个 TextTaskInput 反序列化失败。全部改为 WhenWritingDefault（false/0 不输出，等价 Go omitempty 语义；反序列化不受影响）。
+2. 崩溃修复后暴露第二层：ProjectCharacterService.GoPayloadOptions 未开 PropertyNameCaseInsensitive，而 TextTaskInput.Config 无 [JsonPropertyName]。Go 侧写入的 input_json 是 camelCase 键（config），Go encoding/json 反序列化本身大小写不敏感，.NET 默认大小写敏感导致 Config 永远为空，渠道三要素解析被跳过后报"缺少 Base URL、API Key 或模型名"。在 GoPayloadOptions 上开启 PropertyNameCaseInsensitive 对齐 Go 语义（全仓唯一用该 options 反序列化实体的位置）。
+
+ProviderExceptions.UserFacing 补充熔断/渠道并发槽/传输异常分支，返回自身 Message 而不是误报网络错误；TaskTerminalService.HandleExecutionFailureAsync 新增"任务失败诊断" error 日志（类型+消息+InnerException+堆栈，截断 4000 字符），这条日志就是本次拿到根因的手段，后续生产排障保留。
+
+验证：全量测试 1464 总量（渠道管理三条已知偶发除外 1441/1441 通过）；发布部署 211 后 diag_probe.py full 真实创建生图任务，约 21 秒 succeeded，result_json 含真实 PNG dataURL，端到端恢复。
+
+部署注意：compose 走镜像不是源码挂载，docker compose up -d 不会更新二进制；必须重新解压到 /opt/open-ai-canvas-dotnet 顶层（Dockerfile COPY linux/ . ，解压进子目录无效）、docker compose build --no-cache backend 后 up -d --force-recreate。
+
 ### 2026-09-21 · 4.12 RunningHub 集成完成
 
 插件门控与 RunningHub 管理代理已通（Go `workflow_plugins.go` + `runninghub_management.go` 主路径）：

@@ -222,6 +222,19 @@ public sealed class TaskTerminalService
             billingFailure = ex;
         }
         await LogAsync(task.UserID, task.ID, "error", "任务处理失败", task.Error, cancellationToken).ConfigureAwait(false);
+        // 用户可见文案是归类后的结果，不一定保留原始异常信息；
+        // 堆栈进 payload（管理端/排障用），避免线上故障只有一句兜底文案可查。
+        string diagnostic = error.GetType().FullName + ": " + error.Message;
+        if (error.InnerException is { } inner)
+        {
+            diagnostic += "\n--> " + inner.GetType().FullName + ": " + inner.Message;
+        }
+        diagnostic += "\n" + error.StackTrace;
+        if (diagnostic.Length > 4000)
+        {
+            diagnostic = diagnostic[..4000];
+        }
+        await LogAsync(task.UserID, task.ID, "error", "任务失败诊断", diagnostic, cancellationToken).ConfigureAwait(false);
         return billingFailure is null ? error : new AggregateException(error, new Exception("任务计费收尾失败", billingFailure));
     }
 

@@ -74,11 +74,11 @@ public sealed class WorkflowField
     public object? Step { get; set; }
 
     [JsonPropertyName("randomEnabled")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool RandomEnabled { get; set; }
 
     [JsonPropertyName("bindPrompt")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool BindPrompt { get; set; }
 
     /// <summary>null 兼容旧配置（默认启用）；false 表示用户明确停用。</summary>
@@ -91,19 +91,19 @@ public sealed class WorkflowField
     public string? Source { get; set; }
 
     [JsonPropertyName("sourceIndex")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int SourceIndex { get; set; }
 
     [JsonPropertyName("imageOrder")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int ImageOrder { get; set; }
 
     [JsonPropertyName("sourceFromUpstream")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool SourceFromUpstream { get; set; }
 
     [JsonPropertyName("required")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Required { get; set; }
 
     /// <summary>null 兼容旧配置；true 表示来源由字段名推断，false 表示用户明确选择。</summary>

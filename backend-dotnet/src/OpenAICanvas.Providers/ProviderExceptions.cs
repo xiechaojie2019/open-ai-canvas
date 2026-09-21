@@ -166,6 +166,12 @@ public static class ProviderErrorMessages
                     }
                 }
                 return httpError.Message;
+            // 熔断/占槽/传输异常自带准确文案：兜底成"网络失败"会把熔断、
+            // 并发配置等进程内错误伪装成连不上上游，排障方向会被带偏。
+            case ProviderCircuitOpenException:
+            case ProviderChannelSlotException:
+            case ProviderTransportException:
+                return error.Message;
             default:
                 return NetworkFailure;
         }

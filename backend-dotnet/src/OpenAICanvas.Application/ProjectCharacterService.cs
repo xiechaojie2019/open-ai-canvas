@@ -191,6 +191,9 @@ public sealed class ProjectCharacterService : ICharacterCardProvider
     internal static readonly JsonSerializerOptions GoPayloadOptions = new()
     {
         Encoder = GoJsonEncoder.Instance,
+        // Go 的 encoding/json 反序列化字段名大小写不敏感；输入 JSON 由 Go 侧
+        // 写入（camelCase 键），这里必须保持同样的匹配语义。
+        PropertyNameCaseInsensitive = true,
     };
 
     private readonly Repository _repository;
