@@ -421,6 +421,11 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-21 · 4.11 部署 211
+
+发布物由框架依赖改为 self-contained linux-x64：服务器 Dockerfile 入口是原生 apphost（`./OpenAICanvas.Web`），不带运行时探测路径，框架依赖发布会导致容器缺框架重启循环（exit 150）。重新 publish 后 docker compose build 恢复 healthy。
+
+拓扑确认：backend 8081:8080、web 5173:3000（compose 既有配置）；宿主机 8080 属于服务器上其他服务，与本栈无关。冒烟：health/live 与 health/ready 200（schema 15/15）；未登录 401；deploycheck 管理账号经 5173 代理登录 code:0；plugins/catalog（admin scope）200 正常返回 providers。
 ### 2026-09-21 · 4.11 工作流 Provider 迁移完成
 
 `ProviderWorkflowTask` 全链路已通（Go `workflow_provider.go` 主路径）：JSON→节点表解析（槽位计数/列表展开）、字段角色推断与覆盖安全、分辨率默认值与槽位文案归一（无默认值返回原值，与 Go 一致）、`runninghub-workflow-{image,video,audio}` 三类 interfaceType 提交、轮询复用 `ProviderVideoPolling`（声明式策略可注入；image 遗留分支固定 2.5s 间隔 1h 预算）、结果下载与 media 归一、协议信封解析。Worker 执行分支与创建准入同步挂接：`workflowPluginIDForInterface` 仅认三类后缀（对齐 Go，裸 `runninghub` 不走工作流插件）。

@@ -1,0 +1,3 @@
+docs(plan): 部署日志 - 4.11 self-contained 发布与 211 拓扑确认
+
+发布物改为 self-contained linux-x64（服务器 Dockerfile 入口为原生 apphost，框架依赖发布会缺运行时）；确认 backend 8081:8080、web 5173:3000 拓扑，冒烟健康检查/未登录 401/管理登录/catalog 均通过。
