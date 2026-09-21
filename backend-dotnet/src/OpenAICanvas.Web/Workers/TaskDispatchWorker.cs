@@ -46,7 +46,12 @@ public sealed class TaskDispatchWorker : BackgroundService
         {
             using IServiceScope scope = _scopeFactory.CreateScope();
             TaskWorkerService worker = scope.ServiceProvider.GetRequiredService<TaskWorkerService>();
-            await worker.DispatchOnceAsync(stoppingToken).ConfigureAwait(false);
+            int started = await worker.DispatchOnceAsync(stoppingToken).ConfigureAwait(false);
+            if (started < 0)
+            {
+                // -1 表示并发槽或运行时策略不可用：必须留下可见痕迹，否则调度停摆无从发现。
+                _logger.LogWarning("任务调度未获取并发槽，本轮跳过");
+            }
         }
         catch (OperationCanceledException)
         {

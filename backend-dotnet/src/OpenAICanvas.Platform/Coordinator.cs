@@ -131,10 +131,15 @@ public sealed class Coordinator
         {
             try
             {
-                RedisResult result = await RedisConnection.GetDatabase().ScriptEvaluateAsync(
+                using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(CoordinationTimeout);
+                // SE.Redis 的脚本接口不支持取消 token：连接断开期间命令会无限排队，
+                // 必须用 WaitAsync 强制 2 秒超时，否则调度/限流线程会永久挂起。
+                Task<RedisResult> evaluation = RedisConnection.GetDatabase().ScriptEvaluateAsync(
                     FixedWindowScript,
                     ["canvas:rate:" + key],
-                    [(long)window.TotalMilliseconds, limit]).ConfigureAwait(false);
+                    [(long)window.TotalMilliseconds, limit]);
+                RedisResult result = await evaluation.WaitAsync(timeout.Token).ConfigureAwait(false);
                 long count = (long)result;
                 return (count <= limit, null);
             }
@@ -218,7 +223,7 @@ public sealed class Coordinator
                     limit,
                     lease.Token,
                     (long)(ttl + TimeSpan.FromMinutes(1)).TotalMilliseconds,
-                ]).ConfigureAwait(false);
+                ]).WaitAsync(timeout.Token).ConfigureAwait(false);
             if ((long)result != 1)
             {
                 return (null, false, null);
@@ -555,6 +560,8 @@ public sealed class SlotLease
 
         try
         {
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(Coordinator.CoordinationTimeout);
             RedisResult result = await _coordinator.RedisConnection.GetDatabase().ScriptEvaluateAsync(
                 Coordinator.RenewScript,
                 ["canvas:slots:" + _scope],
@@ -563,7 +570,7 @@ public sealed class SlotLease
                     now.ToUnixTimeMilliseconds(),
                     now.Add(_ttl).ToUnixTimeMilliseconds(),
                     (long)(_ttl + TimeSpan.FromMinutes(1)).TotalMilliseconds,
-                ]).ConfigureAwait(false);
+                ]).WaitAsync(timeout.Token).ConfigureAwait(false);
             return (long)result == 1 ? (true, null) : (false, "并发租约已失效");
         }
         catch (Exception error)
