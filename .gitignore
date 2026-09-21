@@ -87,6 +87,7 @@ backend-dotnet/TestResults/
 backend-dotnet/**/TestResults/
 backend-dotnet/.tmp/
 backend-dotnet/**/*.trx
+backend-dotnet/publish/
 # IDE 本地启动配置（含个人端口），不入库。
 backend-dotnet/**/Properties/launchSettings.json
 /backend-dotnet/.codebuddy/memory
