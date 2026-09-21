@@ -253,7 +253,7 @@ backend-dotnet/
 | 4.2 | 任务文本增量与 SSE 流 | `app/text_replay.go` | ✅ text-events SSE（游标/心跳/轮询）+ AdminTextReplayStats |
 | 4.3 | 任务重试 / 取消 / 上游查询 | `app/task_*.go` (12 文件) | ✅ retry/cancel/query-provider 三路由全通（#61/#62 上游部分待 provider 引擎） |
 | 4.4 | Worker 调度与租约 | `app/task_worker.go` | 🟡 已通：`Repository.TaskLease`（领取/续期/释放/让渡/持租约进度/终态/完成落库，PG SKIP LOCKED + SQLite 条件更新）、`TaskTerminalService`（失败/取消/成功收尾与计费协调）、`TaskWorkerService`（2s 调度循环 + 全局并发槽 + 45s 任务租约 + 15s 续租循环 + 超时策略 + 输入解密 + 系统渠道 channel_models 授权解析 + 存储配额核算落库）、`TaskDispatchWorker` 宿主（`CANVAS_DISABLE_BACKGROUND_WORKERS` 可关）；文本/图片/视频/音频执行分支已按任务类型接入（4.6–4.9 的"挂到 Worker"同步完成）；简化项：无 RouteAttempt 路由状态机、无 persistGeneratedMediaResult 媒体落盘、无 defer/newapi-channel-2 回查、无 canvas_ops 结果行与结构化配额、无 registerActiveTask 主动取消挂点、timeline 两类型直接报未实现（随 4.14） |
-| 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` | 🟡 仓储层 MarkRunning/Settle/Restore/Refund/Uncertain 已通（worker 接入待 4.4） |
+| 4.5 | 计费协调（预扣/结算/退款） | `app/billing.go` `billing_review.go` | ✅ 仓储层 MarkRunning/Settle/Restore/Refund/Uncertain 全通；TaskTerminalService 收尾协调（失败退款/取消/成功结算/不确定待核对/结果落库失败补偿）与 TaskWorkerService 接入（领取即 MarkRunning、成功 Settle、失败按复核判定走 Uncertain 或退款）随 4.4 完成；CheckRetryEligibility 与 BillingFailureRequiresReview 对齐 Go；账单巡检 StaleBillingReviewStats + TaskBillingReviewService.AuditAsync + BillingReviewWorker 宿主（每小时一次，只读提醒人工核对，不代资金动作）；SQLite 巡检测试 2 条 |
 | 4.6 | 文本协议 | `app/provider_text.go` | ✅ 具备端到端执行能力：错误体系（失败识别/错误码归一化/HTTP 与正文归类/四类异常）、`ProviderHelpers`、`ProviderRequestTypes`、`ProviderMedia`、`ContentTypeSniffer`、`ParseRetryAfter`、`ProtocolRequestBuilder`（四类请求体 + URL/OriginPath + AWS SigV4/腾讯 TC3 签名）、`StreamingAgentParser`（chat/responses/claude 三协议 SSE 流式解析，含工具调用累积与 `[DONE]`）、`AgentToolPayload`（非流式统一解析）、`ProviderTextOrchestration`（协议归一/思考模式/工具选择归一/输出上限/`stream_options` 用量/结果整形/空正文校验/Responses 回落判定/历史过滤）、`ProviderTextRequestBuilder`（三协议请求体与多模态内容块）、**`ProviderTransport`（出站安全边界：大小上限/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配，共 42 条线级测试）+ `ProviderTextTask`（`requestTextProvider` 端到端：非流式 postJSON、流式 SSE、非 event-stream 退化、legacy 回落；**`RunTextTaskAsync` = `runTextTask` 按 interfaceType 分发，未识别类型走 legacy**）**；剩余：挂到任务 Worker（依赖 4.4/4.5） |
 | 4.7 | 图片协议 | `app/provider_image.go` | ✅ `ProviderImageTask` 已通：OpenAI Images（生成/蒙版编辑 + multipart 手写构造 + 按能力裁剪参数）、Gemini Images（`/v1beta` + inlineData + 双向 MIME 签名校验）、Grok Images（`aspect_ratio`/`resolution` 归一化）、火山方舟（尺寸像素区间夹取 + 外链下载内联，跨源不带鉴权）；即梦手写协议已通（`RunJiMengAsync`：火山 V4 签名（Service=cv）CVSync2AsyncSubmitTask 提交 + CVSync2AsyncGetResult 轮询，`image_urls` 外链下载内联与 `binary_data_base64` 解码，蒙版/参考图 14 张上限/像素面积 [1MP,16MP] 门禁，code≠10000 报错带 request_id，not_found/expired 报失效，超时报错）；`ProviderImageOptions` 提供尺寸/质量归一化与能力裁剪；声明式接入完成：入口只查 ctx 注入注册表（裸 ctx 走手写协议，与 Go 一致）；剩余：挂到任务 Worker（依赖 4.4/4.5，与 4.6 相同） |
 | 4.8 | 视频协议（含遗留） | `app/provider_video.go` | ✅ 全通：`ProviderVideoPolling`（`runVideoPollLoop`：初始延迟/间隔、**两个独立计数器**（未找到/畸形响应）、Retry-After 拉长等待、重试态与恢复播报、可取消等待；`runVideoDownload`：有限次重试 + `VideoDownloadException`；`retryableVideoPollError` 全分类；`isProviderTaskNotReadyError` 固定短语判定）；`ProviderVideoTask`（OpenAI 风格 multipart+轮询+content 回落、Seedance `/videos`、Agent Plan `/contents/generations/tasks`、xAI `/videos` JSON；恢复任务只查询不重建；下载跨源不带鉴权）；`ProviderVideoOptions`（分辨率名匹配与固定分辨率、Seedance 时长/比例/分辨率归一化、首尾帧排序、素材 URL 策略）；声明式接入完成：未注入注册表补官方包（ensureOfficialProtocolAdapter）、显式空表报"插件未安装"、官方映射未安装时报错，均与 Go 路由边界一致 |
@@ -420,6 +420,11 @@ backend-dotnet/
 ---
 
 ## 九、部署与生产修复日志
+
+### 2026-09-21 · 4.5 计费协调与账单巡检收尾完成
+
+补齐 Go billing_review.go 缺口：Repository.StaleBillingReviewStatsAsync（只读统计 15 分钟未更新且仍处 reserved/running/uncertain 的订单）、TaskBillingReviewService.AuditAsync（总数为零时静默，异常时打警告日志）与 BillingReviewWorker 宿主（立即巡检一次后每小时一次，只提醒人工核对，不代任何资金动作）。
+RestoreRefundedBillingOrderAsync 仓储路径此前已通，协调层调用点随 provider_task_recovery 迁移时接入。全量 1417/1417 通过（含新增巡检 SQLite 路径测试 2 条）。
 
 ### 2026-09-21 · 4.4 Worker 调度与租约迁移完成
 

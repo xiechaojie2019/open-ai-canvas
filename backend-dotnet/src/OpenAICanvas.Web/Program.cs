@@ -125,6 +125,9 @@ if (!string.Equals(Environment.GetEnvironmentVariable("CANVAS_DISABLE_BACKGROUND
     builder.Services.AddHostedService<OpenAICanvas.Web.Workers.ResourceCleanupWorker>();
     builder.Services.AddHostedService<OpenAICanvas.Web.Workers.TaskDispatchWorker>();
 }
+// 账单巡检（只读）。对应 Go 的 app/billing_review.go startBillingReviewAudit。
+builder.Services.AddSingleton<OpenAICanvas.Application.TaskBillingReviewService>();
+builder.Services.AddHostedService<OpenAICanvas.Web.Workers.BillingReviewWorker>();
 // 任务 Worker：领取、租约维护与终态协调（对应 Go task_worker.go）。
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.TaskWorkerService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),

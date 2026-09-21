@@ -77,6 +77,14 @@ public sealed partial class Repository
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>账单巡检统计。对应 Go: <c>repository.BillingReviewStats</c>。</summary>
+    public sealed record BillingReviewStats(
+        long Reserved, long Running, long Uncertain, DateTime? Oldest)
+    {
+        /// <summary>未闭合订单总数。对应 Go: <c>BillingReviewStats.Total</c>。</summary>
+        public long Total => Reserved + Running + Uncertain;
+    }
+
     /// <summary>
     /// 预留/运行 → 待核对。冻结积分保持不动，等人工处置。
     /// 对应 Go: <c>MarkBillingUncertain</c>。
@@ -500,6 +508,54 @@ public sealed partial class Repository
         }, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 只读巡检：统计超过 age 未更新且仍处于未闭合状态（reserved/running/uncertain）的订单。
+    /// 对应 Go: <c>StaleBillingReviewStats</c>。
+    /// </summary>
+    public async Task<BillingReviewStats> StaleBillingReviewStatsAsync(
+        DateTime now, TimeSpan age, CancellationToken cancellationToken = default)
+    {
+        DateTime cutoff = now - age;
+        string[] openStatuses =
+        [
+            BillingStatus.BillingStatusReserved,
+            BillingStatus.BillingStatusRunning,
+            BillingStatus.BillingStatusUncertain,
+        ];
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        IReadOnlyList<(string Status, long Count)> rows = await QueryAsync<(string Status, long Count)>(
+            connection,
+            """
+            SELECT status, COUNT(*) FROM billing_orders
+            WHERE status IN @statuses AND updated_at < @cutoff
+            GROUP BY status
+            """,
+            new { statuses = openStatuses, cutoff },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        Dictionary<string, long> counts = new(StringComparer.Ordinal);
+        foreach ((string status, long count) in rows)
+        {
+            counts[status] = count;
+        }
+
+        DateTime? oldest = (await QueryAsync<DateTime?>(
+            connection,
+            """
+            SELECT created_at FROM billing_orders
+            WHERE status IN @statuses AND updated_at < @cutoff
+            ORDER BY created_at ASC LIMIT 1
+            """,
+            new { statuses = openStatuses, cutoff },
+            cancellationToken: cancellationToken).ConfigureAwait(false))
+            .FirstOrDefault(value => value.HasValue);
+
+        counts.TryGetValue(BillingStatus.BillingStatusReserved, out long reserved);
+        counts.TryGetValue(BillingStatus.BillingStatusRunning, out long running);
+        counts.TryGetValue(BillingStatus.BillingStatusUncertain, out long uncertain);
+        return new BillingReviewStats(reserved, running, uncertain, oldest);
     }
 
     /// <summary>
