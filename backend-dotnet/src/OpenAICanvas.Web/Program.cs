@@ -319,6 +319,9 @@ api.MapCanvasShareRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     env.DataDir);
 
+// 插件协议目录路由。对应 Go 的 handler/plugin.go GET /plugins/catalog（插件中心 10.1 另行移植）。
+api.MapPluginRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+
 // 根级 OAuth 回调兼容路由（传统登记地址）。对应 Go: <c>RegisterOAuthCallbackRoutes</c>。
 app.MapGet("/oauth/linuxdo/callback", async (HttpContext context, CancellationToken cancellationToken) =>
 {
