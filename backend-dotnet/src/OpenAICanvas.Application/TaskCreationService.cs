@@ -140,6 +140,8 @@ public sealed partial class TaskCreationService
             Operation = request.Operation,
             Provider = request.Provider,
             Model = request.Model.Trim(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
         };
         ProtectTaskSecrets(normalizedInput);
         task.InputJSON = SerializeInput(normalizedInput);
@@ -195,6 +197,8 @@ public sealed partial class TaskCreationService
             Provider = "local",
             Model = "whisper.cpp",
             InputJSON = JsonSerializer.Serialize(input),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
         };
         await CreateWithinStorageQuotaAsync(task, billingOrder: null, cancellationToken).ConfigureAwait(false);
         await _repository.RecordUserActivityAsync(userId, "task", 1, DateTime.UtcNow, cancellationToken)

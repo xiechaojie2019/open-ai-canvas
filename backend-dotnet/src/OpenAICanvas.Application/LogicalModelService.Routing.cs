@@ -515,6 +515,8 @@ public sealed partial class LogicalModelService
             InputTokenPriceMicrocredits = tier.InputTokenPriceMicrocredits,
             OutputTokenPriceMicrocredits = tier.OutputTokenPriceMicrocredits,
             CachedTokenPriceMicrocredits = tier.CachedTokenPriceMicrocredits,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
             Status = BillingStatuses.BillingStatusReserved,
         };
     }

@@ -111,6 +111,8 @@ public sealed partial class TaskCreationService
             Operation = request.Operation,
             Provider = request.Provider,
             Model = request.Model,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
         };
         if (routed is not null)
         {
@@ -176,6 +178,8 @@ public sealed partial class TaskCreationService
             Operation = request.Operation,
             Provider = request.Provider,
             Model = request.Model,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
         };
         if (routed is not null)
         {
@@ -659,6 +663,8 @@ public sealed partial class TaskCreationService
             InputTokenPriceMicrocredits = logicalModel.InputPriceMicrocredits,
             OutputTokenPriceMicrocredits = logicalModel.OutputPriceMicrocredits,
             CachedTokenPriceMicrocredits = logicalModel.CachedPriceMicrocredits,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
             Status = "reserved",
         };
     }

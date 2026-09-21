@@ -621,6 +621,8 @@ public sealed class TaskWorkerService
         Attempts = source.Attempts,
         StartedAt = source.StartedAt,
         CompletedAt = source.CompletedAt,
+        CreatedAt = source.CreatedAt,
+        UpdatedAt = source.UpdatedAt,
     };
 
     private static void CopyTaskInto(TaskEntity source, TaskEntity target)
