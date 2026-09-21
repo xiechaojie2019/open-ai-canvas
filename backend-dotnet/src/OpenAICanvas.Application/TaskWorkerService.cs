@@ -338,6 +338,14 @@ public sealed class TaskWorkerService
         }
 
         input.Config = await ResolveProviderConfigAsync(input.Config, cancellationToken).ConfigureAwait(false);
+        ProviderRequestContext context = new(_policy, _coordinator);
+        if (ProviderWorkflowValues.IsWorkflowProviderInterface(input.Config.InterfaceType))
+        {
+            // 工作流协议是独立执行器：三要素里只有 API Key 必填，模型能力校验
+            // 全部由工作流字段定义承担，不能套用普通模型的三要素检查。
+            return new(await new ProviderWorkflowTask(context).RunAsync(
+                input, task.ProviderRequestID, cancellationToken: cancellationToken).ConfigureAwait(false), true);
+        }
         if (input.Config.BaseURL.Trim().Length == 0
             || input.Config.APIKey.Trim().Length == 0
             || input.Config.Model.Trim().Length == 0)
@@ -349,7 +357,6 @@ public sealed class TaskWorkerService
             input.Prompt = task.Prompt;
         }
 
-        ProviderRequestContext context = new(_policy, _coordinator);
         ProviderExecutionResult execution = task.Type switch
         {
             _ when task.Type.StartsWith("canvas_text", StringComparison.Ordinal) || task.Type == "text" =>

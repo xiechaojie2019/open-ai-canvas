@@ -148,13 +148,26 @@ public static class ProviderVideoPolling
         {
             if (nextDelay > TimeSpan.Zero)
             {
-                await policy.Sleep(nextDelay, token).ConfigureAwait(false);
+                try
+                {
+                    await policy.Sleep(nextDelay, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // 轮询预算在休眠中途耗尽：与 Go sleepContext 一致，回到循环
+                    // 检查 deadline 后统一归为轮询超时，而不是泄漏取消异常。
+                }
             }
 
             VideoPollOutcome outcome;
             try
             {
                 outcome = await query(token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // 请求中途越过 deadline：回到循环检查 deadline 后统一归为超时。
+                break;
             }
             catch (Exception error)
             {

@@ -10,7 +10,8 @@ namespace OpenAICanvas.Providers;
 /// </summary>
 /// <remarks>
 /// 只保留文本协议实际读取的字段；图片/视频/工作流专属字段（size / quality /
-/// workflowId 等）随各自模块（4.7–4.12）落地时再补。
+/// workflowId 等）随各自模块（4.7–4.12）落地时再补。工作流字段（4.11）对齐
+/// Go: <c>internal/app/provider.go</c> 的 json tag。
 /// </remarks>
 public sealed class ProviderConfig
 {
@@ -91,6 +92,29 @@ public sealed class ProviderConfig
 
     [JsonPropertyName("audioInstructions")]
     public string AudioInstructions { get; set; } = "";
+
+    // ---- 工作流协议（4.11）。对应 Go providerConfig 的工作流专属字段 ----
+
+    [JsonPropertyName("workflowId")]
+    public string WorkflowID { get; set; } = "";
+
+    [JsonPropertyName("webappId")]
+    public string WebappID { get; set; } = "";
+
+    [JsonPropertyName("workflowJson")]
+    public Dictionary<string, object?>? WorkflowJSON { get; set; }
+
+    [JsonPropertyName("workflowFields")]
+    public List<WorkflowField>? WorkflowFields { get; set; }
+
+    [JsonPropertyName("runningHubUseWallet")]
+    public bool RunningHubUseWallet { get; set; }
+
+    [JsonPropertyName("runningHubWalletApiKey")]
+    public string RunningHubWalletKey { get; set; } = "";
+
+    [JsonPropertyName("runningHubUploadApiKey")]
+    public string RunningHubUploadKey { get; set; } = "";
 }
 
 /// <summary>文本历史消息。对应 Go: <c>providerTextMessage</c>。</summary>

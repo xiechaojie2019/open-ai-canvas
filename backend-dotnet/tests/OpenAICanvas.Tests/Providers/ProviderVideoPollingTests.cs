@@ -352,15 +352,63 @@ public sealed class ProviderVideoPollingTests
             return Task.CompletedTask;
         };
         // 503 可重试且无计数上限，会一直轮询到总时限耗尽。
-        await Assert.ThrowsAsync<TimeoutException>(
+        // Go 同款实现在取消落入错误判定窗口时会把原始 503 直接抛出
+        //（retryableVideoPollError 视已取消上下文为不可重试），错误类型取决于取消时机。
+        var failure = await Record.ExceptionAsync(
             () => ProviderVideoPolling.RunPollLoopAsync(
                 "t1",
                 policy,
                 _ => throw new ProviderHttpException(503, "503", "", TimeSpan.Zero)));
+        Assert.NotNull(failure);
+        Assert.True(
+            failure is TimeoutException or ProviderHttpException,
+            $"预期轮询超时或原始 503，实际 {failure.GetType().Name}");
 
         // 连续失败期间不应反复播报，只播报一次进入重试态。
         Assert.Single(events);
         Assert.Equal(VideoPollEvent.Retrying, events[0]);
+    }
+
+    [Fact]
+    public async Task 超时_预算在休眠中途耗尽归为轮询超时()
+    {
+        VideoPollPolicy policy = NoSleepPolicy();
+        // 休眠触发取消后应归为 TimeoutException，而不是泄漏 OperationCanceledException。
+        policy.Sleep = (_, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => ProviderVideoPolling.RunPollLoopAsync(
+                "t1",
+                policy,
+                _ => Task.FromResult(new VideoPollOutcome(false, null))));
+    }
+
+    [Fact]
+    public async Task 超时_预算在查询中途耗尽归为轮询超时()
+    {
+        VideoPollPolicy policy = NoSleepPolicy();
+        int calls = 0;
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => ProviderVideoPolling.RunPollLoopAsync(
+                "t1",
+                policy,
+                token =>
+                {
+                    calls++;
+                    if (calls > 3)
+                    {
+                        // 模拟慢查询在轮询预算耗尽后被子上下文取消。
+                        token.ThrowIfCancellationRequested();
+                    }
+                    return Task.FromResult(new VideoPollOutcome(false, null));
+                }));
+
+        Assert.True(calls > 3);
     }
 
     [Fact]

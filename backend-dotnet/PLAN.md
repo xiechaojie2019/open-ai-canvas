@@ -259,7 +259,7 @@ backend-dotnet/
 | 4.8 | 视频协议（含遗留） | `app/provider_video.go` | ✅ 全通：`ProviderVideoPolling`（`runVideoPollLoop`：初始延迟/间隔、**两个独立计数器**（未找到/畸形响应）、Retry-After 拉长等待、重试态与恢复播报、可取消等待；`runVideoDownload`：有限次重试 + `VideoDownloadException`；`retryableVideoPollError` 全分类；`isProviderTaskNotReadyError` 固定短语判定）；`ProviderVideoTask`（OpenAI 风格 multipart+轮询+content 回落、Seedance `/videos`、Agent Plan `/contents/generations/tasks`、xAI `/videos` JSON；恢复任务只查询不重建；下载跨源不带鉴权）；`ProviderVideoOptions`（分辨率名匹配与固定分辨率、Seedance 时长/比例/分辨率归一化、首尾帧排序、素材 URL 策略）；声明式接入完成：未注入注册表补官方包（ensureOfficialProtocolAdapter）、显式空表报"插件未安装"、官方映射未安装时报错，均与 Go 路由边界一致 |
 | 4.9 | 音频协议 | `app/provider_audio.go` | ✅ `ProviderAudioTask` 已通：同步 `/audio/speech` 二进制（body 含 model/input/voice/response_format/speed，AudioSpeed 覆盖默认 1、AudioInstructions 映射 instructions）+ 异步 `/audio/tasks`（`data`/`result`/`output` 包装展开、id/task_id/request_id 任务 ID 严格取字符串、成功态 done/completed/succeeded/success/done、失败态 failed/cancelled/canceled/expired/error 带上游错误文案、2.5s 轮询间隔 1h 超时）；结果下载三分支（data URL 解码 + 尺寸上限校验、公网 URL 外链下载、渠道 `/content` 回落）与 `validateGeneratedAudio` 魔数校验（pcm/mpeg/wav/ogg/flac/aac 签名、非音频内容与声明不符均报错、空 octet-stream 按格式回退）；中文错误文案逐字对齐 Go；声明式接入与图片一致（只查 ctx 注入注册表，无 official-fallback 报错路径）；剩余：挂到任务 Worker（依赖 4.4/4.5，与 4.6 相同） |
 | 4.10 | HTTP 客户端与声明式协议 | `app/provider_http_client.go` `provider_protocol.go` | 🟡 出站安全边界已通（`ProviderTransport`：响应大小上限两道检查/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配/渠道 URL 版本前缀归一）；**协调层已通（`Platform/Coordinator`：固定窗口限流、并发租约与退避等待、渠道熔断、路由目录版本与路由屏蔽、`Application/ProviderRequestContext` 适配器）**，并已接入 `ProviderTextTask`（熔断前置短路 → 占槽 → 请求 → 记结果 → 释放）；**声明式协议执行已通（`ProviderProtocolExecutor`：白名单 method 校验、body/URL/头装配、11 类鉴权驱动含 AWS SigV4/TC3/火山 V4、multipart 媒体加载；`ProviderProtocolPayload`：`protocolRequestFromInput` 投影、素材角色判定、`finishProtocolResult` 结果整形；`ProviderProtocolTask`：create→poll→download 三阶段编排、幂等键、ExtractProviderTaskID 回落、结果下载与 media 归一）**；剩余：Redis Lua 脚本的集成测试 |
-| 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ☐ |
+| 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ✅ `ProviderWorkflowTask` 全链路已通：JSON→节点表解析（含槽位计数与列表展开）、字段角色推断/覆盖安全性、分辨率默认值与槽位文案归一（与 Go 完全一致，无默认值返回原值）、`runninghub-workflow-{image,video,audio}` 三类 interfaceType 提交、轮询统一走 `ProviderVideoPolling`（声明式策略可注入，image 遗留分支固定 2.5s 间隔 1h 预算）、结果下载与 media 归一、协议信封解析；已挂接 Worker 执行分支与创建准入（`workflowPluginIDForInterface` 对齐 Go，仅认三类后缀）；28 条契约测试覆盖解析/归一/提交/轮询/下载/信封/SSRF 前置；剩余：插件启用校验留在 admission 层（与 Go 相同），插件注册表仍视为未启用（4.12 的 plugin runtime） |
 | 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ☐ |
 | 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ☐ |
 | 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 transcription 创建已通（whisper 执行待）；render 创建待做 |
@@ -420,6 +420,16 @@ backend-dotnet/
 ---
 
 ## 九、部署与生产修复日志
+
+### 2026-09-21 · 4.11 工作流 Provider 迁移完成
+
+`ProviderWorkflowTask` 全链路已通（Go `workflow_provider.go` 主路径）：JSON→节点表解析（槽位计数/列表展开）、字段角色推断与覆盖安全、分辨率默认值与槽位文案归一（无默认值返回原值，与 Go 一致）、`runninghub-workflow-{image,video,audio}` 三类 interfaceType 提交、轮询复用 `ProviderVideoPolling`（声明式策略可注入；image 遗留分支固定 2.5s 间隔 1h 预算）、结果下载与 media 归一、协议信封解析。Worker 执行分支与创建准入同步挂接：`workflowPluginIDForInterface` 仅认三类后缀（对齐 Go，裸 `runninghub` 不走工作流插件）。
+
+顺带修复两个迁移 bug：`ProviderHelpers.AtoiOrInvalid`（非数字状态串如 `QUEUED` 不再被误归一为 0=成功）与 `ProviderVideoPolling` 预算在休眠/查询中途耗尽时 OperationCanceledException 泄漏（统一归为轮询超时，与 Go 子上下文超时语义一致）。
+
+测试侧新增 `InternalsVisibleTo`（`AssemblyInfo.cs`），28 条工作流契约测试覆盖解析/归一/提交/轮询/下载/信封/SSRF 前置；全量 1447/1447 通过（一轮 `ChannelModelCatalogTests` 并行噪音失败，单独复跑即过）。
+
+已知限制：插件启用校验留在 admission 层（与 Go 相同）；插件注册表仍视为未启用，留待 4.12 的 plugin runtime。
 
 ### 2026-09-21 · 4.5 计费协调与账单巡检收尾完成
 

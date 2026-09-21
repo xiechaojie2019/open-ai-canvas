@@ -5,6 +5,7 @@ using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Providers;
 using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
 
@@ -21,9 +22,9 @@ namespace OpenAICanvas.Application;
 /// </remarks>
 public sealed partial class TaskCreationService
 {
-    /// <summary>RunningHub 插件的 interfaceType 集合（插件注册表未移植，一律视为未启用）。</summary>
+    /// <summary>工作流协议 interfaceType 映射。对应 Go: <c>workflowPluginIDForInterface</c>。</summary>
     private static bool IsRunningHubInterface(string value) =>
-        value.Trim().ToLowerInvariant() is "runninghub" or "runninghub_workflow";
+        ProviderWorkflowValues.IsRunningHubInterface(value);
 
     /// <summary>队列任务创建。对应 Go: <c>CreateTask</c> 的队列分支。</summary>
     /// <summary>工作流协议或文本回放判定。对应 Go creation.go 的合并条件。</summary>
@@ -43,13 +44,13 @@ public sealed partial class TaskCreationService
         bool workflowProviderTask = TaskInputUsesWorkflowProvider(input);
         if (workflowProviderTask)
         {
-            // 插件注册表未移植：RunningHub 工作流一律未启用（与默认部署行为一致）。
             string interfaceType = InputConfigString(input, "interfaceType").Trim().ToLowerInvariant();
-            if (interfaceType.Length == 0 || IsRunningHubInterface(interfaceType))
+            if (!ProviderWorkflowValues.WorkflowPluginIDForInterface(interfaceType).Ok)
             {
-                throw AppError.Forbidden("RunningHub 工作流插件未启用");
+                throw AppError.Forbidden("未知工作流插件");
             }
-            throw AppError.Forbidden("未知工作流插件");
+            // 插件注册表未移植：RunningHub 工作流默认未启用（与 Go 默认部署一致）。
+            throw AppError.Forbidden("RunningHub 工作流插件未启用");
         }
 
         bool frontendEnabled = false;

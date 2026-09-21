@@ -274,7 +274,9 @@ public sealed class TaskQueueAdmissionEndpointTests : IDisposable
             input = new
             {
                 mode = "image",
-                config = new { interfaceType = "runninghub", baseUrl = "https://x", apiKey = "k" },
+                // Go 的请求形状是完整接口类型（task_creation_test.go 同款），
+                // 裸 "runninghub" 在 Go 判定里不是工作流协议。
+                config = new { interfaceType = "runninghub-workflow-image", baseUrl = "https://x", apiKey = "k" },
             },
         });
         // Go 的 POST /tasks handler 对 CreateTask 所有错误统一 fail(c, 400, err)。

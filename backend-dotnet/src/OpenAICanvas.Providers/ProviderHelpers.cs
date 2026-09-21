@@ -218,6 +218,12 @@ public static class ProviderHelpers
             ? parsed
             : 0;
 
+    /// <summary>对应 Go: <c>mapNumber</c>。非数字字符串视为无效（-1），而 AtoiOrZero 兜底 0。</summary>
+    public static int AtoiOrInvalid(string? value) =>
+        int.TryParse((value ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+            ? parsed
+            : -1;
+
     /// <summary>
     /// 参考素材是否走对象存储（决定是否需要签名 URL 而非内联 data URL）。
     /// 对应 Go: <c>resourceUsesObjectStorage</c>（provider 非 local 即视为对象存储）。
