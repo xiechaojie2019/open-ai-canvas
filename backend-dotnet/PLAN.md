@@ -421,6 +421,29 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-21 · 协议目录 404 修复（bf43d74e）
+
+**现象**：管理后台「渠道模型」编辑弹窗报"协议目录读取失败 / Not Found"。
+前端 `fetchPluginProviderCatalog("admin.system-channel")` 调用
+`GET /api/plugins/catalog`，.NET 侧没有 /plugins 路由，MapFallback 直接回 404。
+
+**修复**（插件中心 10.1 仍保持未做，只补目录这一条路由）：
+
+1. `OpenAICanvas.Application/ProtocolCatalogService.cs`：
+   `ProtocolAdapterLookup.OfficialFallback.List(scope, capability)` 投影为
+   Go `PluginProviderCatalogItem` 同形 JSON（create/poll/contentType 摘要取自
+   清单归一化后的 Metadata；workflows 恒为空数组，插件运行时未移植）。
+2. `OpenAICanvas.Web/Endpoints/PluginEndpoints.cs`：`GET /plugins/catalog`
+   登录即放行（对应 Go `requirePluginCenterAccess`：admin 直接放行、普通用户
+   只查登录不查插件中心开关）；scope 默认 user.custom-channel，Trim 后过滤。
+3. Program.cs 在 MapFallback 之前挂载 MapPluginRoutes。
+
+**验证**：新增 3 条端点契约测试（未登录 401 / 官方插件包目录字段与
+scope+capability 过滤 / 空结果边界），全量 1378/1378 通过。
+部署 211 冒烟：登录后 `GET /api/plugins/catalog?scope=admin.system-channel`
+返回 code:0 且 providers 非空（含 Adobe Firefly 等官方声明式接口），
+渠道模型弹窗协议下拉恢复正常。
+
 ### 2026-09-20 · 首次部署 192.168.0.211 与 Dapper 集合参数修复（e94b54cb）
 
 **部署链路**：本地 publish linux-x64，tar 打包后 SCP 上传 /opt/open-ai-canvas-dotnet/，
