@@ -26,12 +26,21 @@ export type UploadedFile = {
     remoteUploadError?: string;
 };
 
+type UploadMediaFileOptions = {
+    /**
+     * 由可重放的业务流程提供稳定键时，资源直传与本地降级必须复用它，
+     * 这样刷新或重试不会创建重复的远程资源。
+     */
+    idempotencyKey?: string;
+    fileName?: string;
+};
+
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
 
-export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<UploadedFile> {
+export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?: (uploadedBytes: number, totalBytes: number) => void, options: UploadMediaFileOptions = {}): Promise<UploadedFile> {
     // 直传和失败后的本地同步必须复用同一上传身份，避免响应丢失后创建第二个对象。
-    const storageKey = `${prefix}:${getActiveUserScope()}:${nanoid()}`;
+    const storageKey = options.idempotencyKey?.trim() || `${prefix}:${getActiveUserScope()}:${nanoid()}`;
     const blob = input;
     const previewUrl = URL.createObjectURL(blob);
     let retainPreviewUrl = false;
@@ -86,7 +95,7 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
         let remoteUploadError = "";
         try {
             const kind = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
-            const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
+            const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: options.fileName || (input instanceof File ? input.name : undefined), idempotencyKey: storageKey }, onProgress);
             try {
                 await primeResourceBlobCache(resourceStorageKey(resource.id), blob);
             } catch (error) {

@@ -5,8 +5,9 @@ import { readVideoSize } from "@/lib/video-size";
 import { parseBackendGenerationResult, type BackendGenerationResult } from "@/services/api/generation-task";
 import { ApiError } from "@/services/api/request";
 import { linkProjectAsset, moveProjectAsset, updateProjectAssetCategory } from "@/services/api/projects";
+import { resourceIdFromStorageKey } from "@/services/api/resources";
 import type { GenerationTask, GenerationTaskOutput } from "@/services/api/task-center";
-import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
+import { deleteStoredMedia, getMediaBlob, resolveMediaUrl, setMediaBlob, uploadMediaFile } from "@/services/file-storage";
 import { createGenerationTaskMaterializer, createIdempotentMaterializeOutput, type MaterializeGenerationTaskOutput } from "@/services/generation-task-materializer";
 import { withGenerationArtifactCommitLock } from "@/services/generation-asset-repository";
 import { uploadGeneratedAssetToConfiguredSources } from "@/services/external-asset-sources";
@@ -252,17 +253,26 @@ async function storedGenerationMedia(dataUrl: string, effectKey: string, mediaTy
         },
     });
     throwIfAborted(signal);
-    const url = await resolveMediaUrl(storageKey);
+    // 生成结果不能只停留在 IndexedDB：对话恢复时 Object URL 已失效，而 data URL 对较大
+    // 视频也会让播放器无法稳定起播。先保留本地副本，再用同一 effect key 幂等上传资源库。
+    const uploaded = await uploadMediaFile(blob, `generation-${mediaType}`, undefined, {
+        idempotencyKey: storageKey,
+        fileName: `generated.${mediaType === "video" ? "mp4" : "mp3"}`,
+    });
+    throwIfAborted(signal);
+    if (uploaded.storageKey !== storageKey) await deleteStoredMedia([storageKey]);
+    const url = await resolveMediaUrl(uploaded.storageKey, uploaded.url);
     throwIfAborted(signal);
     if (!url) throw new Error(`${mediaType === "video" ? "视频" : "音频"}结果资源不可用`);
     return {
         url,
-        storageKey,
-        width: metadata.width,
-        height: metadata.height,
-        durationMs: metadata.durationMs,
-        bytes: metadata.bytes || blob.size,
-        mimeType: metadata.mimeType || blob.type,
+        storageKey: uploaded.storageKey,
+        coverUrl: uploaded.preview?.url,
+        width: uploaded.width || metadata.width,
+        height: uploaded.height || metadata.height,
+        durationMs: uploaded.durationMs || metadata.durationMs,
+        bytes: uploaded.bytes || metadata.bytes || blob.size,
+        mimeType: uploaded.mimeType || metadata.mimeType || blob.type,
     };
 }
 
@@ -305,17 +315,19 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
     if (input.output.mediaType === "video") {
         const video = result.video;
         if (!video) throw new Error("生成任务缺少视频输出");
-        const stored = video.storageKey
+        const stored = video.storageKey && resourceIdFromStorageKey(video.storageKey)
             ? {
                   url: await resolveMediaUrl(video.storageKey, video.dataUrl),
                   storageKey: video.storageKey,
+                  coverUrl: undefined,
                   width: video.width,
                   height: video.height,
                   durationMs: video.durationMs,
                   bytes: video.bytes || 0,
                   mimeType: video.mimeType || "video/mp4",
               }
-            : await storedGenerationMedia(
+            : video.dataUrl
+              ? await storedGenerationMedia(
                   video.dataUrl,
                   input.effectKey,
                   "video",
@@ -328,14 +340,24 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
                   },
                   scope,
                   input.signal,
-              );
+              )
+              : {
+                    url: await resolveMediaUrl(video.storageKey, video.dataUrl),
+                    storageKey: video.storageKey || "",
+                    coverUrl: undefined,
+                    width: video.width,
+                    height: video.height,
+                    durationMs: video.durationMs,
+                    bytes: video.bytes || 0,
+                    mimeType: video.mimeType || "video/mp4",
+                };
         if (!stored.url) throw new Error("视频结果资源不可用");
         const measuredSize = stored.width && stored.height ? undefined : await readVideoSize(stored.url, input.signal);
         throwIfAborted(input.signal);
         return {
             kind: "video",
             title: "生成视频",
-            coverUrl: canvasVideoAssetPreviewUrl(stored.url),
+            coverUrl: canvasVideoAssetPreviewUrl(stored.url, stored.coverUrl),
             tags: ["生成"],
             status: "confirmed",
             source: "生成任务",
@@ -354,7 +376,7 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
 
     const audio = result.audio;
     if (!audio) throw new Error("生成任务缺少音频输出");
-    const stored = audio.storageKey
+    const stored = audio.storageKey && resourceIdFromStorageKey(audio.storageKey)
         ? {
               url: await resolveMediaUrl(audio.storageKey, audio.dataUrl),
               storageKey: audio.storageKey,
@@ -362,7 +384,8 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
               bytes: audio.bytes || 0,
               mimeType: audio.mimeType || "audio/mpeg",
           }
-        : await storedGenerationMedia(
+        : audio.dataUrl
+          ? await storedGenerationMedia(
               audio.dataUrl,
               input.effectKey,
               "audio",
@@ -373,7 +396,14 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
               },
               scope,
               input.signal,
-          );
+          )
+          : {
+                url: await resolveMediaUrl(audio.storageKey, audio.dataUrl),
+                storageKey: audio.storageKey || "",
+                durationMs: audio.durationMs,
+                bytes: audio.bytes || 0,
+                mimeType: audio.mimeType || "audio/mpeg",
+            };
     if (!stored.url) throw new Error("音频结果资源不可用");
     return {
         kind: "audio",
