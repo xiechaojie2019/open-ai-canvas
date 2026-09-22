@@ -101,7 +101,7 @@ export function reconcileCreationTaskMessages(runtime: CreationRuntime, conversa
                 changed = true;
                 return { ...message, ...recovery };
             }
-            if (message.role !== "assistant" || message.status !== "pending") return message;
+            if (message.role !== "assistant" || (message.status !== "pending" && message.status !== "error")) return message;
             const expectedTaskCount = Math.max(0, ...matches.map((task) => task.clientContext?.batchCount || 0));
             if (!matches.length || (expectedTaskCount > 0 && matches.length < expectedTaskCount) || matches.some((task) => task.status === "queued" || task.status === "running")) return message;
 
