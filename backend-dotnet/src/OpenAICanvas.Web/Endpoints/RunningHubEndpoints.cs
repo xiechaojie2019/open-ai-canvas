@@ -12,8 +12,8 @@ namespace OpenAICanvas.Web.Endpoints;
 /// 对应 Go: <c>handler/runninghub.go</c> 与 <c>handler/plugin.go</c> 的 <c>GET /plugins/status</c>。
 /// </summary>
 /// <remarks>
-/// 插件中心（安装 / 卸载 / 启停，Go 的其余 /plugins 路由）属于 10.1；
-/// 本轮补齐任务创建与工作流设置页依赖的状态读取与管理代理。
+/// GET /plugins/status 与插件中心路由统一在 <see cref="PluginEndpoints"/>；
+/// 本文件只保留 RunningHub 管理代理，避免同路径重复注册。
 /// </remarks>
 public static class RunningHubEndpoints
 {
@@ -23,34 +23,6 @@ public static class RunningHubEndpoints
             (Func<HttpContext, Task<IResult>>)(context => FetchHandler(context, service, app: false)));
         api.MapPost("/runninghub/app-info",
             (Func<HttpContext, Task<IResult>>)(context => FetchHandler(context, service, app: true)));
-        api.MapGet("/plugins/status", async (HttpContext context, CancellationToken cancellationToken) =>
-        {
-            OpenAICanvas.Domain.Entities.User user;
-            try
-            {
-                user = await service.CurrentUserAsync(
-                    SessionCookie.Read(context), cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception error)
-            {
-                IResult failure = ApiResults.FailService(error, context);
-                await failure.ExecuteAsync(context).ConfigureAwait(false);
-                return Results.Empty;
-            }
-
-            try
-            {
-                (IReadOnlyDictionary<string, string> statuses, IReadOnlyDictionary<string, WorkflowPluginStateView> states) =
-                    await service.WorkflowPlugins.StatusesForUserAsync(user.ID, cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { statuses, states });
-            }
-            catch (Exception error)
-            {
-                IResult failure = ApiResults.FailService(error, context);
-                await failure.ExecuteAsync(context).ConfigureAwait(false);
-                return Results.Empty;
-            }
-        });
     }
 
     private static async Task<IResult> FetchHandler(

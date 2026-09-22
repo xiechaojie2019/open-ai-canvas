@@ -132,4 +132,39 @@ public sealed partial class Repository
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>各插件的用户启用计数（仅 enabled 行）。对应 Go: <c>EnabledPluginUserCounts</c>。</summary>
+    public async Task<Dictionary<string, long>> EnabledPluginUserCountsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        IEnumerable<(string PluginID, long EnabledCount)> rows = await connection.QueryAsync<(string, long)>(
+            new CommandDefinition(
+                "SELECT plugin_id AS PluginID, COUNT(*) AS EnabledCount FROM user_plugin_states WHERE enabled = 1 GROUP BY plugin_id",
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return rows.ToDictionary(row => row.PluginID, row => row.EnabledCount, StringComparer.Ordinal);
+    }
+
+    /// <summary>删除插件全部用户状态（卸载时清理）。对应 Go: <c>DeleteUserPluginStates</c>。</summary>
+    public async Task DeleteUserPluginStatesAsync(
+        string pluginID, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM user_plugin_states WHERE plugin_id = @pluginID",
+            new { pluginID },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>删除插件平台状态行（卸载时清理）。返回是否删除了行。</summary>
+    public async Task<bool> DeletePluginPlatformStateAsync(
+        string pluginID, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        int affected = await connection.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM plugin_platform_states WHERE plugin_id = @pluginID",
+            new { pluginID },
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return affected > 0;
+    }
 }

@@ -177,6 +177,11 @@ await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
 await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
     .PromptTemplates.EnsureDefaultPromptTemplatesAsync().ConfigureAwait(false);
 
+// 插件运行时引导（10.1/10.2）：扫描官方包目录、合并 bundled 清单并加载注册表。
+// 与 Go 一致在监听前完成；坏包跳过不阻断启动。
+await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
+    .Plugins.BootstrapAsync().ConfigureAwait(false);
+
 CanvasLog.Configure(app.Services.GetRequiredService<ILoggerFactory>());
 
 // 与 Go cmd/server/main.go 相同：在开始监听前，为已有系统渠道补齐 ModelsJSON 对应的

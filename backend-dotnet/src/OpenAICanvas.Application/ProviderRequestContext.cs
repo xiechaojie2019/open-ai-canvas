@@ -1,5 +1,6 @@
 #nullable enable
 using OpenAICanvas.Platform;
+using OpenAICanvas.Protocol;
 using OpenAICanvas.Providers;
 
 namespace OpenAICanvas.Application;
@@ -21,6 +22,7 @@ public sealed class ProviderRequestContext : IProviderRequestContext
     private readonly Coordinator? _coordinator;
     private readonly IRuntimePolicyProvider _policy;
     private readonly Func<string, int>? _channelConcurrencyLimit;
+    private readonly ProtocolAdapterRegistry? _declarativeAdapter;
 
     /// <param name="policy">运行时策略来源（读取响应上限、熔断阈值与渠道并发）。</param>
     /// <param name="coordinator">多实例协调器；<c>null</c> 时退化为单实例无协调行为。</param>
@@ -30,12 +32,17 @@ public sealed class ProviderRequestContext : IProviderRequestContext
     public ProviderRequestContext(
         IRuntimePolicyProvider policy,
         Coordinator? coordinator = null,
-        Func<string, int>? channelConcurrencyLimit = null)
+        Func<string, int>? channelConcurrencyLimit = null,
+        ProtocolAdapterRegistry? declarativeAdapter = null)
     {
         _policy = policy;
         _coordinator = coordinator;
         _channelConcurrencyLimit = channelConcurrencyLimit;
+        _declarativeAdapter = declarativeAdapter;
     }
+
+    /// <summary>声明式插件注册表快照。对应 <c>IProviderRequestContext.DeclarativeAdapter</c>。</summary>
+    ProtocolAdapterRegistry? IProviderRequestContext.DeclarativeAdapter => _declarativeAdapter;
 
     /// <summary>
     /// 上游响应字节上限，取自运行时策略的"生成文件大小"限制。

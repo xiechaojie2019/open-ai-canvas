@@ -84,6 +84,9 @@ public sealed class CanvasService
         ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
         TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);
         WorkflowPlugins = new WorkflowPluginGate(repository);
+        // 插件运行时（10.1/10.2）：注册表 + 管理服务。Bootstrap 在启动处异步执行。
+        Plugins = new PluginRuntime(repository, dataDir);
+        PluginManagement = new PluginManagementService(repository, Plugins, Features);
         RunningHub = new RunningHubManagementService();
         TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
         AdminLogMedia = new AdminLogMediaService(repository,
@@ -629,6 +632,12 @@ public sealed class CanvasService
 
     /// <summary>工作流插件门控（4.12）。对应 Go 的 workflow_plugins + plugin_states 组合。</summary>
     public WorkflowPluginGate WorkflowPlugins { get; }
+
+    /// <summary>插件运行时（10.1/10.2）。对应 Go: <c>app.PluginRuntime</c>。</summary>
+    public PluginRuntime Plugins { get; }
+
+    /// <summary>插件管理服务（10.1）。对应 Go: <c>app.PluginManagement</c>。</summary>
+    public PluginManagementService PluginManagement { get; }
 
     /// <summary>RunningHub 管理代理（4.12）。对应 Go: <c>runninghub_management.go</c>。</summary>
     public RunningHubManagementService RunningHub { get; }

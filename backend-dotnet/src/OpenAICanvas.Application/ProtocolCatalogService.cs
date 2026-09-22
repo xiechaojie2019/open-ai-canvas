@@ -63,9 +63,10 @@ public sealed class ProtocolCatalogService
     /// <see cref="Protocol.Metadata"/>，直接取用即可（等价 Go 的「registry 元数据覆盖」）。
     /// </summary>
     public static System.Collections.Generic.List<PluginProviderCatalogItem> PluginProviderCatalog(
-        string scope, string capability, bool includeUnavailable)
+        string scope, string capability, bool includeUnavailable,
+        ProtocolAdapterRegistry? registry = null)
     {
-        System.Collections.Generic.List<Metadata> items = ProtocolAdapterLookup.OfficialFallback.List(
+        System.Collections.Generic.List<Metadata> items = (registry ?? ProtocolAdapterLookup.OfficialFallback).List(
             scope.Trim(), capability.Trim(), includeUnavailable);
 
         System.Collections.Generic.List<PluginProviderCatalogItem> providers = [];

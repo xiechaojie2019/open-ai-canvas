@@ -198,7 +198,7 @@ public sealed class ProtocolAdapterRegistry
 }
 
 /// <summary>官方插件包目录定位。对应 Go: <c>generation.OfficialPluginPackageDir</c>。</summary>
-internal static class ProtocolPluginPackageDir
+public static class ProtocolPluginPackageDir
 {
     public static string? Find()
     {

@@ -3,6 +3,7 @@ using System.Text.Json;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Protocol;
 using OpenAICanvas.Platform;
 using OpenAICanvas.Providers;
 using OpenAICanvas.Outbound;
@@ -338,7 +339,9 @@ public sealed class TaskWorkerService
         }
 
         input.Config = await ResolveProviderConfigAsync(input.Config, cancellationToken).ConfigureAwait(false);
-        ProviderRequestContext context = new(_policy, _coordinator);
+        // 注入插件运行时的声明式注册表快照（10.2）：图片/视频/音频声明式分支由此生效。
+        ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();
+        ProviderRequestContext context = new(_policy, _coordinator, declarativeAdapter: declarativeAdapters);
         if (ProviderWorkflowValues.IsWorkflowProviderInterface(input.Config.InterfaceType))
         {
             // 后台执行仍要过平台门控（对应 Go: provider.go 的 RequireWorkflowPluginForInterface）：

@@ -239,7 +239,7 @@ backend-dotnet/
 | 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；models 子资源路由已通（见 3.2） |
 | 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | 🟡 列表/排序/价格档附着已通；保存/删除/fetch/import/test 待做 |
 | 3.3 | 逻辑模型与版本 | `app/logical_models.go` | 🟡 公开目录/管理端 CRUD/模拟/报价已通；工作流选路待做 |
-| 3.4 | 模型目录发现 | `provider/registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest wire 类型/校验归一化/ManifestAdapter/适配器注册表）；声明式 Providers 执行接入完成（`ProviderProtocolTask` create→poll→download 编排，图片/视频入口按 ctx 注册表路由）；剩余：运行时注册表动态注入（随 10.1/10.2） |
+| 3.4 | 模型目录发现 | `provider/registry.go` | ✅ 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest wire 类型/校验归一化/ManifestAdapter/适配器注册表）；声明式 Providers 执行接入完成（`ProviderProtocolTask` create→poll→download 编排，图片/视频入口按 ctx 注册表路由）；运行时注册表动态注入完成（PluginRuntime 快照经 TaskWorker 注入） |
 | 3.5 | 模型能力矩阵 | `app/model_capability.go` | ✅ 读路径完成（解码/归一化/投影/校验） |
 | 3.6 | 路由目录快照与健康度 | `app/model_router.go` | ✅ 快照/匹配/选路/模拟完成（Redis 协调待接） |
 | 3.7 | 模型 SKU 选择器 | `model/model_sku.go` | ✅ |
@@ -328,8 +328,8 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ☐ |
-| 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | 🟡 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest 线格式/校验归一化/适配器注册表 + 官方 fallback 加载）；Providers 执行层完成（`ProviderProtocolTask` 三阶段编排 + 图片/视频入口注册表路由，ctx 注入语义与 Go 一致）；运行时管理（安装/启停/删除）待做 |
+| 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ✅ `PluginRuntime`（官方包目录扫描、包缓存、bundled 工作流/支付清单合并、registry JSON 持久化、安装/卸载/包下载）+ `PluginManagementService`（来源策略表、用户启停、平台两级可用性、管理端可用性/安装/卸载）+ 插件中心端点（catalog/status/activation/plugins CRUD/admin availability，插件中心组受 FeatureNames.PluginCenter 门控） |
+| 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | ✅ 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest 线格式/校验归一化/适配器注册表 + 官方 fallback 加载）；Providers 执行层完成（`ProviderProtocolTask` 三阶段编排 + 图片/视频入口注册表路由，ctx 注入语义与 Go 一致）；运行时管理完成（安装/启停/删除，已安装声明式插件经 PluginRuntime 注册表进入协议执行） |
 | 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/删除/加入/点赞 + 包文件读取 5 条 + 创建/更新完成（15 条路由）；install/sync 待做 |
 | 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ 包目录布局与 manifest 解析待移植（install/sync/file 读的前置） |
 | 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |
@@ -421,6 +421,16 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-22 · 10.1/10.2 插件运行时与声明式协议插件完成
+
+`PluginRuntime`（`OpenAICanvas.Application/PluginRuntime.cs`）：启动扫描 `CANVAS_OFFICIAL_PLUGIN_DIR`（默认回落 `/app/plugin-packages` 与仓库 `plugin-packages/`）下的 `.yingce-plugin` 包（zip + manifest.json，`ProtocolPluginPackage.Parse` 校验 16MB 包/512KB manifest/条目白名单/路径穿越/runtime 交叉引用），官方包进包缓存（SHA256 命名）并合并 bundled 工作流（runninghub-workflow-provider）与支付清单（官方目录已有同名包时不重复入表）；registry JSON 原子写持久化。`PluginManagementService` 管理来源策略表（官方应用/系统支付/上传插件）、用户启停、平台两级可用性与管理端动作。
+
+端点：GET /plugins/status（statuses + states 聚合，与 WorkflowPluginGate 语义一致——无平台状态行即默认停用）、PUT /plugins/:id/activation、GET/POST/DELETE /plugins、GET /plugins/:id/package、GET /admin/plugins、PUT /admin/plugins/:id/availability、POST /plugins/:id/enable|disable；插件中心组受 FeatureNames.PluginCenter 门控。`/plugins/status` 曾在 PluginEndpoints 与 RunningHubEndpoints 重复注册导致 AmbiguousMatchException 500，已收敛到 PluginEndpoints 单处。
+
+协议执行链路：TaskWorker 执行声明式任务时注入 `CanvasService.Plugins.RegistrySnapshot()`，已安装声明式插件的 create→poll→download 编排与图片/视频入口路由复用 3.4 的 `ProviderProtocolTask`。
+
+测试：新增 `PluginRuntimeTests` 4 条（bootstrap 数量与 bundled 合并、安装/卸载往返、内置插件保护、协议注册表快照）；全量 1468 条，1467 通过 + 1 条 ChannelModelWriteTests 并行噪音（单独复跑通过）。修复期间同时修正：测试包构造的 manifest.json 带 UTF-8 BOM 导致解码失败。
+
 ### 2026-09-21 · 生图任务进程内秒败修复（JSON 注解 + 配置大小写失配）
 
 线上生图任务全部在 worker 内秒败并误报"连接模型服务失败"。诊断日志（任务失败诊断 error 级）拿到决定性堆栈，实际是两层问题叠加：
@@ -445,7 +455,7 @@ ProviderExceptions.UserFacing 补充熔断/渠道并发槽/传输异常分支，
 
 测试：新增 9 条（仓储 upsert 2、门控 4、端点 3），全量 1456/1456 通过（`ChannelOrderTests` 一轮并行噪音失败，单独复跑即过，与本次改动无关）。
 
-已知限制：插件中心安装/卸载/启停 UI 与管理端点属 10.1；平台开关当前仅能通过 `plugin_platform_states` 数据行开启。
+已知限制：插件中心 Web UI 属前端任务；管理端点（GET /admin/plugins、PUT /admin/plugins/:id/availability、POST/DELETE /plugins）已由 10.1 提供，平台开关可通过管理端点或 `plugin_platform_states` 数据行控制。
 
 ### 2026-09-21 · 4.11 部署 211
 
