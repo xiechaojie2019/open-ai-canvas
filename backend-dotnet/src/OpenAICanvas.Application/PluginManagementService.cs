@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
@@ -11,6 +12,7 @@ namespace OpenAICanvas.Application;
 /// <summary>用户可见的插件状态视图。对应 Go: <c>PluginStateView</c>。</summary>
 public class PluginStateView
 {
+    [JsonPropertyName("pluginId")]
     public string PluginID { get; set; } = "";
     public bool PlatformAvailable { get; set; }
     public bool UserEnabled { get; set; }
@@ -221,16 +223,16 @@ public sealed class PluginManagementService
     }
 
     /// <summary>管理端全量状态。对应 Go: <c>AdminPluginStates</c>。</summary>
-    public async Task<List<AdminPluginStateView>> AdminPluginStatesAsync(
+    public async Task<Dictionary<string, AdminPluginStateView>> AdminPluginStatesAsync(
         CancellationToken cancellationToken = default)
     {
         Dictionary<string, long> counts = await _repository
             .EnabledPluginUserCountsAsync(cancellationToken).ConfigureAwait(false);
-        List<AdminPluginStateView> states = [];
+        Dictionary<string, AdminPluginStateView> states = new(StringComparer.Ordinal);
         foreach (PluginView plugin in _runtime.List())
         {
             PluginStateView baseState = await StateForUserAsync("", plugin, cancellationToken).ConfigureAwait(false);
-            states.Add(new AdminPluginStateView
+            states[baseState.PluginID] = new AdminPluginStateView
             {
                 PluginID = baseState.PluginID,
                 PlatformAvailable = baseState.PlatformAvailable,
@@ -241,7 +243,7 @@ public sealed class PluginManagementService
                 CanConfigure = baseState.CanConfigure,
                 BlockedReason = baseState.BlockedReason,
                 EnabledUserCount = counts.TryGetValue(baseState.PluginID, out long count) ? count : 0,
-            });
+            };
         }
         return states;
     }

@@ -97,7 +97,7 @@ public static class PluginEndpoints
                 {
                     plugin.Management = service.PluginManagement.ManagementFor(plugin);
                 }
-                List<AdminPluginStateView> states = await service.PluginManagement
+                Dictionary<string, AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { plugins, states });
             }
@@ -181,7 +181,7 @@ public static class PluginEndpoints
                 {
                     plugin.Management = service.PluginManagement.ManagementFor(plugin);
                 }
-                List<AdminPluginStateView> states = await service.PluginManagement
+                Dictionary<string, AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { plugins, states });
             }
@@ -203,9 +203,9 @@ public static class PluginEndpoints
                 bool available = await ReadBoolBodyAsync(context, "available", cancellationToken).ConfigureAwait(false);
                 await service.PluginManagement.SetPluginPlatformAvailabilityAsync(
                     user, pluginId, available, cancellationToken).ConfigureAwait(false);
-                List<AdminPluginStateView> states = await service.PluginManagement
+                Dictionary<string, AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
-                AdminPluginStateView? state = states.FirstOrDefault(item => item.PluginID == pluginId.Trim());
+                states.TryGetValue(pluginId.Trim(), out AdminPluginStateView? state);
                 return ApiResults.Ok(new { state });
             }
             catch (Exception error)
@@ -225,9 +225,10 @@ public static class PluginEndpoints
                 CanvasService.RequireAdmin(user);
                 await service.PluginManagement.SetPluginPlatformAvailabilityAsync(
                     user, pluginId, available: true, cancellationToken).ConfigureAwait(false);
-                List<AdminPluginStateView> states = await service.PluginManagement
+                Dictionary<string, AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { state = states.FirstOrDefault(item => item.PluginID == pluginId.Trim()) });
+                states.TryGetValue(pluginId.Trim(), out AdminPluginStateView? enabledState);
+                return ApiResults.Ok(new { state = enabledState });
             }
             catch (Exception error)
             {
@@ -246,9 +247,10 @@ public static class PluginEndpoints
                 CanvasService.RequireAdmin(user);
                 await service.PluginManagement.SetPluginPlatformAvailabilityAsync(
                     user, pluginId, available: false, cancellationToken).ConfigureAwait(false);
-                List<AdminPluginStateView> states = await service.PluginManagement
+                Dictionary<string, AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { state = states.FirstOrDefault(item => item.PluginID == pluginId.Trim()) });
+                states.TryGetValue(pluginId.Trim(), out AdminPluginStateView? disabledState);
+                return ApiResults.Ok(new { state = disabledState });
             }
             catch (Exception error)
             {
