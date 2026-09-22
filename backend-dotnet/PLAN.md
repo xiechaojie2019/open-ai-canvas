@@ -421,6 +421,16 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-22 · 视频任务 UI 路径 400 修复（执行端补注入视频能力声明）
+
+上一轮修复后冒烟脚本（不带 vquality）5 秒成功，但 UI 创作页发同任务仍被 Ark 拒绝："the parameter resolution specified in the request is not valid"。宿主机直连重放定位到 UI 与脚本的参数差异：UI 的 config 带 `vquality:"720"`（前端 store 默认 720，非 "720p"），组包成 `resolution:"720"` 直传上游。
+
+根因是 .NET 移植漏掉了 Go 的 `validateResolvedVideoCapability`：Go 在执行端按渠道模型能力合同重放归一（`videoResolutionNameRequest` 拿 profile 把 "720" 匹配为声明里的 "720p"），.NET 的 `TaskWorkerService.ExecuteProviderTaskAsync` 只反序列化 input + 解析渠道，从未注入 `input.VideoCapability`，profile 为 null 时归一函数返回空串，裸值原样透传。
+
+修复：新增 `Capabilities/ChannelModelCapability.cs`（NormalizedChannelModelCapability 从 Admission 抽出共用 + Application→Providers 镜像映射 MirrorVideoConfig），TaskWorkerService 对 canvas_video/video_ 任务执行前查 channel_models 能力合同注入 `input.VideoCapability` 并 ApplyFixedVideoResolution；渠道缺失或能力配置为空时保持历史行为（null，参数原样透传），不给无能力配置的模型引入新报错。Admission 校验（含 Go validateVideoTask 对应物）仍在创建时执行，执行端最小注入。
+
+验证（211 生产）：dotnet build 通过；部署后用 UI 同款参数冒烟（videoSeconds=5、vquality=720、size=16:9、channelModelKey=MODEL_000005），任务 running→succeeded，result_json 2.1MB 含视频数据。
+
 ### 2026-09-22 · 视频任务全链路修复（capabilityOptions 类型归一 + Seedance 时长校验）
 
 线上视频任务三层问题叠加，全部修复并在 211 端到端验证：

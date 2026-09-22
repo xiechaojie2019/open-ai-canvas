@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text.Json;
+using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
@@ -363,6 +364,20 @@ public sealed class TaskWorkerService
         {
             input.Prompt = task.Prompt;
         }
+        // 执行端补注入视频能力声明（对应 Go: validateResolvedVideoCapability 的渠道模型分支）：
+        // 任务 input 不持久化 VideoCapability，分辨率等参数归一依赖执行时按渠道模型能力
+        // 合同重放，缺失时裸值（如 UI 发的 "720"）会原样透传给上游并被 400。
+        if (task.Type.StartsWith("canvas_video", StringComparison.Ordinal)
+            || task.Type.StartsWith("video_", StringComparison.Ordinal))
+        {
+            OpenAICanvas.Providers.VideoCapabilityConfig? videoProfile = await ResolveVideoCapabilityAsync(
+                input.Config, cancellationToken).ConfigureAwait(false);
+            if (videoProfile is not null)
+            {
+                input.VideoCapability = videoProfile;
+                ProviderVideoOptions.ApplyFixedVideoResolution(input.Config, videoProfile);
+            }
+        }
 
         ProviderExecutionResult execution = task.Type switch
         {
@@ -472,6 +487,48 @@ public sealed class TaskWorkerService
         if (first.Trim().Length > 0) return first;
         if (second.Trim().Length > 0) return second;
         return third;
+    }
+
+    /// <summary>
+    /// 执行端解析视频能力声明（Go: validateResolvedVideoCapability 的最小移植）。
+    /// Admission 创建时已按能力合同校验参数，执行端只需让归一化函数拿到同一份 profile；
+    /// 渠道模型缺失、能力配置为空或损坏时保持历史行为（返回 null，参数原样透传），
+    /// 不让没有能力配置的模型在执行端开始报错。
+    /// </summary>
+    private async Task<OpenAICanvas.Providers.VideoCapabilityConfig?> ResolveVideoCapabilityAsync(
+        ProviderConfig config, CancellationToken cancellationToken)
+    {
+        string channelID = config.ChannelID.Trim();
+        if (channelID.Length == 0)
+        {
+            return null;
+        }
+        string modelKey = config.ChannelModelKey.Trim();
+        if (modelKey.StartsWith("models/", StringComparison.Ordinal))
+        {
+            modelKey = modelKey["models/".Length..].Trim();
+        }
+        if (modelKey.Length == 0)
+        {
+            return null;
+        }
+        ChannelModel? channelModel = await _repository
+            .ChannelModelByKeyIncludingDisabledAsync(channelID, modelKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (channelModel is null)
+        {
+            return null;
+        }
+        ModelCapabilityConfig? capabilityConfig;
+        try
+        {
+            capabilityConfig = ChannelModelCapability.NormalizedChannelModelCapability(channelModel);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        return ChannelModelCapability.MirrorVideoConfig(capabilityConfig);
     }
 
     // ------------------------------------------------------------- 输入解密

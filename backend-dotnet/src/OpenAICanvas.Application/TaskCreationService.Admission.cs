@@ -1084,33 +1084,9 @@ public sealed partial class TaskCreationService
         _ => value.Clone(),
     };
 
-    /// <summary>从持久化记录恢复权威能力合同（与 ModelCatalogService 共用语义）。</summary>
-    private static ModelCapabilityConfig? NormalizedChannelModelCapability(ChannelModel channelModel)
-    {
-        string capability = CapabilitySpecOps.NormalizeCapability(channelModel.Capability);
-        if (capability == "audio")
-        {
-            return null;
-        }
-        if (capability is not ("text" or "image" or "video"))
-        {
-            throw new InvalidOperationException($"不支持的渠道模型能力：{channelModel.Capability}");
-        }
-        ModelCapabilityConfig? config;
-        try
-        {
-            config = ModelCapabilityConfigOps.DecodeModelCapabilityConfig(channelModel.CapabilityConfigJSON);
-        }
-        catch (AppError error)
-        {
-            throw new InvalidOperationException($"解析渠道模型能力配置失败：{error.Message}");
-        }
-        return ModelCapabilityConfigOps.NormalizeModelCapabilityConfigForModel(
-            capability,
-            channelModel.Protocol,
-            LogicalModelService.FirstNonEmpty(channelModel.ProviderModelKey, channelModel.ModelKey),
-            config);
-    }
+    /// <summary>从持久化记录恢复权威能力合同（实现移至 ChannelModelCapability，与 Worker 执行端共用）。</summary>
+    private static ModelCapabilityConfig? NormalizedChannelModelCapability(ChannelModel channelModel) =>
+        ChannelModelCapability.NormalizedChannelModelCapability(channelModel);
 
     /// <summary>价格档价格自洽校验（与 ModelCatalogService 一致）。对应 Go: <c>ValidatePriceTierPrice</c>。</summary>
     private static bool ValidatePriceTierPrice(
