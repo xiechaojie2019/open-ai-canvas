@@ -2024,3 +2024,10 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 - [ ] HTTPS 或 localhost 访问下核对跨标签页互斥仍由 Web Locks 提供，未受降级逻辑影响。
 - [ ] 补充轮次：新增 `crypto.randomUUID` 兜底（`web/src/lib/uuid.ts`，getRandomValues 拼 UUID v4），替换生成任务、钱包支付、Agent 面板、工作流测试台等 7 处调用，确认创作历史重新生成不再报 `crypto.randomUUID is not a function`。
 - [ ] 补充轮次：生成素材持久化与画布持久化锁（`generation-asset-repository.ts`、`use-canvas-store.ts`）在缺少 Web Locks 时不再抛「当前浏览器不支持跨标签存储锁」，降级为页内串行 + 上游幂等键兜底；确认重新生成可完整走完并把图片存进资产。
+
+## 创作页视频同步音频参数越界（2026-09-22）
+
+线上渠道视频模型（doubao-seedance-2-0 系列）能力档案声明 `generateAudio.supported: false`，后端能力匹配只接受 `videoGenerateAudio=false`；创作页却把全局默认 `videoGenerateAudio="true"` 原样传给任务创建，导致视频生成被拦截并报「所选模型不支持当前请求：参数 同步音频超出支持范围」。画布节点面板早已有档案守卫，创作页漏接。现复用 `resolveModelVideoBooleanOptions` 钳制创作页视频请求的 `videoGenerateAudio` / `videoWatermark`：模型不支持时强制 `"false"`，支持时取用户设置或档案默认值；首次提交与重试共用该配置。服务器端 Docker 构建通过并已重启 web 容器，需浏览器验收：
+
+- [ ] 在创作页用视频模型（如「生成一秒的落叶视频」）重新生成，确认不再报「同步音频超出支持范围」，任务正常进入生成流程。
+- [ ] 在支持同步音频的视频模型上确认「生成声音」设置仍能按用户选择传 true。
