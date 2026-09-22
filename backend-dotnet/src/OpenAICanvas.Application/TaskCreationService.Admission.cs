@@ -391,7 +391,10 @@ public sealed partial class TaskCreationService
                 string canonical = CapabilitySpecOps.CanonicalCapabilityOptionName(property.Name);
                 if (CapabilitySpecOps.IsCapabilityOptionFor(channelModel.Capability, canonical))
                 {
-                    nextConfig[canonical] = property.Value.Clone();
+                    // capabilityOptions 由前端按 JSON 类型发送（videoSeconds 等是数字、
+                    // 布尔开关是布尔值）；执行端 ProviderConfig 统一是 string 字段，
+                    // 与 Go 的宽松转换一致，落库前必须归一成标量字符串。
+                    nextConfig[canonical] = ProviderConfigOptionValue(property.Value);
                 }
             }
         }
