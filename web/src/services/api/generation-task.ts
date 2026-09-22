@@ -6,6 +6,7 @@ import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { grokImagePromptLimitError } from "@/lib/grok-image-prompt-limit";
 import { resolveGenerationWorkflowExecution, type GenerationWorkflowExecution } from "@/lib/generation-workflow-execution";
 import { isArkPlanBaseUrl } from "@/lib/seedance-video";
+import { randomUUID } from "@/lib/uuid";
 import { resolveVideoOperation } from "@/lib/model-selection";
 import { logicalModelIDForConfig, modelOptionName, resolveModelChannel, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
@@ -58,7 +59,7 @@ export type GenerationTaskDependencies = {
 const defaultDependencies: GenerationTaskDependencies = {
     createTask: createGenerationTask,
     waitTask: waitForGenerationTask,
-    createId: () => crypto.randomUUID(),
+    createId: () => randomUUID(),
 };
 
 type PreparedGenerationReferences = {

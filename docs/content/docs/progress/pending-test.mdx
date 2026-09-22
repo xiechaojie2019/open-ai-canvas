@@ -2022,3 +2022,4 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 
 - [ ] 通过 `http://192.168.0.211:5173` 在创作页与自由画布重新生图，确认不再出现 digest 报错和互斥不支持报错，生成结果正常返回。
 - [ ] HTTPS 或 localhost 访问下核对跨标签页互斥仍由 Web Locks 提供，未受降级逻辑影响。
+- [ ] 补充轮次：新增 `crypto.randomUUID` 兜底（`web/src/lib/uuid.ts`，getRandomValues 拼 UUID v4），替换生成任务、钱包支付、Agent 面板、工作流测试台等 7 处调用，确认创作历史重新生成不再报 `crypto.randomUUID is not a function`。

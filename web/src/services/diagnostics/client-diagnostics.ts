@@ -1,5 +1,6 @@
 import { type AxiosError, type AxiosRequestConfig } from "axios";
 
+import { randomUUID } from "@/lib/uuid";
 import { apiClient } from "@/services/api/request";
 
 export type ClientDiagnosticLevel = "info" | "warning" | "error";
@@ -216,5 +217,6 @@ function clampNumber(value: number, min: number, max: number) {
 
 function createDiagnosticId(prefix: string) {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return prefix + "-" + crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+    return prefix + "-" + randomUUID().replaceAll("-", "").slice(0, 24);
     return prefix + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
 }

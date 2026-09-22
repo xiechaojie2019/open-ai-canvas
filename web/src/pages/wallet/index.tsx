@@ -11,6 +11,7 @@ import { formatCredits } from "@/constant/credits";
 import { PaginationBar, TableSurface } from "@/components/layout/workspace-page";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { aceternityMotion } from "@/lib/aceternity-motion";
+import { randomUUID } from "@/lib/uuid";
 import { checkinCredits, getWallet, redeemCredits, type CreditLedgerEntry, type WalletSummary } from "@/services/api/wallet";
 import { closePaymentOrder, createPaymentOrder, getPaymentOrder, listPaymentProviders, listTopupProducts, queryPaymentOrder, refreshPaymentCheckout, type PaymentOrder, type PaymentProvider, type TopupProduct } from "@/services/api/payments";
 import { modelDisplayName, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -189,7 +190,7 @@ export default function WalletPage() {
         }
         setPaymentCreating(true);
         try {
-            if (!paymentIdempotencyKey.current) paymentIdempotencyKey.current = crypto.randomUUID();
+            if (!paymentIdempotencyKey.current) paymentIdempotencyKey.current = randomUUID();
             const result = await createPaymentOrder({ productId: selectedProduct.id, providerId: selectedProvider.id, idempotencyKey: paymentIdempotencyKey.current });
             paymentIdempotencyKey.current = "";
             setPaymentOrder(result.order);

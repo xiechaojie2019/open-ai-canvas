@@ -5,6 +5,7 @@ import { ArrowLeft, Bot, Check, ChevronRight, CircleDot, Clock3, Download, Histo
 import { saveAs } from "file-saver";
 import { buildAgentDebugExport } from "@/lib/canvas/agent-debug-export";
 import { markdownPlainText } from "@/lib/markdown-plain-text";
+import { randomUUID } from "@/lib/uuid";
 import { nanoid } from "nanoid";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -379,7 +380,7 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                 };
                 const fingerprint = JSON.stringify({ scope, parent: run?.id, input });
                 if (pending && pending.fingerprint !== fingerprint) throw new Error("上一条请求尚未确认，请恢复原消息与设置后核对，不能覆盖原幂等记录");
-                const key = pending?.key || crypto.randomUUID();
+                const key = pending?.key || randomUUID();
                 const next = { fingerprint, key, request: { ...input, idempotencyKey: key }, parentRunId: run?.id, messageId: `user-${key}` };
                 // Persist before sending. A failed local save must not submit a request
                 // whose recovery identity will disappear on reload.
