@@ -93,6 +93,10 @@ public static class PluginEndpoints
                     SessionCookie.Read(context), cancellationToken).ConfigureAwait(false);
                 await RequirePluginCenterAsync(service, user, cancellationToken).ConfigureAwait(false);
                 List<PluginView> plugins = service.Plugins.List();
+                foreach (PluginView plugin in plugins)
+                {
+                    plugin.Management = service.PluginManagement.ManagementFor(plugin);
+                }
                 List<AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { plugins, states });
@@ -134,6 +138,10 @@ public static class PluginEndpoints
                 User user = await service.CurrentUserAsync(
                     SessionCookie.Read(context), cancellationToken).ConfigureAwait(false);
                 List<PluginView> plugins = service.Plugins.List();
+                foreach (PluginView item in plugins)
+                {
+                    item.Management = service.PluginManagement.ManagementFor(item);
+                }
                 PluginView? plugin = plugins.FirstOrDefault(item => item.Manifest.ID == pluginId.Trim());
                 if (plugin is null)
                 {
@@ -169,6 +177,10 @@ public static class PluginEndpoints
                     SessionCookie.Read(context), cancellationToken).ConfigureAwait(false);
                 CanvasService.RequireAdmin(user);
                 List<PluginView> plugins = service.Plugins.List();
+                foreach (PluginView plugin in plugins)
+                {
+                    plugin.Management = service.PluginManagement.ManagementFor(plugin);
+                }
                 List<AdminPluginStateView> states = await service.PluginManagement
                     .AdminPluginStatesAsync(cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { plugins, states });

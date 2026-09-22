@@ -84,6 +84,9 @@ public sealed class PluginManagementService
     private static PluginManagementView ManagementForPlugin(PluginView plugin) =>
         plugin.Source == "uploaded" ? ManagementForUploaded : ManagementFor(plugin.Manifest.ID) ?? ManagementFallback;
 
+    /// <summary>把管理面投影写入插件视图；列表端点序列化前必须填充，前端合同要求 management 非空。</summary>
+    public PluginManagementView ManagementFor(PluginView plugin) => ManagementForPlugin(plugin);
+
     private static bool HasManagementTable(string pluginID, string source) =>
         source == "uploaded" || ManagementFor(pluginID) is not null;
 
