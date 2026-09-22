@@ -421,6 +421,20 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-22 · 视频任务全链路修复（capabilityOptions 类型归一 + Seedance 时长校验）
+
+线上视频任务三层问题叠加，全部修复并在 211 端到端验证：
+
+1. **渠道协议错绑（数据修复）**：MODEL_000005（doubao-seedance-2-0-260128，渠道 CHANNEL_000002/Ark）的 protocol 错绑为 `agnes-video`，被 Agnes 插件 manifest 白名单本地拒绝。已改回 `volcengine-ark-video`。
+2. **capabilityOptions 类型崩溃（代码修复，TaskCreationService.Admission.cs）**：前端发送数字型 `videoSeconds`（generation-task.ts 真实行为），合并进 config 时原样 `Clone()`，执行端 `ProviderConfig.videoSeconds`（string）反序列化失败报"任务输入不是合法 JSON"。改用 `ProviderConfigOptionValue`（数字→字符串归一，与 Go 宽松转换一致）。 dotnet build 通过。
+3. **上游 400 duration 无校验（插件包修复）**：协议改对后任务到达 Ark 仍 400——排查确认 Seedance 2.0 当前模型档位仅接受 duration 4-12 秒（1/2/3 秒 400，4-12 全部 200），而任务带 `videoSeconds:"1"`。volcengine-ark-seedance 插件包 manifest 增加 validations：duration ∈ [4,12]（0=未传走默认 5），1-3 秒创建即拒绝并提示合法范围，不再空转到上游。
+
+数据侧补充：channel_model_price_tiers 原本只有 videoSeconds=1 一档价格（PTIER_000005），合法档位反而无价可配；新增 PTIER_000006（videoSeconds=5，per_second，与 1 秒档同价）。
+
+验证（211 生产）：videoSeconds=1 创建即失败且错误文案为新增校验提示；videoSeconds=5 任务 queued→running→succeeded，result_json 含真实 mp4 dataURL，billing 订单 settled（5×1,000,000 microcredits）。
+
+提交：35fb8bdf fix(dotnet): 视频任务 - 修复 capabilityOptions 类型归一与 Seedance 时长校验（已部署 211）。
+
 ### 2026-09-22 · 10.1/10.2 插件运行时与声明式协议插件完成
 
 `PluginRuntime`（`OpenAICanvas.Application/PluginRuntime.cs`）：启动扫描 `CANVAS_OFFICIAL_PLUGIN_DIR`（默认回落 `/app/plugin-packages` 与仓库 `plugin-packages/`）下的 `.yingce-plugin` 包（zip + manifest.json，`ProtocolPluginPackage.Parse` 校验 16MB 包/512KB manifest/条目白名单/路径穿越/runtime 交叉引用），官方包进包缓存（SHA256 命名）并合并 bundled 工作流（runninghub-workflow-provider）与支付清单（官方目录已有同名包时不重复入表）；registry JSON 原子写持久化。`PluginManagementService` 管理来源策略表（官方应用/系统支付/上传插件）、用户启停、平台两级可用性与管理端动作。
