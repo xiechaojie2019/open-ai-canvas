@@ -15,6 +15,7 @@ import { repairMissingCanvasAssets, collectCanvasMediaAssetIds, rebindInconsiste
 import { canvasNodeToAsset } from "@/lib/canvas/canvas-node-asset";
 import { sameAgentCanvasContent } from "@/lib/canvas/agent-canvas-snapshot";
 import { applyAgentCanvasPatch, type AgentCanvasPatch } from "@/lib/canvas/agent-canvas-patch";
+import { sha256Hex } from "@/lib/sha256";
 
 let activeRemoteUserId = "";
 type RemoteUserDataPhase = "inactive" | "hydrating" | "ready" | "failed";
@@ -676,8 +677,7 @@ async function uploadInlineDataUrl(dataUrl: string, identity: string) {
 }
 
 async function inlineMediaUploadIdentity(dataUrl: string) {
-    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(dataUrl));
-    return `inline:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    return `inline:${await sha256Hex(dataUrl)}`;
 }
 
 async function uploadLocalStorageKey(storageKey: string, payload: Record<string, unknown>) {

@@ -52,9 +52,15 @@ function effectStorage(scope: string): EffectStorage {
 function effectLock(): AsyncLock {
     if (typeof window !== "undefined") {
         const locks = navigator.locks;
-        if (!locks) throw new Error("当前浏览器不支持跨页面生成副作用互斥");
-        return locks;
+        // 非安全上下文（局域网 IP 明文 HTTP）没有 Web Locks API。退回进程内
+        // 互斥：单标签页互斥语义不变，跨标签页互斥降级为依赖记录里的租约
+        // 超时兜底，非安全上下文下这是可接受的降级。
+        return locks ?? inProcessLock();
     }
+    return inProcessLock();
+}
+
+function inProcessLock(): AsyncLock {
     return {
         async request<T>(name: string, callback: () => Promise<T>) {
             const prior = inProcessLockTails.get(name) ?? Promise.resolve();

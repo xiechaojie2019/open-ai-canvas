@@ -13,6 +13,7 @@ import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { ensureMediaNodeMinimumSize } from "@/lib/canvas/canvas-node-size";
 import { interruptFileUpload } from "@/lib/canvas/canvas-file-upload";
 import { isCanvasWorkflowProvider, resolveCanvasWorkflowProvider } from "@/lib/canvas/canvas-workflow";
+import { sha256Hex } from "@/lib/sha256";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import { CanvasNodeType, type CanvasAssistantSession, type CanvasConnection, type CanvasImageGenerationType, type CanvasNodeData, type CanvasNodeMetadata, type CanvasVideoEditOperation } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
@@ -138,8 +139,7 @@ export type GenerationRetryContext = {
 
 export async function createGenerationRetryContext(retryOf: string, attemptGroupId = retryOf): Promise<GenerationRetryContext> {
     const bytes = new TextEncoder().encode(`generation-retry\0${attemptGroupId}\0${retryOf}`);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-    const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const hex = await sha256Hex(bytes);
     return { retryOf, attemptGroupId, clientOperationId: `retry:${hex}` };
 }
 
