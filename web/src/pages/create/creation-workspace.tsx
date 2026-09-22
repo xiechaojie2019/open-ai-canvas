@@ -248,9 +248,10 @@ function MediaResult({ item, onRetryFailure, onCreateVariant, onContinueCanvas, 
     const isVideo = item.mode === "video";
     const resultAssetIds = rawResultUrls.length ? creationResultAssetIds(assets, { messageId: item.id, taskIds: item.taskIds || [], resultUrls: rawResultUrls }) : [];
     const resultUrls = rawResultUrls.map((url, index) => {
-        if (!isVideo) return url;
         const asset = assets.find((candidate) => candidate.id === resultAssetIds[index]);
-        return asset?.kind === "video" ? resolveResourceUrl(asset.data.storageKey, asset.data.url) : url;
+        if (asset?.kind === "video") return resolveResourceUrl(asset.data.storageKey, asset.data.url);
+        if (asset?.kind === "image") return resolveResourceUrl(asset.data.storageKey, asset.data.dataUrl || asset.coverUrl);
+        return url;
     });
     const canContinueWithResults = resultUrls.length > 0 && resultAssetIds.length === resultUrls.length;
     if (item.status === "pending") return <CreationMediaPending mode={item.mode || "image"} ratio={item.settings?.ratio} />;

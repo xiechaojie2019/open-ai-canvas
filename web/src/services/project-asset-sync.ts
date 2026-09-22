@@ -574,7 +574,7 @@ export function generationTaskMaterializedUrls(task: GenerationTask): string[] {
     return (task.outputs || []).flatMap((output) => {
         const asset = output.materializedAssetId ? assets.find((candidate) => candidate.id === output.materializedAssetId) : undefined;
         if (!asset) return [];
-        if (asset.kind === "image") return [asset.data.dataUrl || asset.coverUrl];
+        if (asset.kind === "image") return [resolveResourceUrl(asset.data.storageKey, asset.data.dataUrl || asset.coverUrl)];
         if (asset.kind === "video" || asset.kind === "audio") return [resolveResourceUrl(asset.data.storageKey, asset.data.url)];
         return [];
     });
