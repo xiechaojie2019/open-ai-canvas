@@ -115,7 +115,9 @@ builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceUploadService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Application.UploadQuota>(),
-        env.DataDir));
+        env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.VideoPlaybackService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(), env.DataDir));
 builder.Services.AddSingleton(new OpenAICanvas.Application.ChunkedUploadSessions());
 // 孤儿资源清理后台作业。对应 Go 的 app/resource_deletion_worker.go。
 // 可用 CANVAS_DISABLE_BACKGROUND_WORKERS=true 关闭（测试环境避免与手动触发竞争）。
@@ -123,6 +125,7 @@ if (!string.Equals(Environment.GetEnvironmentVariable("CANVAS_DISABLE_BACKGROUND
         StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHostedService<OpenAICanvas.Web.Workers.ResourceCleanupWorker>();
+    builder.Services.AddHostedService<OpenAICanvas.Web.Workers.VideoPlaybackWorker>();
     builder.Services.AddHostedService<OpenAICanvas.Web.Workers.TaskDispatchWorker>();
 }
 // 账单巡检（只读）。对应 Go 的 app/billing_review.go startBillingReviewAudit。
@@ -137,7 +140,7 @@ builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
-        env.DataDir));
+        env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
 // 外观配置（品牌标识 / 皮肤主题 / 登录页素材）。对应 Go 的 app/appearance*.go。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.Appearance.AppearanceService(

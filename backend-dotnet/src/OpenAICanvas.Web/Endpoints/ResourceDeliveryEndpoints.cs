@@ -46,18 +46,29 @@ public static class ResourceDeliveryEndpoints
                 }
 
                 Resource resource = delivery.Resource;
-                string etag = ResourceDomainService.ResourceResponseETag(resource);
-                // variant=playback：浏览器兼容播放副本。副本就绪时用独立 ETag 后缀，
+                // variant=playback：浏览器兼容播放副本。副本就绪时用独立 ETag，
                 // 避免浏览器命中原件缓存 304 而继续黑屏。
                 bool usePlayback = context.Request.Query["variant"] == "playback"
                     && string.Equals(resource.Provider, "local", StringComparison.OrdinalIgnoreCase)
                     && resource.PlaybackStatus == "ready"
                     && !string.IsNullOrEmpty(resource.PlaybackObjectKey);
-                string serveETag = usePlayback ? etag + ":pb" : etag;
+                ResourceStream? playbackStream = usePlayback
+                    ? await resources.OpenPlaybackAsync(resource, cancellationToken).ConfigureAwait(false)
+                    : null;
+                if (playbackStream is not null && delivery.Stream is not null)
+                {
+                    await delivery.Stream.DisposeAsync().ConfigureAwait(false);
+                }
+                ResourceStream stream = playbackStream ?? (delivery.Stream is not null
+                    ? new ResourceStream(delivery.Resource, delivery.Stream, delivery.ContentRange, delivery.AcceptRanges)
+                        { ContentLength = delivery.Resource.Size }
+                    : await resources.OpenResourceRangeAsync(user.ID, resource.ID, null, cancellationToken).ConfigureAwait(false));
+                Resource servedResource = stream.Resource;
+                string serveETag = ResourceDomainService.ResourceResponseETag(servedResource);
 
                 // 资源 ID 内容不可变：图片可交给浏览器磁盘强缓存 30 天；
                 // 视频/音频涉及转码副本与 Range，保持逐次条件请求。
-                context.Response.Headers["Cache-Control"] = resource.MimeType.StartsWith("image/", StringComparison.Ordinal)
+                context.Response.Headers["Cache-Control"] = servedResource.MimeType.StartsWith("image/", StringComparison.Ordinal)
                     ? "private, max-age=2592000, stale-while-revalidate=86400"
                     : "private, no-cache";
                 context.Response.Headers["ETag"] = serveETag;
@@ -71,30 +82,10 @@ public static class ResourceDeliveryEndpoints
 
                 if (ResourceDomainService.IfNoneMatch(context.Request.Headers["If-None-Match"], serveETag))
                 {
+                    await stream.Body.DisposeAsync().ConfigureAwait(false);
                     return Results.StatusCode(StatusCodes.Status304NotModified);
                 }
-
-                string rangeHeader = context.Request.Headers["Range"].ToString();
-                string ifRange = (context.Request.Headers["If-Range"].ToString() ?? string.Empty).Trim();
-                if (ifRange.Length > 0 && ifRange != serveETag)
-                {
-                    rangeHeader = string.Empty;
-                }
-
-                // 转码副本未移植（PlaybackStatus 恒为空）：与 Go 的「副本未就绪回退原件」分支等价。
-                if (usePlayback)
-                {
-                    context.Response.Headers["ETag"] = etag;
-                }
-
-                await using Stream? deliveryStream = delivery.Stream;
-                ResourceStream stream = deliveryStream is not null
-                    ? new ResourceStream(delivery.Resource, deliveryStream, delivery.ContentRange, delivery.AcceptRanges)
-                        { ContentLength = delivery.Resource.Size }
-                    : await resources.OpenResourceRangeAsync(user.ID, resource.ID, rangeHeader, cancellationToken)
-                        .ConfigureAwait(false);
-
-                return await WriteResourceAsync(context, stream, resource, cancellationToken).ConfigureAwait(false);
+                return await WriteResourceAsync(context, stream, servedResource, cancellationToken).ConfigureAwait(false);
             }
             catch (AppError error)
             {

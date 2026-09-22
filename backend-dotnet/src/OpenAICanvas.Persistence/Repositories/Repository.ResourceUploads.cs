@@ -13,6 +13,34 @@ namespace OpenAICanvas.Persistence.Repositories;
 /// </summary>
 public sealed partial class Repository
 {
+    public async Task<bool> ClaimPlaybackTranscodeAsync(string resourceId, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        int affected = await ExecuteAsync(connection,
+            "UPDATE \"resources\" SET \"playback_status\" = 'processing', \"updated_at\" = @now WHERE \"id\" = @resourceId AND \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND (\"playback_status\" = '' OR \"playback_status\" = 'none')",
+            new { resourceId, ready = ResourceStatus.ResourceStatusReady, now = DateTime.UtcNow }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return affected == 1;
+    }
+
+    public async Task<IReadOnlyList<Resource>> PlaybackPendingVideosAsync(int limit, CancellationToken cancellationToken = default)
+    {
+        limit = limit is <= 0 or > 100 ? 20 : limit;
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await QueryAsync<Resource>(connection, $"SELECT * FROM \"resources\" WHERE \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND (\"playback_status\" = '' OR \"playback_status\" = 'processing') ORDER BY \"updated_at\" ASC LIMIT {limit}", new { ready = ResourceStatus.ResourceStatusReady }, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<Resource>> PlaybackNoneVideosAsync(int limit, CancellationToken cancellationToken = default)
+    {
+        limit = limit is <= 0 or > 100 ? 20 : limit;
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await QueryAsync<Resource>(connection, $"SELECT * FROM \"resources\" WHERE \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND \"playback_status\" = 'none' ORDER BY \"updated_at\" ASC LIMIT {limit}", new { ready = ResourceStatus.ResourceStatusReady }, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task ResetStuckPlaybackTranscodesAsync(CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, "UPDATE \"resources\" SET \"playback_status\" = '', \"playback_error\" = '', \"updated_at\" = @now WHERE \"kind\" = 'video' AND \"playback_status\" = 'processing'", new { now = DateTime.UtcNow }, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
     /// <summary>当日上传额度不足。对应 Go: <c>repository.ErrDailyUploadLimitExceeded</c>。</summary>
     public const string DailyUploadLimitExceeded = "daily_upload_limit_exceeded";
 

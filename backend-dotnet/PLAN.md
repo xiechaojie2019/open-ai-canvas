@@ -261,7 +261,7 @@ backend-dotnet/
 | 4.10 | HTTP 客户端与声明式协议 | `app/provider_http_client.go` `provider_protocol.go` | 🟡 出站安全边界已通（`ProviderTransport`：响应大小上限两道检查/非 2xx + Retry-After/分片观测/网络错误映射/鉴权装配/渠道 URL 版本前缀归一）；**协调层已通（`Platform/Coordinator`：固定窗口限流、并发租约与退避等待、渠道熔断、路由目录版本与路由屏蔽、`Application/ProviderRequestContext` 适配器）**，并已接入 `ProviderTextTask`（熔断前置短路 → 占槽 → 请求 → 记结果 → 释放）；**声明式协议执行已通（`ProviderProtocolExecutor`：白名单 method 校验、body/URL/头装配、11 类鉴权驱动含 AWS SigV4/TC3/火山 V4、multipart 媒体加载；`ProviderProtocolPayload`：`protocolRequestFromInput` 投影、素材角色判定、`finishProtocolResult` 结果整形；`ProviderProtocolTask`：create→poll→download 三阶段编排、幂等键、ExtractProviderTaskID 回落、结果下载与 media 归一）**；剩余：Redis Lua 脚本的集成测试 |
 | 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ✅ `ProviderWorkflowTask` 全链路已通：JSON→节点表解析（含槽位计数与列表展开）、字段角色推断/覆盖安全性、分辨率默认值与槽位文案归一（与 Go 完全一致，无默认值返回原值）、`runninghub-workflow-{image,video,audio}` 三类 interfaceType 提交、轮询统一走 `ProviderVideoPolling`（声明式策略可注入，image 遗留分支固定 2.5s 间隔 1h 预算）、结果下载与 media 归一、协议信封解析；已挂接 Worker 执行分支与创建准入（`workflowPluginIDForInterface` 对齐 Go，仅认三类后缀）；28 条契约测试覆盖解析/归一/提交/轮询/下载/信封/SSRF 前置；剩余：插件启用校验留在 admission 层（与 Go 相同），插件注册表仍视为未启用（4.12 的 plugin runtime） |
 | 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ✅ `WorkflowPluginGate` 插件门控（平台/用户两级状态，创建准入与 Worker 执行双闸，默认禁用）、RunningHub 管理代理（workflow-info / app-info 拉取上游参数模板，SSRF 前置 + 128KB 上限）、`GET /plugins/status` 状态聚合；平台开关由 `plugin_platform_states` 数据行控制，插件中心安装/启停 UI 留 10.1 |
-| 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ☐ |
+| 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ✅ 本地视频编码探测；H.265/MPEG-4 转 H.264/AAC 播放副本；上传触发、启动回填与 `variant=playback` 下发已通（云存储不转码） |
 | 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 transcription 创建已通（whisper 执行待）；render 创建待做 |
 | 4.15 | 创作运行与提交 | `app/creation*.go` | ✅ 运行生命周期/报价/批准/执行 13 条（批 1）+ 画布提交 3 条（批 2，#63 关闭）；agentRequests 占位符水合待（#64） |
 
@@ -420,6 +420,12 @@ backend-dotnet/
 ---
 
 ## 九、部署与生产修复日志
+
+### 2026-09-22 · 4.13 视频转码与播放副本迁移完成
+
+新增 `VideoPlaybackService`：本地 ready 视频在上传完成后探测编码；HEVC/H.265 与 MPEG-4 Part 2 在 `ffmpeg` 可用时异步转为 H.264/AAC MP4，状态按 `none/processing/ready/failed` 持久化。`VideoPlaybackWorker` 在进程启动时回填未判定、遗留 none 与中断 processing 的存量资源；云存储资源维持原件，不触发下载转码。
+
+`GET /resources/:id/file?variant=playback` 现在会在副本 ready 时下发副本，并依据副本的 MIME、长度和独立 ETag 处理 Range 与条件请求；副本不存在或未就绪时安全回退原件。新增端点契约测试覆盖副本内容、206 Range、长度、ETag 与 304；`ResourceDeliveryEndpointTests` 14/14 通过。
 
 ### 2026-09-22 · 视频任务 UI 路径 400 修复（执行端补注入视频能力声明）
 

@@ -56,14 +56,16 @@ public sealed class ResourceDomainService
     private readonly Repository _repository;
     private readonly IRuntimePolicyProvider _policyProvider;
     private readonly string _dataDir;
+    private readonly VideoPlaybackService? _playback;
 
     public ResourceDomainService(
         Repository repository, IRuntimePolicyProvider policyProvider, string? dataDir = null,
-        Func<byte[]?>? settingsEncryptionKey = null)
+        Func<byte[]?>? settingsEncryptionKey = null, VideoPlaybackService? playback = null)
     {
         _repository = repository;
         _policyProvider = policyProvider;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
+        _playback = playback;
         if (settingsEncryptionKey is not null)
         {
             SettingsEncryptionKey = settingsEncryptionKey;
@@ -185,6 +187,9 @@ public sealed class ResourceDomainService
         }
         return await OpenResourceRangeAsync(resource, rangeHeader, cancellationToken).ConfigureAwait(false);
     }
+
+    public Task<ResourceStream?> OpenPlaybackAsync(Resource resource, CancellationToken cancellationToken = default) =>
+        _playback is null ? Task.FromResult<ResourceStream?>(null) : _playback.OpenPlaybackAsync(resource, cancellationToken);
 
     /// <summary>
     /// 按资源实体直接打开流（管理员下发用，跳过归属校验）。

@@ -4,6 +4,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using OpenAICanvas.Domain.Entities;
+using OpenAICanvas.Persistence.Repositories;
 using Xunit;
 
 namespace OpenAICanvas.Tests.Endpoints;
@@ -115,6 +118,23 @@ public sealed class ResourceDeliveryEndpointTests : IDisposable
             resource.GetProperty("id").GetString()!,
             resource.GetProperty("objectKey").GetString()!,
             payload);
+    }
+
+    private async Task<byte[]> MarkPlaybackReadyAsync(string resourceId)
+    {
+        byte[] playback = Enumerable.Range(1, 37).Select(index => (byte)index).ToArray();
+        Repository repository = _factory.Services.GetRequiredService<Repository>();
+        Resource resource = (await repository.ResourceAsync(resourceId))!;
+        string key = $"playback/{resourceId}.mp4";
+        string path = Path.Combine(_dataDir, "resources", "playback", $"{resourceId}.mp4");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, playback);
+        resource.PlaybackStatus = "ready";
+        resource.PlaybackObjectKey = key;
+        resource.ETag = "original-etag";
+        resource.UpdatedAt = DateTime.UtcNow;
+        await repository.SaveResourceAsync(resource);
+        return playback;
     }
 
     [Fact]
@@ -234,6 +254,32 @@ public sealed class ResourceDeliveryEndpointTests : IDisposable
         Assert.Equal("sandbox", response.Headers.GetValues("Content-Security-Policy").First());
         // 非图片不享受强缓存。
         Assert.Contains("no-cache", response.Headers.GetValues("Cache-Control").First(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 视频播放副本_下发副本并按副本大小处理Range与ETag()
+    {
+        HttpClient user = await SignInAsync();
+        byte[] source = new byte[128];
+        new Random(37).NextBytes(source);
+        (string id, _, _) = await CreateResourceAsync(user, source, fileName: "clip.mp4", kind: "video");
+        byte[] playback = await MarkPlaybackReadyAsync(id);
+
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/api/resources/{id}/file?variant=playback");
+        request.Headers.TryAddWithoutValidation("Range", "bytes=5-14");
+        HttpResponseMessage response = await user.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.PartialContent, response.StatusCode);
+        Assert.Equal("video/mp4", response.Content.Headers.GetValues("Content-Type").First());
+        Assert.Equal("bytes 5-14/37", response.Content.Headers.GetValues("Content-Range").First());
+        Assert.Equal(playback.AsSpan(5, 10).ToArray(), await response.Content.ReadAsByteArrayAsync());
+        string etag = response.Headers.GetValues("ETag").First();
+        Assert.Equal("\"original-etag:pb\"", etag);
+
+        using HttpRequestMessage conditional = new(HttpMethod.Get, $"/api/resources/{id}/file?variant=playback");
+        conditional.Headers.TryAddWithoutValidation("If-None-Match", etag);
+        HttpResponseMessage unchanged = await user.SendAsync(conditional);
+        Assert.Equal(HttpStatusCode.NotModified, unchanged.StatusCode);
     }
 
     [Fact]

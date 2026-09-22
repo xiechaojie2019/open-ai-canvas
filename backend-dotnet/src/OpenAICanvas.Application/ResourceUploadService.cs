@@ -25,6 +25,7 @@ public sealed class ResourceUploadService
     private readonly Repository _repository;
     private readonly UploadQuota _quota;
     private readonly string _dataDir;
+    private readonly VideoPlaybackService? _playback;
 
     private readonly IRuntimePolicyProvider? _policyProvider;
 
@@ -32,12 +33,14 @@ public sealed class ResourceUploadService
         Repository repository,
         UploadQuota quota,
         string? dataDir = null,
-        IRuntimePolicyProvider? policyProvider = null)
+        IRuntimePolicyProvider? policyProvider = null,
+        VideoPlaybackService? playback = null)
     {
         _repository = repository;
         _quota = quota;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
         _policyProvider = policyProvider;
+        _playback = playback;
     }
 
     private IRuntimePolicyProvider PolicyProvider => _policyProvider ?? new DefaultRuntimePolicyProvider();
@@ -375,6 +378,10 @@ public sealed class ResourceUploadService
                 await _repository.SaveResourceAsync(resource, cancellationToken).ConfigureAwait(false);
                 throw new InvalidOperationException($"清理已上传资源对象失败：{cleanupError.Message}", error);
             }
+        }
+        if (_playback is not null)
+        {
+            await _playback.ScheduleAsync(resource, cancellationToken).ConfigureAwait(false);
         }
 
         return (resource, true);
