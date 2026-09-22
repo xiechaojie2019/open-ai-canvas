@@ -403,7 +403,6 @@ const materializeGenerationOutput: MaterializeGenerationTaskOutput = createIdemp
                 throwIfAborted(input.signal);
                 return createdAssetId;
             },
-            { requireCrossRealmLock: true },
         );
         const storedAsset = useAssetStore.getState().assets.find((candidate) => candidate.id === assetId);
         if (storedAsset) {

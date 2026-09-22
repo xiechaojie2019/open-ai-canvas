@@ -535,7 +535,6 @@ export async function persistCanvasGenerationEffect(input: CanvasGenerationEffec
                 throw error;
             }
             },
-            { requireCrossRealmLock: true },
         );
     } finally {
         unregisterAttempt();

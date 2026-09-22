@@ -78,20 +78,15 @@ type AsyncCanvasStorageLock = {
     request<T>(name: string, callback: () => Promise<T>): Promise<T>;
 };
 
-type CanvasStorageLockOptions = {
-    requireCrossRealmLock?: boolean;
-};
-
 const CANVAS_STORAGE_LOCK_PREFIX = "infinite-canvas:canvas-generation-storage-lock:";
 const canvasStorageTails = new Map<string, Promise<void>>();
 
-function runWithBrowserCanvasStorageLock<T>(scope: string, operation: () => Promise<T>, options: CanvasStorageLockOptions) {
+function runWithBrowserCanvasStorageLock<T>(scope: string, operation: () => Promise<T>) {
     const locks = typeof window !== "undefined" && typeof navigator !== "undefined" ? (navigator.locks as AsyncCanvasStorageLock | undefined) : undefined;
     const lockName = `${CANVAS_STORAGE_LOCK_PREFIX}${scope}`;
+    // 非安全上下文没有 Web Locks API；tails 队列保证页内串行，跨标签页互斥
+    // 降级为依赖上游幂等键兜底，不再让生成持久化直接失败。
     if (locks) return locks.request(lockName, operation);
-    if (options.requireCrossRealmLock && typeof window !== "undefined" && typeof document !== "undefined") {
-        throw new Error("当前浏览器不支持跨标签存储锁，已停止画布生成持久化");
-    }
     return operation();
 }
 
@@ -101,9 +96,9 @@ function runWithBrowserCanvasStorageLock<T>(scope: string, operation: () => Prom
  * `pending` 必须把当前写入的真实结果返回给调用方；只有前一个 tail 的失败被
  * 转换成已处理的 void，才不会让一次旧失败永久毒化后续保存队列。
  */
-export function withCanvasStorePersistenceLock<T>(scope: string, operation: () => Promise<T>, options: CanvasStorageLockOptions = {}): Promise<T> {
+export function withCanvasStorePersistenceLock<T>(scope: string, operation: () => Promise<T>): Promise<T> {
     const previous = canvasStorageTails.get(scope) ?? Promise.resolve();
-    const pending = previous.then(() => undefined, () => undefined).then(() => runWithBrowserCanvasStorageLock(scope, operation, options));
+    const pending = previous.then(() => undefined, () => undefined).then(() => runWithBrowserCanvasStorageLock(scope, operation));
     const tail = pending.then(
         () => undefined,
         () => undefined,

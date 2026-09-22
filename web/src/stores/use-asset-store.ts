@@ -365,7 +365,6 @@ export const useAssetStore = create<AssetStore>()(
                                 }
                             },
                             isAssetDeleted: () => Boolean(persistedDocument?.tombstones.assets[id]),
-                            requireCrossRealmLock: true,
                             signal,
                             persistAssets: async (assets) => {
                                 const durable = persistedDocument ?? (await readPersistedAssetDocumentForScope(scope));

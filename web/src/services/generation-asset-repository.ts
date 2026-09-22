@@ -7,10 +7,6 @@ type AsyncStorageLock = {
     request<T>(name: string, callback: () => Promise<T>): Promise<T>;
 };
 
-type GenerationStorageLockOptions = {
-    requireCrossRealmLock?: boolean;
-};
-
 const ASSET_STORAGE_LOCK_PREFIX = "infinite-canvas:generation-asset-storage-lock:";
 const ARTIFACT_COMMIT_LOCK_PREFIX = "infinite-canvas:generation-artifact-commit-lock:";
 const assetStorageTails = new Map<string, Promise<void>>();
@@ -46,12 +42,11 @@ function preserveHydratedPreview<TAsset extends GenerationAssetRecord>(persisted
     } as TAsset;
 }
 
-function runWithBrowserStorageLock<T>(scope: string, operation: () => Promise<T>, options: GenerationStorageLockOptions) {
+function runWithBrowserStorageLock<T>(scope: string, operation: () => Promise<T>) {
     const locks = typeof window !== "undefined" && typeof navigator !== "undefined" ? (navigator.locks as AsyncStorageLock | undefined) : undefined;
+    // 非安全上下文（局域网 IP 明文 HTTP）没有 Web Locks API。外层 tails 队列已
+    // 保证同一标签页内串行；跨标签页互斥降级为依赖上游租约与幂等键兜底。
     if (locks) return locks.request(`${ASSET_STORAGE_LOCK_PREFIX}${scope}`, operation);
-    if (options.requireCrossRealmLock && typeof window !== "undefined" && typeof document !== "undefined") {
-        throw new Error("当前浏览器不支持跨标签存储锁，已停止生成素材持久化");
-    }
     return operation();
 }
 
@@ -61,9 +56,9 @@ function runWithBrowserStorageLock<T>(scope: string, operation: () => Promise<T>
  * 前一个操作失败不能阻塞后续操作，但当前操作的成功或失败必须原样返回，
  * 因此只处理 predecessor 的 rejected 状态，不吞掉当前 `pending` 的错误。
  */
-export function withGenerationAssetStorageLock<T>(scope: string, operation: () => Promise<T>, options: GenerationStorageLockOptions = {}): Promise<T> {
+export function withGenerationAssetStorageLock<T>(scope: string, operation: () => Promise<T>): Promise<T> {
     const previous = assetStorageTails.get(scope) ?? Promise.resolve();
-    const pending = previous.then(() => undefined, () => undefined).then(() => runWithBrowserStorageLock(scope, operation, options));
+    const pending = previous.then(() => undefined, () => undefined).then(() => runWithBrowserStorageLock(scope, operation));
     const tail = pending.then(
         () => undefined,
         () => undefined,
@@ -75,16 +70,13 @@ export function withGenerationAssetStorageLock<T>(scope: string, operation: () =
     return pending;
 }
 
-export function withGenerationArtifactCommitLock<T>(scope: string, operation: () => Promise<T>, options: GenerationStorageLockOptions = {}): Promise<T> {
+export function withGenerationArtifactCommitLock<T>(scope: string, operation: () => Promise<T>): Promise<T> {
     const previous = artifactCommitTails.get(scope) ?? Promise.resolve();
     const pending = previous
         .then(() => undefined, () => undefined)
         .then(() => {
             const locks = typeof window !== "undefined" && typeof navigator !== "undefined" ? (navigator.locks as AsyncStorageLock | undefined) : undefined;
             if (locks) return locks.request(`${ARTIFACT_COMMIT_LOCK_PREFIX}${scope}`, operation);
-            if (options.requireCrossRealmLock && typeof window !== "undefined" && typeof document !== "undefined") {
-                throw new Error("当前浏览器不支持跨标签存储锁，已停止生成文件提交");
-            }
             return operation();
         });
     const tail = pending.then(
@@ -112,7 +104,6 @@ export async function insertOrReturnGenerationAsset<TAsset extends GenerationAss
     readPersistedAssets: () => Promise<TAsset[]>;
     isAssetDeleted?: () => boolean;
     persistAssets: (assets: TAsset[]) => Promise<void>;
-    requireCrossRealmLock?: boolean;
     signal?: AbortSignal;
 }): Promise<string> {
     return withGenerationAssetStorageLock(
@@ -139,6 +130,5 @@ export async function insertOrReturnGenerationAsset<TAsset extends GenerationAss
             throwIfAborted(dependencies.signal);
             return dependencies.assetId;
         },
-        { requireCrossRealmLock: dependencies.requireCrossRealmLock },
     );
 }
