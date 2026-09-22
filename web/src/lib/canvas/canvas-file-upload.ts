@@ -1,6 +1,7 @@
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "@/types/canvas";
+import { readVideoSize } from "@/lib/video-size";
 
 export const CANVAS_UPLOAD_ACCEPT = "image/*,video/*,audio/*,.mp3,.wav,text/plain,text/markdown,.txt,.md,.markdown";
 export function isTextUploadFile(file: Pick<File, "name" | "type">) {
@@ -35,24 +36,10 @@ export async function createFileUploadPlaceholder(id: string, file: File, positi
 
 async function readUploadVideoSize(file: File): Promise<[number, number]> {
     const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
     try {
-        return await new Promise((resolve, reject) => {
-            const timer = window.setTimeout(() => reject(new Error("视频尺寸读取超时，请确认文件可播放")), 15000);
-            video.onloadedmetadata = () => {
-                window.clearTimeout(timer);
-                if (video.videoWidth && video.videoHeight) resolve([video.videoWidth, video.videoHeight]);
-                else reject(new Error("无法读取视频尺寸"));
-            };
-            video.onerror = () => { window.clearTimeout(timer); reject(new Error("无法读取视频，请确认格式受浏览器支持")); };
-            video.preload = "metadata";
-            video.src = url;
-        });
+        const { width, height } = await readVideoSize(url);
+        return [width, height];
     } finally {
-        video.onloadedmetadata = null;
-        video.onerror = null;
-        video.removeAttribute("src");
-        video.load();
         URL.revokeObjectURL(url);
     }
 }

@@ -1,6 +1,7 @@
 import { canvasNodeToAsset, declaredCanvasNodeAssetCategory, findCanvasNodeAsset, type CanvasAssetSource } from "@/lib/canvas/canvas-node-asset";
 import { canvasVideoAssetPreviewUrl } from "@/lib/canvas/canvas-media-preview";
 import { readImageMeta } from "@/lib/image-utils";
+import { readVideoSize } from "@/lib/video-size";
 import { parseBackendGenerationResult, type BackendGenerationResult } from "@/services/api/generation-task";
 import { ApiError } from "@/services/api/request";
 import { linkProjectAsset, moveProjectAsset, updateProjectAssetCategory } from "@/services/api/projects";
@@ -308,8 +309,8 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
             ? {
                   url: await resolveMediaUrl(video.storageKey, video.dataUrl),
                   storageKey: video.storageKey,
-                  width: video.width || 0,
-                  height: video.height || 0,
+                  width: video.width,
+                  height: video.height,
                   durationMs: video.durationMs,
                   bytes: video.bytes || 0,
                   mimeType: video.mimeType || "video/mp4",
@@ -329,6 +330,8 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
                   input.signal,
               );
         if (!stored.url) throw new Error("视频结果资源不可用");
+        const measuredSize = stored.width && stored.height ? undefined : await readVideoSize(stored.url, input.signal);
+        throwIfAborted(input.signal);
         return {
             kind: "video",
             title: "生成视频",
@@ -340,8 +343,8 @@ async function generationOutputAsset(input: Parameters<MaterializeGenerationTask
             data: {
                 url: stored.url,
                 storageKey: stored.storageKey,
-                width: stored.width || 0,
-                height: stored.height || 0,
+                width: measuredSize?.width ?? stored.width!,
+                height: measuredSize?.height ?? stored.height!,
                 durationMs: stored.durationMs,
                 bytes: stored.bytes,
                 mimeType: stored.mimeType || "video/mp4",
