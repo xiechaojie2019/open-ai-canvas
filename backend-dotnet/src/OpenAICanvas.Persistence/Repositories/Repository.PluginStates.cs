@@ -140,7 +140,9 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         IEnumerable<(string PluginID, long EnabledCount)> rows = await connection.QueryAsync<(string, long)>(
             new CommandDefinition(
-                "SELECT plugin_id AS PluginID, COUNT(*) AS EnabledCount FROM user_plugin_states WHERE enabled = 1 GROUP BY plugin_id",
+                // enabled 在 PG 是 boolean、SQLite 是 numeric，参数化布尔两端同源。
+                "SELECT plugin_id AS PluginID, COUNT(*) AS EnabledCount FROM user_plugin_states WHERE enabled = @enabled GROUP BY plugin_id",
+                new { enabled = true },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToDictionary(row => row.PluginID, row => row.EnabledCount, StringComparer.Ordinal);
     }
