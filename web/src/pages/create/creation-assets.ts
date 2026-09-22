@@ -168,30 +168,32 @@ export function creationAttachmentFromAsset(asset: ImageAsset): CreationAttachme
 }
 
 export function creationAttachmentFromVideoAsset(asset: Extract<Asset, { kind: "video" }>): CreationAttachment {
+    const url = resolveResourceUrl(asset.data.storageKey, asset.data.url);
     return {
         id: `asset:${asset.id}`,
         name: asset.title || "素材视频",
         type: asset.data.mimeType || "video/mp4",
-        url: asset.data.url,
+        url,
         storageKey: asset.data.storageKey,
         bytes: asset.data.bytes,
         width: asset.data.width,
         height: asset.data.height,
         durationMs: asset.data.durationMs,
-        previewUrl: asset.coverUrl || asset.data.url,
+        previewUrl: asset.coverUrl || url,
     };
 }
 
 export function creationAttachmentFromAudioAsset(asset: AudioAsset): CreationAttachment {
+    const url = resolveResourceUrl(asset.data.storageKey, asset.data.url);
     return {
         id: `asset:${asset.id}`,
         name: asset.title || "素材音频",
         type: asset.data.mimeType || "audio/mpeg",
-        url: asset.data.url,
+        url,
         storageKey: asset.data.storageKey,
         bytes: asset.data.bytes,
         durationMs: asset.data.durationMs,
-        previewUrl: asset.data.url,
+        previewUrl: url,
     };
 }
 

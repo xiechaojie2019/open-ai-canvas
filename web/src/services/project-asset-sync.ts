@@ -5,7 +5,7 @@ import { readVideoSize } from "@/lib/video-size";
 import { parseBackendGenerationResult, type BackendGenerationResult } from "@/services/api/generation-task";
 import { ApiError } from "@/services/api/request";
 import { linkProjectAsset, moveProjectAsset, updateProjectAssetCategory } from "@/services/api/projects";
-import { resourceIdFromStorageKey } from "@/services/api/resources";
+import { resourceIdFromStorageKey, resolveResourceUrl } from "@/services/api/resources";
 import type { GenerationTask, GenerationTaskOutput } from "@/services/api/task-center";
 import { deleteStoredMedia, getMediaBlob, resolveMediaUrl, setMediaBlob, uploadMediaFile } from "@/services/file-storage";
 import { createGenerationTaskMaterializer, createIdempotentMaterializeOutput, type MaterializeGenerationTaskOutput } from "@/services/generation-task-materializer";
@@ -575,7 +575,7 @@ export function generationTaskMaterializedUrls(task: GenerationTask): string[] {
         const asset = output.materializedAssetId ? assets.find((candidate) => candidate.id === output.materializedAssetId) : undefined;
         if (!asset) return [];
         if (asset.kind === "image") return [asset.data.dataUrl || asset.coverUrl];
-        if (asset.kind === "video" || asset.kind === "audio") return [asset.data.url];
+        if (asset.kind === "video" || asset.kind === "audio") return [resolveResourceUrl(asset.data.storageKey, asset.data.url)];
         return [];
     });
 }
