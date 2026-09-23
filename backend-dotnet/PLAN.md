@@ -425,7 +425,9 @@ backend-dotnet/
 
 修复 .NET 能力归一化缺口：`volcengine-ark-video` 历史能力 JSON 即使只声明文本/图片生成，也会按方舟默认能力补齐 `reference_to_video`、`audio_to_video`，视频/音频输入上限分别为 3 个，文件上限分别为 200MB/15MB，参考媒体最长 15 秒；同步补齐方舟生成音频和水印选项。这样 Seedance 带参考视频进入任务创建时，不会再因能力合同缺少 `reference_to_video` 或视频输入上限为 0 被前端/后端准入拒绝。
 
-专项测试 `CapabilitySpecTests`：40/40 通过。部署验证待本次发布完成后补充。
+专项测试 `CapabilitySpecTests`：40/40 通过；后端全量测试：1473/1473 通过。
+
+**部署 211（2026-09-23 完成）**：发布 self-contained `linux-x64`，替换 `/opt/open-ai-canvas-dotnet/linux/` 后以 `docker compose build --no-cache backend` 和 `up -d --force-recreate backend` 重建。backend 容器健康检查为 `healthy`（FailingStreak=0）；`8081/api/health/live`、`5173/api/health/live`、`5173/api/health/ready` 均返回 200，ready=true、schema=15/15。此次能力合同已在创建前校验和 Worker 执行期同步生效；上游真实生成结果仍取决于渠道、提示词和参考媒体本身。
 
 ### 2026-09-23 · Seedance 两个视频模型价格档补齐 1–15 秒完成
 
