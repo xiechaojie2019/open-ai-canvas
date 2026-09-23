@@ -1,5 +1,6 @@
 #nullable enable
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Persistence.Repositories;
 
@@ -15,11 +16,13 @@ public sealed class VideoPlaybackService
 
     private readonly Repository _repository;
     private readonly string _dataDir;
+    private readonly ILogger<VideoPlaybackService>? _logger;
 
-    public VideoPlaybackService(Repository repository, string dataDir)
+    public VideoPlaybackService(Repository repository, string dataDir, ILogger<VideoPlaybackService>? logger = null)
     {
         _repository = repository;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir;
+        _logger = logger;
     }
 
     public async Task ScheduleAsync(Resource resource, CancellationToken cancellationToken = default)
@@ -42,8 +45,8 @@ public sealed class VideoPlaybackService
     public async Task BackfillAsync(CancellationToken cancellationToken = default)
     {
         await _repository.ResetStuckPlaybackTranscodesAsync(cancellationToken).ConfigureAwait(false);
-        foreach (Resource resource in await _repository.PlaybackPendingVideosAsync(100, cancellationToken).ConfigureAwait(false)) await ScheduleAsync(resource, cancellationToken).ConfigureAwait(false);
-        foreach (Resource resource in await _repository.PlaybackNoneVideosAsync(20, cancellationToken).ConfigureAwait(false)) await ScheduleAsync(resource, cancellationToken).ConfigureAwait(false);
+        await BackfillResourcesAsync(await _repository.PlaybackPendingVideosAsync(100, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        await BackfillResourcesAsync(await _repository.PlaybackNoneVideosAsync(20, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
     }
 
     public Task<ResourceStream?> OpenPlaybackAsync(Resource resource, CancellationToken cancellationToken = default)
@@ -90,6 +93,26 @@ public sealed class VideoPlaybackService
     }
 
     private string SourcePath(Resource resource) => SafePath(Path.Combine(_dataDir, "resources"), resource.ObjectKey);
+
+    private async Task BackfillResourcesAsync(IEnumerable<Resource> resources, CancellationToken cancellationToken)
+    {
+        foreach (Resource resource in resources)
+        {
+            try
+            {
+                await ScheduleAsync(resource, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "video playback backfill skipped resource_id={ResourceId}", resource.ID);
+            }
+        }
+    }
+
     private static bool IsLocalVideo(Resource r) => r.Kind == "video" && r.Status == ResourceStatus.ResourceStatusReady && r.Provider == "local";
     private static bool IsTranscodeRequired(string codec) => codec is "hevc" or "h265" or "mpeg4";
     private static string SafePath(string root, string key) { string fullRoot = Path.GetFullPath(root); string full = Path.GetFullPath(Path.Combine(fullRoot, key.Replace('/', Path.DirectorySeparatorChar))); if (!full.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("资源路径无效"); return full; }

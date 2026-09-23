@@ -117,7 +117,8 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<OpenAICanvas.Application.UploadQuota>(),
         env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.VideoPlaybackService(
-    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(), env.DataDir));
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(), env.DataDir,
+    serviceProvider.GetService<ILogger<OpenAICanvas.Application.VideoPlaybackService>>()));
 builder.Services.AddSingleton(new OpenAICanvas.Application.ChunkedUploadSessions());
 // 孤儿资源清理后台作业。对应 Go 的 app/resource_deletion_worker.go。
 // 可用 CANVAS_DISABLE_BACKGROUND_WORKERS=true 关闭（测试环境避免与手动触发竞争）。
