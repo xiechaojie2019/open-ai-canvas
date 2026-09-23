@@ -599,3 +599,15 @@ docker compose 重建 backend。容器 healthy，/api/health/live 与 /api/healt
 与管理端分析总览（KPI/趋势正常返回）通过。Endpoint 组失败定位的关键经验：
 ApiResults.FailService 对未分类异常只回固定文案，error_type 进 CanvasLog，
 测试侧直接调 service（DI 解析 CanvasService）可拿到原始异常栈。
+
+### 2026-09-23 · Seedance Fast 时长校验与资产图片展示
+
+完成本阶段：声明式 Seedance 插件按模型 ID 区分时长规则，
+doubao-seedance-2-0-fast-260128 支持 1–15 秒（未指定时长仍使用默认值），
+普通 doubao-seedance-2-0-260128 继续保持上游已验证的 4–12 秒限制。
+资产详情图片改用 CachedResourceImage，优先通过 storageKey 读取用户隔离的稳定资源缓存，
+失效封面 URL 仅作为回退，保留详情页缩放与拖拽交互。
+
+验证：新增 Seedance 清单真实包回归测试，覆盖普通模型与 Fast 模型的边界时长；
+前端构建因当前环境没有 bun 命令未执行，后端全量测试被工作区既有未跟踪的
+CoordinatorRedisIntegrationTests.cs 编译错误阻塞，未修改该无关文件。
