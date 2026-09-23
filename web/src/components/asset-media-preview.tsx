@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { CachedResourceImage } from "@/components/cached-resource-image";
+import { resolveResourceUrl } from "@/services/api/resources";
 import type { Asset } from "@/stores/use-asset-store";
 
 type AssetMediaPreviewProps = {
@@ -13,11 +14,13 @@ type AssetMediaPreviewProps = {
 export function AssetMediaPreview({ asset, alt, className = "", fallback = null }: AssetMediaPreviewProps) {
     if (!asset) return fallback;
 
-    if (asset.kind === "video" && asset.data.url) {
+    if (asset.kind === "video") {
+        const videoUrl = resolveResourceUrl(asset.data.storageKey, asset.data.url);
+        if (!videoUrl) return fallback;
         const poster = asset.coverUrl && asset.coverUrl !== asset.data.url ? asset.coverUrl : undefined;
         return (
             <video
-                src={asset.data.url}
+                src={videoUrl}
                 poster={poster}
                 aria-label={alt}
                 muted
@@ -34,7 +37,7 @@ export function AssetMediaPreview({ asset, alt, className = "", fallback = null 
     }
 
     const storageKey = asset.kind === "image" ? asset.data.storageKey : undefined;
-    const imageUrl = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
+    const imageUrl = asset.kind === "image" ? resolveResourceUrl(asset.data.storageKey, asset.data.dataUrl || asset.coverUrl) : asset.coverUrl;
     if (!imageUrl && !storageKey) return fallback;
     return <CachedResourceImage storageKey={storageKey} src={imageUrl} alt={alt} loading="lazy" decoding="async" className={className} fallback={fallback} />;
 }

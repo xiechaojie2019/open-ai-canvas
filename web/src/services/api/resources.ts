@@ -313,7 +313,12 @@ export async function getResourceBlob(storageKey: string) {
     const id = resourceIdFromStorageKey(storageKey);
     if (!id) return null;
     const url = resourceProxyFileUrl(id);
-    const response = await fetch(url, { credentials: isResourceUrl(url) ? "include" : "same-origin" });
+    // Blob 缓存是展示层的主动读取，不应把条件请求的 304 当成“没有内容”。
+    // 这里需要拿到正文供 URL.createObjectURL 使用，因此禁用这一次请求的 HTTP 缓存。
+    const response = await fetch(url, {
+        credentials: isResourceUrl(url) ? "include" : "same-origin",
+        cache: "no-store",
+    });
     if (!response.ok) return null;
     return response.blob();
 }

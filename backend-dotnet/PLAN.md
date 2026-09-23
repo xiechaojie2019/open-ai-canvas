@@ -273,7 +273,7 @@ backend-dotnet/
 | 5.2 | 资源引用解析 | `internal/assets` | ✅ 引用收集/校验/ID 解析完成（UserDataService 内） |
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
 | 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ✅ 候选筛选（未完成 1h / 就绪 24h）+ 引用快照与外观检查 + 事务删除 + Outbox 物理清理；后台作业含公告草稿超期清理与回收站过期素材清理（保留天数取运行时策略），顺序与 Go 一致 |
-| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5） |
+| 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5）；✅ 资源展示修复：远端 storageKey 优先恢复图片/视频 URL，Blob 读取禁用 304 条件缓存，资产库与创作对话统一使用资源地址 |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | 🟡 管理端与个人 OSS 设置读写、加密持久化、存储位置历史、S3 兼容 create → verify → delete 连接测试已通；阿里云 / 腾讯云 / 七牛原生 SDK 连接测试待迁移 |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |
 | 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布/素材/分享/资源 CRUD/导入/用量/OSS 直链/提示词偏好/个人 OSS 设置已通（约 30 条）；数据导出待做 |

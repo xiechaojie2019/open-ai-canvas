@@ -384,6 +384,7 @@ public static class AssetLibraryDomain
                 }
                 EnsurePositiveAssetDimension(data, "width");
                 EnsurePositiveAssetDimension(data, "height");
+                NormalizeResourceLocator(data);
                 payload["data"] = JsonSerializer.SerializeToElement(
                     new Dictionary<string, JsonElement>(data, StringComparer.Ordinal));
             }
@@ -441,6 +442,30 @@ public static class AssetLibraryDomain
             return "";
         }
         return "/api/resources/" + resourceID + "/file";
+    }
+
+    /// <summary>让带 resource: 引用的历史素材统一使用稳定资源地址。</summary>
+    private static void NormalizeResourceLocator(Dictionary<string, JsonElement> data)
+    {
+        if (!data.TryGetValue("storageKey", out JsonElement storageKey) ||
+            storageKey.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        string url = ResourceURLFromStorageKey(storageKey.GetString() ?? "");
+        if (url.Length == 0)
+        {
+            return;
+        }
+
+        foreach (string key in new[] { "dataUrl", "url" })
+        {
+            if (data.ContainsKey(key))
+            {
+                data[key] = JsonSerializer.SerializeToElement(url);
+            }
+        }
     }
 
     private static void EnsurePositiveAssetDimension(Dictionary<string, JsonElement> data, string key)
