@@ -107,10 +107,21 @@ public sealed class SystemPerformanceEndpointTests : IDisposable
         Assert.True(data.GetProperty("database").GetProperty("connected").GetBoolean());
         Assert.Equal(15, data.GetProperty("database").GetProperty("schema").GetProperty("expected").GetInt64());
         Assert.Equal(15, data.GetProperty("database").GetProperty("schema").GetProperty("current").GetInt64());
+        JsonElement databasePool = data.GetProperty("database").GetProperty("pool");
+        Assert.Equal(0, databasePool.GetProperty("maxOpenConnections").GetInt64());
+        Assert.Equal(0, databasePool.GetProperty("openConnections").GetInt64());
+        Assert.Equal(0, databasePool.GetProperty("inUse").GetInt64());
+        Assert.Equal(0, databasePool.GetProperty("idle").GetInt64());
+        Assert.Equal(0, databasePool.GetProperty("waitCount").GetInt64());
+        Assert.Equal(0, databasePool.GetProperty("waitDurationMs").GetInt64());
+        Assert.False(data.GetProperty("database").TryGetProperty("postgres", out _));
         // Redis 协调器未移植 → 本地单实例模式。
         JsonElement redis = data.GetProperty("redis");
         Assert.False(redis.GetProperty("configured").GetBoolean());
         Assert.Equal("local", redis.GetProperty("mode").GetString());
+        JsonElement redisPool = redis.GetProperty("pool");
+        Assert.Equal(0, redisPool.GetProperty("hits").GetInt64());
+        Assert.Equal(0, redisPool.GetProperty("totalConnections").GetInt64());
         Assert.Equal(1, redis.GetProperty("cacheGroups").GetArrayLength());
 
         // 缓存清理：scope 错误 → 400。

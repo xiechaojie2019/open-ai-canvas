@@ -122,6 +122,31 @@ public sealed class SystemPerformanceCacheGroupDto
     public bool Clearable { get; set; }
 }
 
+/// <summary>Redis 客户端池统计。对应 Go: <c>app.SystemPerformanceRedisPool</c>。</summary>
+public sealed class SystemPerformanceRedisPoolDto
+{
+    [JsonPropertyName("hits")]
+    public long Hits { get; set; }
+
+    [JsonPropertyName("misses")]
+    public long Misses { get; set; }
+
+    [JsonPropertyName("timeouts")]
+    public long Timeouts { get; set; }
+
+    [JsonPropertyName("totalConnections")]
+    public long TotalConnections { get; set; }
+
+    [JsonPropertyName("idleConnections")]
+    public long IdleConnections { get; set; }
+
+    [JsonPropertyName("staleConnections")]
+    public long StaleConnections { get; set; }
+
+    [JsonPropertyName("pendingRequests")]
+    public long PendingRequests { get; set; }
+}
+
 /// <summary>Redis 维度（当前单实例本地协调）。对应 Go: <c>app.SystemPerformanceRedis</c>。</summary>
 public sealed class SystemPerformanceRedisDto
 {
@@ -135,7 +160,7 @@ public sealed class SystemPerformanceRedisDto
     public string Mode { get; set; } = "";
 
     [JsonPropertyName("pool")]
-    public Dictionary<string, object> Pool { get; set; } = new(StringComparer.Ordinal);
+    public SystemPerformanceRedisPoolDto Pool { get; set; } = new();
 
     [JsonPropertyName("cacheGroups")]
     public List<SystemPerformanceCacheGroupDto> CacheGroups { get; set; } = [];

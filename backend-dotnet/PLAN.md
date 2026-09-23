@@ -320,7 +320,7 @@ backend-dotnet/
 | 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | ✅ overview/models/users/export.csv + API 日志/导出/存储统计 + 模型价格 CRUD |
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
-| 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览与缓存清理已通；`Platform/Coordinator` 已提供多实例协调能力（限流/并发/熔断/路由版本），Redis 维度可据此接入 |
+| 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览与缓存清理已通；数据库/Redis 连接池对象已补齐 Go JSON 契约，`Platform/Coordinator` 已提供多实例协调能力（限流/并发/熔断/路由版本），Redis 实时维度可据此接入 |
 | 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库完成；OSS 6 条/LibTV 3 条待做（test 依赖云 SDK/外部服务） |
 | 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 
