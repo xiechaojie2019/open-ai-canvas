@@ -29,6 +29,7 @@ import { AssetStorageUsage, assetStorageUsageQueryKey } from "./asset-storage-us
 import { deleteAssetWithRemoteSync, loadAssetLibraryPage, localSavedRemotePendingMessage, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { useUserStore } from "@/stores/use-user-store";
 import { createAssetFolder, deleteAssetFolder, listAssetFolders, listRemoteAssetsPage, moveRemoteAssetsToFolder, updateAssetFolder, type AssetFolder } from "@/services/api/user-data";
+import { resolveResourceUrl } from "@/services/api/resources";
 import { AssetBatchUploadModal } from "./asset-batch-upload-modal";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 
@@ -398,7 +399,8 @@ export default function AssetsPage() {
 
     const downloadImage = (asset: LibraryAsset) => {
         if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio" && asset.kind !== "model") return;
-        const url = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+        const fallbackUrl = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+        const url = resolveResourceUrl(asset.data.storageKey, fallbackUrl);
         const extension = asset.kind === "model" ? asset.data.fileName.split(".").pop() || "glb" : asset.data.mimeType.split("/")[1] || "png";
         saveAs(url, `${asset.title || "asset"}.${extension}`);
     };
@@ -1344,7 +1346,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: LibraryAss
                             <div className="asset-archive-preview-note">{asset.data.content}</div>
                         ) : asset.kind === "audio" ? (
                             <div className="asset-archive-audio">
-                                <audio src={asset.data.url} controls />
+                                <audio src={resolveResourceUrl(asset.data.storageKey, asset.data.url)} controls />
                             </div>
                         ) : asset.kind === "model" ? (
                             <div className="asset-archive-preview-model">
@@ -1354,7 +1356,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: LibraryAss
                                 </span>
                             </div>
                         ) : asset.kind === "video" ? (
-                            <video src={asset.data.url} controls className="asset-archive-preview-media" />
+                            <video src={resolveResourceUrl(asset.data.storageKey, asset.data.url)} controls className="asset-archive-preview-media" />
                         ) : (
                             <AssetImageZoom asset={asset} />
                         )}

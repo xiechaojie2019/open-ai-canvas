@@ -3,6 +3,8 @@ import { getImageBlob } from "@/services/image-storage";
 import { deleteRemoteAsset, deleteRemoteCanvasProject, getRemoteAsset, getRemoteAssetsByIds, getRemoteCanvasProject, getRemoteUserDataSnapshot, listRemoteAssetsPage, upsertRemoteAsset, upsertRemoteCanvasProject } from "@/services/api/user-data";
 import { appQueryClient } from "@/lib/query-client";
 import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
+import { parseBackendGenerationResult } from "@/services/api/generation-task";
+import { queryGenerationTask } from "@/services/api/task-center";
 import { parseAssetRecordList } from "@/lib/asset-record";
 import { assetForRemoteSync } from "@/lib/asset-remote-sync";
 import type { Asset } from "@/stores/use-asset-store";
@@ -33,6 +35,7 @@ let sessionEpoch = 0;
 const verifiedProjects = new Set<string>();
 const verifiedAssets = new Set<string>();
 const remoteProjectLoadPromises = new Map<string, Promise<CanvasProject | undefined>>();
+const legacyAssetRepairPromises = new Map<string, Promise<Asset | undefined>>();
 
 export async function initializeRemoteUserDataSession(userId: string) {
     await withRemoteUserDataSyncExclusive(async () => {
@@ -132,11 +135,122 @@ async function waitForRemoteProjectLoads() {
 export async function loadAssetLibraryPage(options: Parameters<typeof listRemoteAssetsPage>[0]) {
     const epoch = sessionEpoch;
     const result = await listRemoteAssetsPage(options);
+    const repairedAssets = await repairLegacyRemoteAssets(result.assets, options.signal);
     await withRemoteUserDataSyncExclusive(async () => {
         if (epoch !== sessionEpoch) throw new Error("账号已切换，请重新读取素材");
-        acceptRemoteAssets(result.assets);
+        acceptRemoteAssets(repairedAssets);
     });
-    return { ...result, assets: parseAssetRecordList(result.assets) };
+    return { ...result, assets: parseAssetRecordList(repairedAssets) };
+}
+
+function legacyGenerationOutput(asset: Asset) {
+    const metadata = asset.metadata;
+    const taskId = metadata && typeof metadata.taskId === "string" ? metadata.taskId.trim() : "";
+    const rawOutputIndex = metadata?.outputIndex ?? metadata?.resultIndex;
+    const outputIndex = typeof rawOutputIndex === "number" && Number.isInteger(rawOutputIndex) ? rawOutputIndex : -1;
+    if (!taskId || outputIndex < 0) return undefined;
+    if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") return undefined;
+    const locator = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+    const storageKey = asset.data.storageKey || "";
+    const isLegacyLocator = storageKey.startsWith("generation-") || locator.startsWith("blob:") || locator.startsWith("generation-");
+    if (!isLegacyLocator) return undefined;
+    return { taskId, outputIndex };
+}
+
+async function repairLegacyRemoteAsset(asset: Asset, signal?: AbortSignal): Promise<Asset | undefined> {
+    const identity = legacyGenerationOutput(asset);
+    if (!identity) return undefined;
+    const existing = legacyAssetRepairPromises.get(asset.id);
+    if (existing) return existing;
+    const repair = (async () => {
+        const task = await queryGenerationTask(identity.taskId, { signal });
+        const result = parseBackendGenerationResult(task);
+        const output = asset.kind === "image"
+            ? result.images?.[identity.outputIndex]
+            : asset.kind === "video"
+              ? result.video
+              : result.audio;
+        if (!output?.dataUrl) throw new Error("生成任务没有可恢复的媒体结果");
+        const outputRecord = output as Record<string, unknown>;
+        const outputWidth = typeof outputRecord.width === "number" ? outputRecord.width : undefined;
+        const outputHeight = typeof outputRecord.height === "number" ? outputRecord.height : undefined;
+        const outputDurationMs = typeof outputRecord.durationMs === "number" ? outputRecord.durationMs : undefined;
+        const outputMimeType = typeof outputRecord.mimeType === "string" ? outputRecord.mimeType : undefined;
+        const assetWidth = asset.kind === "image" || asset.kind === "video" ? asset.data.width : undefined;
+        const assetHeight = asset.kind === "image" || asset.kind === "video" ? asset.data.height : undefined;
+        const assetDurationMs = asset.kind === "video" || asset.kind === "audio" ? asset.data.durationMs : undefined;
+        const assetMimeType = asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" ? asset.data.mimeType : undefined;
+        const blob = await (await fetch(output.dataUrl, { signal, credentials: "include" })).blob();
+        if (!blob.size) throw new Error("生成任务返回了空媒体");
+        const idempotencyKey = `legacy-materialize:${identity.taskId}:${identity.outputIndex}`;
+        const resource = await uploadResourceFile(blob, asset.kind, {
+            width: outputWidth || assetWidth,
+            height: outputHeight || assetHeight,
+            durationMs: outputDurationMs || assetDurationMs,
+            fileName: `${asset.kind}-${identity.taskId}-${identity.outputIndex}.${asset.kind === "image" ? "png" : asset.kind === "video" ? "mp4" : "mp3"}`,
+            idempotencyKey,
+        });
+        const storageKey = resourceStorageKey(resource.id);
+        const url = resource.publicUrl || resourceFileUrl(resource.id);
+        const repaired = asset.kind === "image"
+            ? {
+                  ...asset,
+                  coverUrl: url,
+                  data: {
+                      ...asset.data,
+                      dataUrl: url,
+                      storageKey,
+                      width: resource.width || outputWidth || assetWidth || 0,
+                      height: resource.height || outputHeight || assetHeight || 0,
+                      bytes: resource.size || blob.size,
+                      mimeType: resource.mimeType || outputMimeType || assetMimeType || blob.type || "image/png",
+                  },
+              }
+            : asset.kind === "video"
+              ? {
+                    ...asset,
+                    coverUrl: "",
+                    data: {
+                        ...asset.data,
+                        url,
+                        storageKey,
+                        width: resource.width || outputWidth || assetWidth || 0,
+                        height: resource.height || outputHeight || assetHeight || 0,
+                        durationMs: resource.durationMs || outputDurationMs || assetDurationMs,
+                        bytes: resource.size || blob.size,
+                        mimeType: resource.mimeType || outputMimeType || assetMimeType || blob.type || "video/mp4",
+                    },
+                }
+              : {
+                    ...asset,
+                    data: {
+                        ...asset.data,
+                        url,
+                        storageKey,
+                        durationMs: resource.durationMs || outputDurationMs || assetDurationMs,
+                        bytes: resource.size || blob.size,
+                        mimeType: resource.mimeType || outputMimeType || assetMimeType || blob.type || "audio/mpeg",
+                    },
+                };
+        const payload = { ...repaired, updatedAt: new Date().toISOString() } as Asset;
+        await upsertRemoteAsset(payload);
+        return payload;
+    })().catch((error) => {
+        console.warn("修复历史生成素材失败", { assetId: asset.id, error });
+        return undefined;
+    }).finally(() => legacyAssetRepairPromises.delete(asset.id));
+    legacyAssetRepairPromises.set(asset.id, repair);
+    return repair;
+}
+
+async function repairLegacyRemoteAssets(assets: Asset[], signal?: AbortSignal) {
+    const repaired: Asset[] = [];
+    for (let offset = 0; offset < assets.length; offset += 3) {
+        const batch = assets.slice(offset, offset + 3);
+        const results = await Promise.all(batch.map(async (asset) => (await repairLegacyRemoteAsset(asset, signal)) || asset));
+        repaired.push(...results);
+    }
+    return repaired;
 }
 
 function acceptRemoteAssets(remoteAssets: Asset[]) {
@@ -165,7 +279,7 @@ async function loadReferencedAssets(ids: Iterable<string>) {
     const pending = [...new Set(ids)].filter((id) => !verifiedAssets.has(id));
     for (let offset = 0; offset < pending.length; offset += 100) {
         const { assets } = await getRemoteAssetsByIds(pending.slice(offset, offset + 100));
-        acceptRemoteAssets(assets);
+        acceptRemoteAssets(await repairLegacyRemoteAssets(assets));
     }
 }
 
@@ -202,7 +316,7 @@ export async function syncRemoteUserData(userId?: string | null) {
             const snapshot = await getRemoteUserDataSnapshot();
             // 登录时服务端是实体真相。浏览器 IndexedDB 只作为首屏缓存，不能把服务端已删除的记录补回去。
             // 这里只替换结构化记录，不在登录阶段解析图片/视频/音频 URL；媒体由实际使用方按需解析。
-            const snapshotAssets = parseAssetRecordList(snapshot.assets);
+            const snapshotAssets = parseAssetRecordList(await repairLegacyRemoteAssets(snapshot.assets));
             useCanvasStore.getState().replaceProjects(snapshot.projects);
             useAssetStore.getState().replaceAssets(snapshotAssets);
             const repair = repairMissingCanvasAssets();
