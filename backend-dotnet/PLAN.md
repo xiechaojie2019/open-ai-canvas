@@ -421,6 +421,12 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-23 · Seedance 视频参考素材能力合同补齐
+
+修复 .NET 能力归一化缺口：`volcengine-ark-video` 历史能力 JSON 即使只声明文本/图片生成，也会按方舟默认能力补齐 `reference_to_video`、`audio_to_video`，视频/音频输入上限分别为 3 个，文件上限分别为 200MB/15MB，参考媒体最长 15 秒；同步补齐方舟生成音频和水印选项。这样 Seedance 带参考视频进入任务创建时，不会再因能力合同缺少 `reference_to_video` 或视频输入上限为 0 被前端/后端准入拒绝。
+
+专项测试 `CapabilitySpecTests`：40/40 通过。部署验证待本次发布完成后补充。
+
 ### 2026-09-23 · Seedance 两个视频模型价格档补齐 1–15 秒完成
 
 生产 PostgreSQL 中的 MODEL_000005 / doubao-seedance-2-0-260128 与 MODEL_000006 / doubao-seedance-2-0-fast-260128 均已补齐 1–15 秒精确价格档。两个模型统一使用 per_second、每秒 1,000,000 微积分，并修正 provider_model_key 与选择器 JSON 格式；重复的活动档位已软删除。

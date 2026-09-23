@@ -99,7 +99,29 @@ public static class ModelCapabilityConfigOps
     public static VideoCapabilityConfig? ApplyModelSpecificVideoCapability(
         VideoCapabilityConfig? profile, string protocol, string modelName)
     {
-        if (profile is null || protocol.Trim() != ChannelInterfaceTypes.ChannelInterfaceAgnesVideo)
+        if (profile is null)
+        {
+            return profile;
+        }
+
+        if (protocol.Trim() == ChannelInterfaceTypes.ChannelInterfaceVolcengineArkVideo)
+        {
+            // 方舟 Seedance 的历史能力 JSON 可能只保存了文本/图片生成；
+            // 与 Go 默认能力保持一致，补齐参考视频/音频的准入声明。
+            VideoCapabilityConfig arkValue = profile;
+            arkValue.References.MaxVideos = 3;
+            arkValue.References.MaxAudios = 3;
+            arkValue.References.MaxVideoBytes = 200 * 1024 * 1024;
+            arkValue.References.MaxVideoDuration = 15;
+            arkValue.References.MaxAudioBytes = 15 * 1024 * 1024;
+            arkValue.References.MaxAudioDuration = 15;
+            arkValue.Operations = ["text_to_video", "image_to_video", "reference_to_video", "audio_to_video"];
+            arkValue.GenerateAudio = new VideoBooleanConfig { Supported = true, Default = true };
+            arkValue.Watermark = new VideoBooleanConfig { Supported = true, Default = false };
+            return arkValue;
+        }
+
+        if (protocol.Trim() != ChannelInterfaceTypes.ChannelInterfaceAgnesVideo)
         {
             return profile;
         }

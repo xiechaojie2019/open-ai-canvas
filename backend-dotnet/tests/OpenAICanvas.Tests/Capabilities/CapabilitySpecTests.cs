@@ -384,7 +384,7 @@ public class CapabilitySpecTests
     }
 
     [Fact]
-    public void 视频能力从配置投影为规格()
+    public void 方舟视频能力补齐参考素材操作和输入规格()
     {
         ModelCapabilityConfig config = JsonSerializer.Deserialize<ModelCapabilityConfig>(
             """
@@ -396,14 +396,17 @@ public class CapabilitySpecTests
             "video", "volcengine-ark-video", "seedance", config)!;
         CapabilitySpec spec = ModelCapabilityConfigOps.CapabilitySpecFromModelCapabilityConfig(normalized, "video");
 
-        Assert.Equal(["text_to_video", "image_to_video"], spec.Operations);
+        Assert.Equal(
+            ["text_to_video", "image_to_video", "reference_to_video", "audio_to_video"],
+            spec.Operations);
         Assert.Equal(9, spec.Inputs!["image"].Max);
         Assert.Equal(3, spec.Inputs!["video"].Max);
+        Assert.Equal(3, spec.Inputs!["audio"].Max);
         Assert.Equal(["5", "10"], spec.Options!["videoSeconds"].Values!.Select(v => v.GetRawText()));
         Assert.Equal(["16:9", "9:16"], spec.Options!["size"].Values!.Select(v => v.GetString()));
         Assert.Equal(["720p", "1080p"], spec.Options!["vquality"].Values!.Select(v => v.GetString()));
         Assert.Equal(2, spec.Options!["videoGenerateAudio"].Values!.Count);
-        Assert.Equal([false], spec.Options!["videoWatermark"].Values!.Select(v => v.GetBoolean()));
+        Assert.Equal([false, true], spec.Options!["videoWatermark"].Values!.Select(v => v.GetBoolean()));
     }
 
     [Fact]
