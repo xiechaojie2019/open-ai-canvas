@@ -611,3 +611,8 @@ doubao-seedance-2-0-fast-260128 支持 1–15 秒（未指定时长仍使用默�
 验证：新增 Seedance 清单真实包回归测试，覆盖普通模型与 Fast 模型的边界时长；
 前端构建因当前环境没有 bun 命令未执行，后端全量测试被工作区既有未跟踪的
 CoordinatorRedisIntegrationTests.cs 编译错误阻塞，未修改该无关文件。
+
+部署：已将 Fast 插件包同步到 192.168.0.211 的 /opt/open-ai-canvas-dotnet，
+重建 backend 容器并确认 healthy；同步资产详情页前端文件后重建 web 镜像并确认 healthy。
+8081 直连、5173 代理的 live 检查以及 5173 ready 检查均返回 200，数据库、运行时和
+schema 就绪检查通过。
