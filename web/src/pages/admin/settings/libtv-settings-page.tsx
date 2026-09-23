@@ -5,7 +5,13 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useBlocker } from "react-router";
 
 import { cn } from "@/lib/utils";
-import { getAdminLibTVSetting, testAdminLibTV, updateAdminLibTVSetting, type AdminLibTVSetting } from "@/services/api/libtv";
+import {
+    getAdminLibTVSetting,
+    isAdminLibTVSetting,
+    testAdminLibTV,
+    updateAdminLibTVSetting,
+    type AdminLibTVSetting,
+} from "@/services/api/libtv";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatusBadge, configuredSecretText, SettingsSectionCard } from "../components/admin-ui";
@@ -498,13 +504,7 @@ function TestStatus({ status }: { status: ConnectionTestStatus }) {
     return <AdminStatusBadge label="本会话尚未验证" tone="neutral" />;
 }
 
-function isAdminLibTVSetting(value: unknown): value is AdminLibTVSetting {
-    if (!value || typeof value !== "object") return false;
-    const candidate = value as Partial<AdminLibTVSetting>;
-    return typeof candidate.enabled === "boolean" && typeof candidate.hasToken === "boolean" && (candidate.updatedAt === undefined || typeof candidate.updatedAt === "string");
-}
-
-function hasValidSettingTime(value?: string) {
+function hasValidSettingTime(value?: string | null) {
     if (!value) return false;
     const timestamp = new Date(value).getTime();
     return Number.isFinite(timestamp) && timestamp > 0;

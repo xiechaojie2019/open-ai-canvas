@@ -4,8 +4,18 @@ import { http } from "@/services/api/request";
 export type AdminLibTVSetting = {
     enabled: boolean;
     hasToken: boolean;
-    updatedAt?: string;
+    updatedAt?: string | null;
 };
+
+export function isAdminLibTVSetting(value: unknown): value is AdminLibTVSetting {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const candidate = value as Partial<AdminLibTVSetting>;
+    return typeof candidate.enabled === "boolean"
+        && typeof candidate.hasToken === "boolean"
+        && (candidate.updatedAt === undefined
+            || candidate.updatedAt === null
+            || typeof candidate.updatedAt === "string");
+}
 
 export type LibTVImportIssue = { id?: string; name?: string; reason: string };
 export type LibTVImportWarning = { id?: string; message: string };
