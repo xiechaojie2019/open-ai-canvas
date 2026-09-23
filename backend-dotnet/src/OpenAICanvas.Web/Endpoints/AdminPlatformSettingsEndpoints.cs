@@ -11,8 +11,8 @@ using OpenAICanvas.Web.Security;
 namespace OpenAICanvas.Web.Endpoints;
 
 /// <summary>
-/// 平台设置路由：运行时策略、绘图工具、模型响应拦截、方舟素材库、公告配图上传。
-/// 对应 Go: <c>handler/auth.go</c> 设置部分、<c>handler/libtv.go</c> 之外的平台设置、
+/// 平台设置路由：运行时策略、绘图工具、模型响应拦截、第三方参数、方舟素材库、公告配图上传。
+/// 对应 Go: <c>handler/auth.go</c> 设置部分、<c>handler/libtv.go</c>、
 /// <c>handler/announcement.go</c> 配图上传。
 /// </summary>
 public static class AdminPlatformSettingsEndpoints
@@ -179,6 +179,70 @@ public static class AdminPlatformSettingsEndpoints
                 ResponseInterceptionSettingDto setting = await platformSettings
                     .UpdateResponseInterceptionSettingAsync(actor, request, cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        // ------------------------------------------------------------ LibTV
+
+        api.MapGet("/admin/settings/libtv", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                PublicLibTVSettingDto setting = await platformSettings
+                    .AdminLibTVSettingAsync(actor, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/admin/settings/libtv", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                LibTVSettingRequestDto? request = await ReadJsonAsync<LibTVSettingRequestDto>(
+                    context, 16 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                PublicLibTVSettingDto setting = await platformSettings
+                    .UpdateLibTVSettingAsync(actor, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { setting });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/settings/libtv/test", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                LibTVTestRequestDto? request = await ReadJsonAsync<LibTVTestRequestDto>(
+                    context, 16 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                await platformSettings.TestLibTVAsync(actor, request.UUID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { ok = true });
             }
             catch (Exception error)
             {

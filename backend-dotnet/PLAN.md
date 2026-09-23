@@ -321,7 +321,7 @@ backend-dotnet/
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
 | 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览与缓存清理已通；数据库/Redis 连接池对象已补齐 Go JSON 契约，`Platform/Coordinator` 已提供多实例协调能力（限流/并发/熔断/路由版本），Redis 实时维度可据此接入 |
-| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库/OSS 设置完成；S3 兼容测试已通，阿里云 / 腾讯云 / 七牛原生 SDK 测试与 LibTV 3 条待做 |
+| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库/OSS 设置完成；LibTV 管理配置读取、保存与连接测试已接入；S3 兼容测试已通，阿里云 / 腾讯云 / 七牛原生 SDK 测试待做 |
 | 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 
 ### 阶段 10 · 插件、技能与提示词
@@ -333,7 +333,7 @@ backend-dotnet/
 | 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/删除/加入/点赞 + 包文件读取 5 条 + 创建/更新完成（15 条路由）；install/sync 待做 |
 | 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ 包目录布局与 manifest 解析待移植（install/sync/file 读的前置） |
 | 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |
-| 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | ☐ |
+| 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | 🟡 LibTV 管理配置读取、保存与连接测试完成；画布导入与 TapNow 待做 |
 | 10.7 | 自定义渠道中转 | `handler/custom_proxy.go` | ☐ |
 | 10.8 | 系统代理与路径转发 | `handler/system_proxy_stream.go` | ☐ |
 

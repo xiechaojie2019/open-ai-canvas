@@ -238,6 +238,43 @@ public sealed class AdminPlatformSettingsEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task LibTV设置_读取保存脱敏清除与连接测试校验()
+    {
+        using HttpClient admin = await SignInAsAdminAsync();
+        HttpResponseMessage initial = await admin.GetAsync("/api/admin/settings/libtv");
+        Assert.Equal(HttpStatusCode.OK, initial.StatusCode);
+        JsonElement initialSetting = (await ReadDataAsync(initial)).GetProperty("setting");
+        Assert.False(initialSetting.GetProperty("enabled").GetBoolean());
+        Assert.False(initialSetting.GetProperty("hasToken").GetBoolean());
+
+        HttpResponseMessage enabledWithoutToken = await admin.PatchAsJsonAsync(
+            "/api/admin/settings/libtv", new { enabled = true });
+        Assert.Equal(HttpStatusCode.BadRequest, enabledWithoutToken.StatusCode);
+        Assert.Equal("启用 LibTV 前请先配置 Token", await ReadMessageAsync(enabledWithoutToken));
+
+        HttpResponseMessage saved = await admin.PatchAsJsonAsync(
+            "/api/admin/settings/libtv", new { enabled = false, token = "libtv-secret" });
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.DoesNotContain("libtv-secret", await saved.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.True((await ReadDataAsync(saved)).GetProperty("setting").GetProperty("hasToken").GetBoolean());
+
+        HttpResponseMessage preserved = await admin.PatchAsJsonAsync(
+            "/api/admin/settings/libtv", new { enabled = false, token = " " });
+        Assert.Equal(HttpStatusCode.OK, preserved.StatusCode);
+        Assert.True((await ReadDataAsync(preserved)).GetProperty("setting").GetProperty("hasToken").GetBoolean());
+
+        HttpResponseMessage invalidUUID = await admin.PostAsJsonAsync(
+            "/api/admin/settings/libtv/test", new { uuid = "not-a-uuid" });
+        Assert.Equal(HttpStatusCode.BadRequest, invalidUUID.StatusCode);
+        Assert.Equal("LibTV 画布 UUID 格式无效", await ReadMessageAsync(invalidUUID));
+
+        HttpResponseMessage cleared = await admin.PatchAsJsonAsync(
+            "/api/admin/settings/libtv", new { enabled = false, clearToken = true });
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        Assert.False((await ReadDataAsync(cleared)).GetProperty("setting").GetProperty("hasToken").GetBoolean());
+    }
+
+    [Fact]
     public async Task 公告配图上传_校验与草稿登记()
     {
         using HttpClient admin = await SignInAsAdminAsync();

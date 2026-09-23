@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Outbound;
 using OpenAICanvas.Persistence.Repositories;
 
 namespace OpenAICanvas.Application;
@@ -71,6 +72,36 @@ public sealed class ArkPrivateAssetSettingRequestDto
     public string AccessKeySecret { get; set; } = "";
 }
 
+public sealed class LibTVSettingRequestDto
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    [JsonPropertyName("token")]
+    public string Token { get; set; } = "";
+
+    [JsonPropertyName("clearToken")]
+    public bool ClearToken { get; set; }
+}
+
+public sealed class PublicLibTVSettingDto
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; init; }
+
+    [JsonPropertyName("hasToken")]
+    public bool HasToken { get; init; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTime? UpdatedAt { get; init; }
+}
+
+public sealed class LibTVTestRequestDto
+{
+    [JsonPropertyName("uuid")]
+    public string UUID { get; set; } = "";
+}
+
 /// <summary>公开方舟素材库设置。对应 Go: <c>app.PublicArkPrivateAssetSetting</c>。</summary>
 public sealed class PublicArkPrivateAssetSettingDto
 {
@@ -114,6 +145,9 @@ public sealed class PlatformSettingsService
     private const string RuntimePolicySettingKey = "runtime_policy";
     private const string ResponseInterceptionSettingKey = "response_interception";
     private const string ArkPrivateAssetSettingKey = "ark_private_assets";
+    private const string LibTVSettingKey = "libtv";
+    private const string LibTVDetailUrl = "https://api.liblib.tv/api/canvas/project/detail";
+    private const int LibTVMaxResponseBytes = 8 << 20;
 
     private const long MaxRuntimeUploadMB = 999;
     private const long MaxRuntimeStorageGB = 999;
@@ -527,6 +561,204 @@ public sealed class PlatformSettingsService
                     $"第 {index + 1} 条拦截规则的替换文案不能超过 {MaxResponseInterceptionReplaceRunes} 个字符");
             }
         }
+    }
+
+    // ------------------------------------------------------------ LibTV
+
+    public async Task<PublicLibTVSettingDto> AdminLibTVSettingAsync(
+        User actor, CancellationToken cancellationToken = default)
+    {
+        CanvasService.RequireAdmin(actor);
+        (SystemSetting? setting, LibTVSettingValue value) = await ReadLibTVSettingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return PublicLibTVSetting(setting, value);
+    }
+
+    public async Task<PublicLibTVSettingDto> UpdateLibTVSettingAsync(
+        User actor, LibTVSettingRequestDto request, CancellationToken cancellationToken = default)
+    {
+        CanvasService.RequireAdmin(actor);
+        (SystemSetting? currentSetting, LibTVSettingValue current) = await ReadLibTVSettingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        string token = request.ClearToken ? "" : request.Token.Trim();
+        if (!request.ClearToken && token.Length == 0)
+        {
+            token = current.Token;
+        }
+        if (request.Enabled && token.Length == 0)
+        {
+            throw AppError.BadAuthRequest("启用 LibTV 前请先配置 Token");
+        }
+
+        LibTVSettingValue value = new()
+        {
+            Enabled = request.Enabled,
+            Token = SettingsCrypto.EncryptSecret(token, _dataDir),
+        };
+        SystemSetting setting = new()
+        {
+            Key = LibTVSettingKey,
+            ValueJSON = JsonSerializer.Serialize(value, CanvasJsonOptions),
+            UpdatedBy = actor.ID,
+            CreatedAt = currentSetting?.CreatedAt ?? DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        await _repository.SaveSystemSettingAsync(setting, cancellationToken).ConfigureAwait(false);
+        value.Token = token;
+        return PublicLibTVSetting(setting, value);
+    }
+
+    public async Task TestLibTVAsync(
+        User actor, string projectUUID, CancellationToken cancellationToken = default)
+    {
+        CanvasService.RequireAdmin(actor);
+        (SystemSetting? _, LibTVSettingValue value) = await ReadLibTVSettingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (value.Token.Length == 0)
+        {
+            throw AppError.BadAuthRequest("尚未配置 LibTV Token");
+        }
+        await FetchLibTVDetailAsync(projectUUID.Trim(), value.Token, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<(SystemSetting? Setting, LibTVSettingValue Value)> ReadLibTVSettingAsync(
+        CancellationToken cancellationToken)
+    {
+        SystemSetting? setting = await _repository.SystemSettingAsync(LibTVSettingKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (setting is null)
+        {
+            return (null, new LibTVSettingValue());
+        }
+
+        LibTVSettingValue value;
+        try
+        {
+            value = JsonSerializer.Deserialize<LibTVSettingValue>(setting.ValueJSON, CanvasJsonOptions)
+                ?? new LibTVSettingValue();
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException("LibTV 配置格式无效");
+        }
+        bool migratePlainToken = value.Token.Length > 0
+            && !value.Token.StartsWith(SettingsCrypto.EncryptedPrefix, StringComparison.Ordinal);
+        string plainToken = SettingsCrypto.DecryptSecret(value.Token, _dataDir).Trim();
+        value.Token = plainToken;
+        if (migratePlainToken)
+        {
+            value.Token = SettingsCrypto.EncryptSecret(plainToken, _dataDir);
+            setting.ValueJSON = JsonSerializer.Serialize(value, CanvasJsonOptions);
+            await _repository.SaveSystemSettingAsync(setting, cancellationToken).ConfigureAwait(false);
+            value.Token = plainToken;
+        }
+        return (setting, value);
+    }
+
+    private static PublicLibTVSettingDto PublicLibTVSetting(SystemSetting? setting, LibTVSettingValue value) => new()
+    {
+        Enabled = value.Enabled,
+        HasToken = value.Token.Trim().Length > 0,
+        UpdatedAt = setting?.UpdatedAt,
+    };
+
+    private static async Task FetchLibTVDetailAsync(
+        string projectUUID, string token, CancellationToken cancellationToken)
+    {
+        if (projectUUID.Length != 32 || projectUUID.Any(character =>
+                !(character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F')))
+        {
+            throw AppError.BadAuthRequest("LibTV 画布 UUID 格式无效");
+        }
+
+        string url = $"{LibTVDetailUrl}?uuid={Uri.EscapeDataString(projectUUID)}";
+        using HttpClient client = OutboundHttpClient.Create(TimeSpan.FromSeconds(20), allowAutoRedirect: false);
+        using HttpRequestMessage request = new(HttpMethod.Get, url);
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.TryAddWithoutValidation("token", token);
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException || error is TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            throw AppError.Wrap(502, "LibTV 请求失败，请检查网络或 Token", error);
+        }
+        using (response)
+        {
+            if (response.Content.Headers.ContentLength is > LibTVMaxResponseBytes)
+            {
+                throw AppError.New(502, "LibTV 响应过大");
+            }
+            await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using MemoryStream body = new();
+            byte[] buffer = new byte[16 * 1024];
+            while (true)
+            {
+                int read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0) break;
+                if (body.Length + read > LibTVMaxResponseBytes)
+                {
+                    throw AppError.New(502, "LibTV 响应过大");
+                }
+                body.Write(buffer, 0, read);
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                throw AppError.New(502, $"LibTV 请求失败（HTTP {(int)response.StatusCode}）");
+            }
+
+            LibTVEnvelope? envelope;
+            try
+            {
+                envelope = JsonSerializer.Deserialize<LibTVEnvelope>(body.ToArray(), CanvasJsonOptions);
+            }
+            catch (JsonException)
+            {
+                throw AppError.New(502, "LibTV 响应格式无效");
+            }
+            if (envelope is null) throw AppError.New(502, "LibTV 响应格式无效");
+            if (envelope.Code != 0)
+            {
+                throw AppError.New(502, string.IsNullOrWhiteSpace(envelope.Message)
+                    ? "LibTV 返回业务错误" : envelope.Message.Trim());
+            }
+            if (envelope.Data?.ProjectMeta?.Effective is not { CanRead: true, CanCopy: true })
+            {
+                throw AppError.New(502, "当前 LibTV 画布不允许复制");
+            }
+        }
+    }
+
+    private sealed class LibTVSettingValue
+    {
+        [JsonPropertyName("enabled")] public bool Enabled { get; set; }
+        [JsonPropertyName("token")] public string Token { get; set; } = "";
+    }
+
+    private sealed class LibTVEnvelope
+    {
+        [JsonPropertyName("code")] public int Code { get; set; }
+        [JsonPropertyName("msg")] public string Message { get; set; } = "";
+        [JsonPropertyName("data")] public LibTVDetail? Data { get; set; }
+    }
+
+    private sealed class LibTVDetail
+    {
+        [JsonPropertyName("projectMeta")] public LibTVProjectMeta? ProjectMeta { get; set; }
+    }
+
+    private sealed class LibTVProjectMeta
+    {
+        [JsonPropertyName("effective")] public LibTVEffective? Effective { get; set; }
+    }
+
+    private sealed class LibTVEffective
+    {
+        [JsonPropertyName("canRead")] public bool CanRead { get; set; }
+        [JsonPropertyName("canCopy")] public bool CanCopy { get; set; }
     }
 
     // ------------------------------------------------------------ 方舟素材库

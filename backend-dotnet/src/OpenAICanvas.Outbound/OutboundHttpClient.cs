@@ -19,11 +19,12 @@ public static class OutboundHttpClient
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>创建受控出站客户端。调用方负责释放。</summary>
-    public static HttpClient Create(TimeSpan? timeout = null)
+    public static HttpClient Create(TimeSpan? timeout = null, bool allowAutoRedirect = true)
     {
         SocketsHttpHandler handler = new()
         {
             Proxy = HttpClient.DefaultProxy,
+            AllowAutoRedirect = allowAutoRedirect,
             ConnectCallback = ConnectThroughSsrfGuardAsync,
             ConnectTimeout = ConnectTimeout,
             AutomaticDecompression = System.Net.DecompressionMethods.None,
