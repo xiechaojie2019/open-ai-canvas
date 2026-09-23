@@ -169,6 +169,9 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDeleteService>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Application.Appearance.AppearanceService>()));
+// 对象存储平台/个人设置及 S3 兼容连接测试。对应 Go 的 settings/storage_s3。
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.StorageSettingsService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(), env.DataDir));
 
 WebApplication app = builder.Build();
 
@@ -290,6 +293,12 @@ api.MapAppearanceRoutes(
 api.MapAdminStorageRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.AdminStorageService>());
+
+// 存储服务配置（管理端及个人 S3 设置）。
+api.MapStorageSettingsRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.StorageSettingsService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>());
 
 // 资源文件下发路由（鉴权 + 匿名签名）。对应 Go 的 GET /resources/:id/file 等。
 api.MapResourceDeliveryRoutes(

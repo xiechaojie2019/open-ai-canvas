@@ -274,9 +274,9 @@ backend-dotnet/
 | 5.3 | 资源删除与引用检查 | `app/resource_delete.go` | ✅ 判定链/Outbox/本地物理删除完成（云删除 worker 待接，#25） |
 | 5.4 | 资源清理作业 | `repository/resource_cleanup.go` | ✅ 候选筛选（未完成 1h / 就绪 24h）+ 引用快照与外观检查 + 事务删除 + Outbox 物理清理；后台作业含公告草稿超期清理与回收站过期素材清理（保留天数取运行时策略），顺序与 Go 一致 |
 | 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5） |
-| 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | ☐ |
+| 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | 🟡 管理端与个人 OSS 设置读写、加密持久化、存储位置历史、S3 兼容 create → verify → delete 连接测试已通；阿里云 / 腾讯云 / 七牛原生 SDK 连接测试待迁移 |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ☐ |
-| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布/素材/分享/资源 CRUD/导入/用量/OSS 直链/提示词偏好已通（约 27 条）；OSS 用户设置 3 条与导出待做 |
+| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布/素材/分享/资源 CRUD/导入/用量/OSS 直链/提示词偏好/个人 OSS 设置已通（约 30 条）；数据导出待做 |
 
 ### 阶段 6 · 项目与短剧工作流（47 条路由）
 
@@ -321,7 +321,7 @@ backend-dotnet/
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
 | 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
 | 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览与缓存清理已通；数据库/Redis 连接池对象已补齐 Go JSON 契约，`Platform/Coordinator` 已提供多实例协调能力（限流/并发/熔断/路由版本），Redis 实时维度可据此接入 |
-| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库完成；OSS 6 条/LibTV 3 条待做（test 依赖云 SDK/外部服务） |
+| 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库/OSS 设置完成；S3 兼容测试已通，阿里云 / 腾讯云 / 七牛原生 SDK 测试与 LibTV 3 条待做 |
 | 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 
 ### 阶段 10 · 插件、技能与提示词
