@@ -421,6 +421,14 @@ backend-dotnet/
 
 ## 九、部署与生产修复日志
 
+### 2026-09-23 · Seedance 两个视频模型价格档补齐 1–15 秒完成
+
+生产 PostgreSQL 中的 MODEL_000005 / doubao-seedance-2-0-260128 与 MODEL_000006 / doubao-seedance-2-0-fast-260128 均已补齐 1–15 秒精确价格档。两个模型统一使用 per_second、每秒 1,000,000 微积分，并修正 provider_model_key 与选择器 JSON 格式；重复的活动档位已软删除。
+
+验证（211 生产）：两个模型均为 15 个活动档位，时长完整覆盖 1,2,3,...,15，价格一致；后端重启后 /api/health/live 与 /api/health/ready 均返回 200，ready=true、schema=15/15。
+
+本次仅修复价格档数据并重启后端，没有代码文件或构建产物变更；本条生产记录随计划文档提交。Seedance 上游协议本身的时长校验仍以当前插件声明为准。
+
 ### 2026-09-22 · 4.13 视频转码与播放副本迁移完成
 
 新增 `VideoPlaybackService`：本地 ready 视频在上传完成后探测编码；HEVC/H.265 与 MPEG-4 Part 2 在 `ffmpeg` 可用时异步转为 H.264/AAC MP4，状态按 `none/processing/ready/failed` 持久化。`VideoPlaybackWorker` 在进程启动时回填未判定、遗留 none 与中断 processing 的存量资源；云存储资源维持原件，不触发下载转码。
