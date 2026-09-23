@@ -208,12 +208,40 @@ public sealed class AdminAnalyticsEndpointTests : IDisposable
             {
                 ID = "RES_S2",
                 UserID = _userId,
+                Kind = "image",
+                Status = "ready",
+                Provider = "local",
+                ObjectKey = "a.png",
+                MimeType = "image/png",
+                Size = 2048,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+            await repository.CreateAsync(new Resource
+            {
+                ID = "RES_S3",
+                UserID = _userId,
+                Kind = "video",
+                Status = "ready",
+                Provider = "s3",
+                Endpoint = "https://s3.example.test",
+                Bucket = "media",
+                ObjectKey = "b.mp4",
+                MimeType = "video/mp4",
+                Size = 4096,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+            await repository.CreateAsync(new Resource
+            {
+                ID = "RES_S4",
+                UserID = _userId,
                 Kind = "video",
                 Status = "pending",
                 Provider = "",
-                ObjectKey = "b.mp4",
+                ObjectKey = "c.mp4",
                 MimeType = "video/mp4",
-                Size = 2048,
+                Size = 512,
                 CreatedAt = now,
                 UpdatedAt = now,
             });
@@ -222,13 +250,23 @@ public sealed class AdminAnalyticsEndpointTests : IDisposable
         HttpResponseMessage response = await admin.GetAsync("/api/admin/storage/stats");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        JsonElement stats = await ReadDataAsync(response);
-        Assert.Equal(2, stats.GetProperty("resourceCount").GetInt64());
-        Assert.Equal(1, stats.GetProperty("readyCount").GetInt64());
-        Assert.Equal(3072, stats.GetProperty("totalBytes").GetInt64());
-        Assert.Equal(1024, stats.GetProperty("physicalBytes").GetInt64());
+        JsonElement stats = (await ReadDataAsync(response)).GetProperty("stats");
+        Assert.Equal(4, stats.GetProperty("resourceCount").GetInt64());
+        Assert.Equal(3, stats.GetProperty("readyCount").GetInt64());
+        Assert.Equal(7680, stats.GetProperty("logicalBytes").GetInt64());
+        // RES_S1 / RES_S2 指向同一对象，物理体积按对象取最大值。
+        Assert.Equal(6144, stats.GetProperty("physicalBytes").GetInt64());
+        Assert.Equal(2048, stats.GetProperty("localBytes").GetInt64());
+        Assert.Equal(4096, stats.GetProperty("remoteBytes").GetInt64());
         Assert.Equal(2, stats.GetProperty("byKind").GetArrayLength());
-        // 空 provider 归一为 local。
-        Assert.Equal("local", stats.GetProperty("byProvider")[0].GetProperty("key").GetString());
+        Assert.Equal(2, stats.GetProperty("byProvider").GetArrayLength());
+        Assert.Equal("video", stats.GetProperty("byKind")[0].GetProperty("kind").GetString());
+        Assert.Equal(4096, stats.GetProperty("byKind")[0].GetProperty("physicalBytes").GetInt64());
+        Assert.Equal("image", stats.GetProperty("byKind")[1].GetProperty("kind").GetString());
+        Assert.Equal(2048, stats.GetProperty("byKind")[1].GetProperty("physicalBytes").GetInt64());
+        // 空 provider 归一为 local，并将 pending 资源计入逻辑体积。
+        Assert.Equal("s3", stats.GetProperty("byProvider")[0].GetProperty("provider").GetString());
+        Assert.Equal("local", stats.GetProperty("byProvider")[1].GetProperty("provider").GetString());
+        Assert.Equal(3584, stats.GetProperty("byProvider")[1].GetProperty("logicalBytes").GetInt64());
     }
 }

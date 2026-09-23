@@ -106,11 +106,17 @@ public sealed class AdminStorageStatsDto
     [JsonPropertyName("readyCount")]
     public long ReadyCount { get; init; }
 
-    [JsonPropertyName("totalBytes")]
-    public long TotalBytes { get; init; }
+    [JsonPropertyName("logicalBytes")]
+    public long LogicalBytes { get; init; }
 
     [JsonPropertyName("physicalBytes")]
     public long PhysicalBytes { get; init; }
+
+    [JsonPropertyName("localBytes")]
+    public long LocalBytes { get; init; }
+
+    [JsonPropertyName("remoteBytes")]
+    public long RemoteBytes { get; init; }
 
     [JsonPropertyName("byKind")]
     public IReadOnlyList<ResourceKindStat> ByKind { get; init; } = [];
@@ -471,8 +477,10 @@ public sealed partial class AdminAnalyticsService
         {
             ResourceCount = summary.ResourceCount,
             ReadyCount = summary.ReadyCount,
-            TotalBytes = summary.TotalBytes,
+            LogicalBytes = summary.LogicalBytes,
             PhysicalBytes = summary.PhysicalBytes,
+            LocalBytes = summary.LocalBytes,
+            RemoteBytes = summary.RemoteBytes,
             ByKind = byKind,
             ByProvider = byProvider,
         };

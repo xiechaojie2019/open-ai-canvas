@@ -1464,7 +1464,7 @@ public static class UserDataEndpoints
                     .ConfigureAwait(false);
                 AdminStorageStatsDto stats = await service.AdminStorageStatsAsync(actor, cancellationToken)
                     .ConfigureAwait(false);
-                return ApiResults.Ok(stats);
+                return ApiResults.Ok(new { stats });
             }
             catch (Exception error)
             {

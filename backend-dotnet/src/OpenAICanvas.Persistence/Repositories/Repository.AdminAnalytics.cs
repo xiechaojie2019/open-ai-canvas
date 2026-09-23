@@ -18,11 +18,24 @@ public sealed record ApiCallLogFilter(
 
 /// <summary>资源存储汇总。对应 Go: <c>repository.ResourceStorageSummary</c>。</summary>
 public sealed record ResourceStorageSummary(
-    long ResourceCount, long ReadyCount, long TotalBytes, long PhysicalBytes);
+    long ResourceCount,
+    long ReadyCount,
+    long LogicalBytes,
+    long PhysicalBytes,
+    long LocalBytes,
+    long RemoteBytes);
 
-public sealed record ResourceKindStat(string Key, long Count, long Bytes);
+public sealed record ResourceKindStat(
+    string Kind,
+    long Count,
+    long LogicalBytes,
+    long PhysicalBytes);
 
-public sealed record ResourceProviderStat(string Key, long Count, long Bytes);
+public sealed record ResourceProviderStat(
+    string Provider,
+    long Count,
+    long LogicalBytes,
+    long PhysicalBytes);
 
 /// <summary>
 /// 管理后台分析/日志/存储仓储方法。
@@ -30,6 +43,8 @@ public sealed record ResourceProviderStat(string Key, long Count, long Bytes);
 /// </summary>
 public sealed partial class Repository
 {
+    private const string ResourceProviderExpression = "COALESCE(NULLIF(\"provider\", ''), 'local')";
+
     /// <summary>API 日志分页。对应 Go: <c>QueryAPICallLogs</c>。</summary>
     public async Task<(IReadOnlyList<ApiCallLog> Logs, long Total)> QueryApiCallLogsAsync(
         ApiCallLogFilter filter, CancellationToken cancellationToken = default)
@@ -211,16 +226,24 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await connection.QueryFirstOrDefaultAsync<ResourceStorageSummary>(
             new CommandDefinition(
-                """
+                $"""
+                WITH "physical_resources" AS (
+                  SELECT {ResourceProviderExpression} AS "Provider", MAX("size") AS "Size"
+                  FROM "resources"
+                  WHERE "status" = @ready
+                  GROUP BY {ResourceProviderExpression}, "endpoint", "bucket", "object_key"
+                )
                 SELECT
-                  COUNT(*) AS "ResourceCount",
-                  COALESCE(SUM(CASE WHEN "status" = @ready THEN 1 ELSE 0 END), 0) AS "ReadyCount",
-                  COALESCE(SUM("size"), 0) AS "TotalBytes",
-                  COALESCE(SUM(CASE WHEN "status" = @ready THEN "size" ELSE 0 END), 0) AS "PhysicalBytes"
+                  CAST(COUNT(*) AS BIGINT) AS "ResourceCount",
+                  CAST(COALESCE(SUM(CASE WHEN "status" = @ready THEN 1 ELSE 0 END), 0) AS BIGINT) AS "ReadyCount",
+                  CAST(COALESCE(SUM("size"), 0) AS BIGINT) AS "LogicalBytes",
+                  CAST(COALESCE((SELECT SUM("Size") FROM "physical_resources"), 0) AS BIGINT) AS "PhysicalBytes",
+                  CAST(COALESCE((SELECT SUM("Size") FROM "physical_resources" WHERE "Provider" = 'local'), 0) AS BIGINT) AS "LocalBytes",
+                  CAST(COALESCE((SELECT SUM("Size") FROM "physical_resources" WHERE "Provider" <> 'local'), 0) AS BIGINT) AS "RemoteBytes"
                 FROM "resources"
                 """,
                 new { ready = "ready" },
-                cancellationToken: cancellationToken)).ConfigureAwait(false) ?? new ResourceStorageSummary(0, 0, 0, 0);
+                cancellationToken: cancellationToken)).ConfigureAwait(false) ?? new ResourceStorageSummary(0, 0, 0, 0, 0, 0);
     }
 
     /// <summary>按 kind 分组统计。对应 Go: <c>ResourceKindStats</c>。</summary>
@@ -230,7 +253,34 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ResourceKindStat>(
             connection,
-            """SELECT "kind" AS "Key", COUNT(*) AS "Count", COALESCE(SUM("size"), 0) AS "Bytes" FROM "resources" GROUP BY "kind" ORDER BY "kind" ASC""",
+            $"""
+            WITH "logical_stats" AS (
+              SELECT
+                "kind" AS "Kind",
+                CAST(COUNT(*) AS BIGINT) AS "Count",
+                CAST(COALESCE(SUM("size"), 0) AS BIGINT) AS "LogicalBytes"
+              FROM "resources"
+              GROUP BY "kind"
+            ), "physical_resources" AS (
+              SELECT "kind" AS "Kind", MAX("size") AS "Size"
+              FROM "resources"
+              WHERE "status" = @ready
+              GROUP BY "kind", {ResourceProviderExpression}, "endpoint", "bucket", "object_key"
+            ), "physical_stats" AS (
+              SELECT "Kind", CAST(COALESCE(SUM("Size"), 0) AS BIGINT) AS "PhysicalBytes"
+              FROM "physical_resources"
+              GROUP BY "Kind"
+            )
+            SELECT
+              "logical_stats"."Kind",
+              "logical_stats"."Count",
+              "logical_stats"."LogicalBytes",
+              COALESCE("physical_stats"."PhysicalBytes", 0) AS "PhysicalBytes"
+            FROM "logical_stats"
+            LEFT JOIN "physical_stats" ON "physical_stats"."Kind" = "logical_stats"."Kind"
+            ORDER BY "logical_stats"."LogicalBytes" DESC, "logical_stats"."Kind" ASC
+            """,
+            new { ready = "ready" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -241,7 +291,34 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ResourceProviderStat>(
             connection,
-            """SELECT COALESCE(NULLIF("provider", ''), 'local') AS "Key", COUNT(*) AS "Count", COALESCE(SUM("size"), 0) AS "Bytes" FROM "resources" GROUP BY COALESCE(NULLIF("provider", ''), 'local') ORDER BY "Key" ASC""",
+            $"""
+            WITH "logical_stats" AS (
+              SELECT
+                {ResourceProviderExpression} AS "Provider",
+                CAST(COUNT(*) AS BIGINT) AS "Count",
+                CAST(COALESCE(SUM("size"), 0) AS BIGINT) AS "LogicalBytes"
+              FROM "resources"
+              GROUP BY {ResourceProviderExpression}
+            ), "physical_resources" AS (
+              SELECT {ResourceProviderExpression} AS "Provider", MAX("size") AS "Size"
+              FROM "resources"
+              WHERE "status" = @ready
+              GROUP BY {ResourceProviderExpression}, "endpoint", "bucket", "object_key"
+            ), "physical_stats" AS (
+              SELECT "Provider", CAST(COALESCE(SUM("Size"), 0) AS BIGINT) AS "PhysicalBytes"
+              FROM "physical_resources"
+              GROUP BY "Provider"
+            )
+            SELECT
+              "logical_stats"."Provider",
+              "logical_stats"."Count",
+              "logical_stats"."LogicalBytes",
+              COALESCE("physical_stats"."PhysicalBytes", 0) AS "PhysicalBytes"
+            FROM "logical_stats"
+            LEFT JOIN "physical_stats" ON "physical_stats"."Provider" = "logical_stats"."Provider"
+            ORDER BY "logical_stats"."LogicalBytes" DESC, "logical_stats"."Provider" ASC
+            """,
+            new { ready = "ready" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }
