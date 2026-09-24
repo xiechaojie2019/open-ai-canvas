@@ -60,7 +60,10 @@ public sealed class CanvasService
         Channels = new ChannelService(repository);
         LogicalModels = new LogicalModelService(repository);
         ChannelAdmin = new ChannelAdminService(repository, LogicalModels);
-        ChannelModels = new ChannelModelAdminService(repository, LogicalModels);
+        ChannelModels = new ChannelModelAdminService(
+            repository,
+            LogicalModels,
+            declarativeAdapters: () => Plugins.RegistrySnapshot());
         UserData = new UserDataService(repository, RuntimePolicy);
         ResourceDelete = new ResourceDeleteService(repository, dataDir);
         CanvasShares = new CanvasShareService(repository);

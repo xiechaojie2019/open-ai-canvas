@@ -45,6 +45,15 @@ public sealed class ProviderTextTask
         CancellationToken cancellationToken = default)
     {
         string interfaceType = (input.Config.InterfaceType ?? "").Trim();
+        IProtocolAdapter? declarative = _context?.DeclarativeAdapter?.Resolve(interfaceType);
+        if (declarative is not null
+            && declarative.Metadata().Enabled
+            && declarative.Metadata().UnavailableReason.Trim().Length == 0
+            && declarative.Metadata().Execution == "declarative"
+            && declarative.Metadata().Categories.Contains(ProtocolCapability.Text, StringComparer.Ordinal))
+        {
+            return RunDeclarativeAsync(input, declarative, onDelta, onReasoningDelta, cancellationToken);
+        }
         return interfaceType switch
         {
             ProviderTextOrchestration.ChatCompletionProtocol =>
@@ -56,6 +65,112 @@ public sealed class ProviderTextTask
             _ => RunLegacyAsync(input, onDelta, onReasoningDelta, cancellationToken),
         };
     }
+
+    /// <summary>
+    /// 执行声明式文本协议。清单负责请求字段和响应路径，宿主仍统一负责限流、熔断、鉴权和错误传播。
+    /// </summary>
+    private async Task<Dictionary<string, object?>> RunDeclarativeAsync(
+        TextTaskInput input,
+        IProtocolAdapter adapter,
+        Action<string>? onDelta,
+        Action<string>? onReasoningDelta,
+        CancellationToken cancellationToken)
+    {
+        string channelId = input.Config.ChannelID;
+        if (_context is not null
+            && channelId.Length > 0
+            && await _context.IsCircuitOpenAsync(channelId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new ProviderCircuitOpenException();
+        }
+
+        Func<ValueTask>? release = _context is null
+            ? null
+            : await _context.AcquireChannelSlotAsync(channelId, "", cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ProtocolGenerationRequest source = ProviderProtocolPayload.FromInput(input);
+            // 文本后台任务必须拿到最终 JSON；即使调用方要求流式，也把完整结果一次性回调，
+            // 避免把不声明 SSE 的插件响应误判为永久等待。
+            source.Extra["stream"] = false;
+            GenerationRequest request = ToProtocolRequest(source);
+            RequestSpec spec = adapter.BuildCreate(new RequestContext
+            {
+                BaseURL = input.Config.BaseURL,
+                Request = request,
+            });
+            byte[] body = await ProviderProtocolExecutor.ExecuteAsync(
+                input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory)
+                .ConfigureAwait(false);
+            CreateResult created = adapter.ParseCreate(body);
+            if (created.Status is ProtocolStatus.Failed or ProtocolStatus.Cancelled)
+            {
+                throw ProviderProtocolPayload.ResultError(created.Message, created.TaskID);
+            }
+            if (created.Result is null || created.Result.Text.Trim().Length == 0)
+            {
+                throw new InvalidOperationException("声明式文本接口没有返回内容");
+            }
+            ProviderTextResult result = new(created.Result.Text, created.Result.Reasoning);
+            onReasoningDelta?.Invoke(result.Reasoning);
+            onDelta?.Invoke(result.Text);
+            if (_context is not null && channelId.Length > 0)
+            {
+                await _context.RecordChannelResultAsync(channelId, false, cancellationToken).ConfigureAwait(false);
+            }
+            return ProviderTextOrchestration.TextTaskResult(result);
+        }
+        catch (Exception)
+        {
+            if (_context is not null && channelId.Length > 0)
+            {
+                try
+                {
+                    await _context.RecordChannelResultAsync(channelId, true, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 熔断记账是旁路，不能覆盖上游错误。
+                }
+            }
+            throw;
+        }
+        finally
+        {
+            if (release is not null)
+            {
+                await release().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static GenerationRequest ToProtocolRequest(ProtocolGenerationRequest source) => new()
+    {
+        Capability = source.Capability,
+        Model = source.Model,
+        Prompt = source.Prompt,
+        Instructions = source.Instructions,
+        Messages = [.. source.Messages.Select(message => new Message
+        {
+            Role = message.Role,
+            Content = message.Content,
+        })],
+        Inputs = [.. source.Inputs],
+        Images = [.. source.Images],
+        Videos = [.. source.Videos],
+        Audios = [.. source.Audios],
+        AspectRatio = source.AspectRatio,
+        Resolution = source.Resolution,
+        Quality = source.Quality,
+        GenerateAudio = source.GenerateAudio,
+        Watermark = source.Watermark,
+        Operation = source.Operation,
+        Duration = source.Duration,
+        ImageCount = source.ImageCount,
+        Output = source.Output,
+        ProviderOptions = source.ProviderOptions,
+        Extra = source.Extra,
+    };
 
     /// <summary>
     /// 执行文本任务：按协议构造请求体并解析结果。

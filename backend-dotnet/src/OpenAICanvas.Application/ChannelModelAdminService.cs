@@ -115,15 +115,18 @@ public sealed class ChannelModelAdminService
     private readonly Repository _repository;
     private readonly LogicalModelService _logicalModels;
     private readonly ChannelModelCatalogService _catalog;
+    private readonly Func<ProtocolAdapterRegistry?>? _declarativeAdapters;
 
     public ChannelModelAdminService(
         Repository repository,
         LogicalModelService logicalModels,
-        ChannelModelCatalogService? catalog = null)
+        ChannelModelCatalogService? catalog = null,
+        Func<ProtocolAdapterRegistry?>? declarativeAdapters = null)
     {
         _repository = repository;
         _logicalModels = logicalModels;
         _catalog = catalog ?? new ChannelModelCatalogService();
+        _declarativeAdapters = declarativeAdapters;
     }
 
     /// <summary>测试管理员当前编辑的渠道模型连接，不写入模型或价格配置。</summary>
@@ -182,7 +185,10 @@ public sealed class ChannelModelAdminService
         Stopwatch stopwatch = Stopwatch.StartNew();
         try
         {
-            _ = await new ProviderTextTask().RunTextTaskAsync(input, cancellationToken: cancellationToken)
+            ProviderRequestContext context = new(
+                new DefaultRuntimePolicyProvider(),
+                declarativeAdapter: _declarativeAdapters?.Invoke());
+            _ = await new ProviderTextTask(context).RunTextTaskAsync(input, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
