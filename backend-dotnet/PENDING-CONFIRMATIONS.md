@@ -593,3 +593,15 @@
      ——合计约 1200-1700 行 Go（出站 SSRF + Redis 槽 + 代理计费三大基础设施），
      需独立完整轮次。建议顺序：先 /ai/custom + /ai/models（约 1200 行），
      /ai/system 流式（依赖渠道计费栈）单独一批。
+     **进展（2026-09-25 第二次复核）**：.NET 已有 `OpenAICanvas.Outbound`
+     项目（OutboundGuard.ValidateOutboundUrlAsync / ParseOutboundHeadersJson /
+     NormalizeOutboundHeaders / EncodeOutboundHeadersJson +
+     OutboundHttpClient.Create / ApplyHeaders）——出站栈大部分已移植。
+     /ai/custom + /ai/models 剩余缺口缩小为约 600 行 C#：
+     ValidateCustomRelayURL（自定义中转专用 SSRF 规则）、
+     DecodeRelayOutboundHeaders（请求头内编码头解码）、
+     ApplyDefaultOutboundHeaders、CustomRelayHTTPClient（无重定向工厂）、
+     authorizeCustomRelay（方法/路径白名单）、AcquireCustomRelaySlot
+     （内存槽位，PENDING #66 同族）、InterceptResponseText（接既有
+     response-interception 设置服务）、流式密钥 REDACTED 滑动窗口。
+     一个标准轮次可完成；/ai/system 流式随后单独一批。
