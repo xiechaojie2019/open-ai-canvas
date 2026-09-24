@@ -19,9 +19,12 @@ docs/content/docs/plugins/*
 !docs/content/docs/backend/
 docs/content/docs/backend/*
 !docs/content/docs/backend/task-runtime-stability.mdx
+!docs/content/docs/backend/agent-prompt-policy.mdx
+!docs/content/docs/backend/canvas-agent-appearance.mdx
 !docs/content/docs/backend/http-api.mdx
 !docs/content/docs/backend/code-map.mdx
 !docs/content/docs/backend/newapi-channel-2.mdx
+!docs/content/docs/backend/video-token-billing.mdx
 !docs/content/docs/backend/creative-agent-runtime.mdx
 # Keep the creative Agent design versioned without unignoring generated docs.
 !docs/content/docs/overview/
@@ -91,3 +94,7 @@ backend-dotnet/publish/
 # IDE 本地启动配置（含个人端口），不入库。
 backend-dotnet/**/Properties/launchSettings.json
 /backend-dotnet/.codebuddy/memory
+# One-off local probe scripts and their compiled output.
+backend/tmp_*
+# Keep the runtime in source control; its optional debug map is not deployed.
+/web/public/live2d/live2dcubismcore.min.js.map

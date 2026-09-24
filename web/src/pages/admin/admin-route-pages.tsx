@@ -8,16 +8,18 @@ import { readAnnouncementPendingReview } from "./components/admin-announcement-s
 
 const AnalyticsPanel = lazy(() => import("./components/analytics-panel"));
 const AdminAnnouncementsPanel = lazy(() => import("./components/admin-announcements-panel"));
+const AdminBannerAnnouncementsPanel = lazy(() => import("./components/admin-banner-announcements-panel"));
 const CreditOperationsPanel = lazy(() => import("./components/credit-operations-panel"));
 const AccessSettingsPanel = lazy(() => import("./components/access-settings-panel"));
 const EmailSettingsPanel = lazy(() => import("./components/email-settings-panel"));
 const FeatureAvailabilityPanel = lazy(() => import("./components/feature-availability-panel"));
 const StorageResourcesPanel = lazy(() => import("./components/storage-resources-panel"));
+const AgentLessonsPanel = lazy(() => import("./components/agent-lessons-panel"));
 
 export function AnalyticsPage() {
     const { references } = useAdminContext();
     return (
-        <AdminPageFrame title="数据概览" description="用户、任务、质量与成本健康度" scroll>
+        <AdminPageFrame title="运行总览" description="请求质量、任务队列与成本 · 趋势按自然日统计" scroll>
             <AnalyticsPanel users={references.users} channels={references.channels} />
         </AdminPageFrame>
     );
@@ -48,6 +50,27 @@ export function AnnouncementsPage() {
             }
         >
             <AdminAnnouncementsPanel publishOpen={publishOpen} publishBlocked={publishBlocked} publishReturnFocus={publishReturnFocus} onPublishOpenChange={setPublishOpen} onPublishBlockedChange={setPublishBlocked} />
+        </AdminPageFrame>
+    );
+}
+
+export function BannerAnnouncementsPage() {
+    const [createOpen, setCreateOpen] = useState(false);
+    return (
+        <AdminPageFrame
+            title="常驻通知"
+            description="配置首页顶部常驻展示的通知，支持标题、状态与有效期"
+            actions={
+                <Button
+                    type="primary"
+                    icon={<Plus className="size-4" />}
+                    onClick={() => setCreateOpen(true)}
+                >
+                    新增常驻通知
+                </Button>
+            }
+        >
+            <AdminBannerAnnouncementsPanel createOpen={createOpen} onCreateOpenChange={setCreateOpen} />
         </AdminPageFrame>
     );
 }
@@ -103,6 +126,14 @@ export function StorageResourcesPage() {
     return (
         <AdminPageFrame title="存储资源" description="只读查看资源记录、容量分布与文件预览" scroll>
             <StorageResourcesPanel />
+        </AdminPageFrame>
+    );
+}
+
+export function AgentLessonsPage() {
+    return (
+        <AdminPageFrame title="Agent 记忆" description="按用户查看个人记忆；批准仍由用户自己处理" scroll>
+            <AgentLessonsPanel />
         </AdminPageFrame>
     );
 }

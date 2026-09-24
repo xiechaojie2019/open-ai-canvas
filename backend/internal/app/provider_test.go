@@ -461,8 +461,16 @@ func TestClaudeAgentBodyMapsOpenAIStyleTools(t *testing.T) {
 		}}},
 		"tool_choice": "required",
 	})
-	if body["system"] != "You are concise." || body["max_tokens"] != 4096 {
+	systemBlocks, _ := body["system"].([]interface{})
+	if len(systemBlocks) != 1 || body["max_tokens"] != 4096 {
 		t.Fatalf("body = %#v", body)
+	}
+	system, _ := systemBlocks[0].(map[string]interface{})
+	if system["text"] != "You are concise." {
+		t.Fatalf("system = %#v", system)
+	}
+	if cache, _ := system["cache_control"].(map[string]interface{}); cache["type"] != "ephemeral" {
+		t.Fatalf("system cache_control = %#v", system["cache_control"])
 	}
 	messages, _ := body["messages"].([]interface{})
 	if len(messages) != 3 {
@@ -472,6 +480,9 @@ func TestClaudeAgentBodyMapsOpenAIStyleTools(t *testing.T) {
 	tool, _ := tools[0].(map[string]interface{})
 	if tool["name"] != "canvas_get_state" || body["tool_choice"].(map[string]interface{})["type"] != "any" {
 		t.Fatalf("tools/choice = %#v / %#v", body["tools"], body["tool_choice"])
+	}
+	if cache, _ := tool["cache_control"].(map[string]interface{}); cache["type"] != "ephemeral" {
+		t.Fatalf("tool cache_control = %#v", tool["cache_control"])
 	}
 }
 
@@ -859,6 +870,10 @@ func TestProviderPayloadErrorMessageUsesSafeActionableCategories(t *testing.T) {
 		{name: "model access", raw: "model not found for tenant secret-id", want: "模型不存在"},
 		{name: "thinking mode rejects forced tool choice", raw: `{"error":{"message":"Thinking mode does not support this tool_choice","request_id":"secret-trace"}}`, want: "不支持强制工具调用"},
 		{name: "reasoning mode rejects forced tool choice", raw: `{"error":{"message":"tool_choice=required is not supported in reasoning mode"}}`, want: "不支持强制工具调用"},
+		// 真实上游原文：一轮里模型发了多个 canvas_inspect_image 调用，历史里的图片
+		// 插在 tool 结果之间，上游按"tool_call_id 没有被回应"拒绝。它含 "insufficient"，
+		// 落到额度类目会把协议错误报成"渠道余额不足"（见 providerPayloadErrorCategory）。
+		{name: "tool call pairing", raw: `{"error":{"message":"An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'. (insufficient tool messages following tool_calls message)","type":"invalid_request_error","request_id":"secret-trace"}}`, want: "工具调用与结果不匹配"},
 		{name: "unknown", raw: "trace_id=private internal stack", want: "模型服务返回失败"},
 	}
 	for _, tt := range tests {
@@ -2210,6 +2225,48 @@ func TestArkPlanConfigStaysSeparateFromSeedanceVideosEndpoint(t *testing.T) {
 	}
 	if !isSeedanceVideoConfig(config) {
 		t.Fatal("isSeedanceVideoConfig() = false, want true")
+	}
+}
+
+func TestArkPlanImageConfigDoesNotUseVideoAssetPath(t *testing.T) {
+	imageConfig := providerConfig{
+		InterfaceType: "volcengine-ark-agent-plan-image",
+		BaseURL:       "https://ark.cn-beijing.volces.com/api/plan/v3",
+		Model:         "doubao-seedream-4-0-250828",
+	}
+	if isArkPlanVideoConfig(imageConfig) {
+		t.Fatal("agent plan image must not match isArkPlanVideoConfig")
+	}
+	if isArkPrivateAssetVideoConfig(imageConfig) {
+		t.Fatal("agent plan image must not trigger ark private asset sync")
+	}
+	if isSeedanceVideoConfig(imageConfig) {
+		t.Fatal("agent plan image must not match isSeedanceVideoConfig")
+	}
+
+	videoConfig := providerConfig{
+		InterfaceType: "volcengine-ark-agent-plan-video",
+		BaseURL:       "https://ark.cn-beijing.volces.com/api/plan/v3",
+		Model:         "doubao-seedance-1-5-pro-251215",
+	}
+	if !isArkPlanVideoConfig(videoConfig) || !isArkPrivateAssetVideoConfig(videoConfig) {
+		t.Fatal("agent plan video should keep video/asset path")
+	}
+}
+
+func TestPrepareArkPrivateAssetReferencesSkipsImageMode(t *testing.T) {
+	svc := &Service{}
+	err := svc.prepareArkPrivateAssetReferences(context.Background(), "user-1", &canvasGenerationInput{
+		Mode: "image",
+		Config: providerConfig{
+			InterfaceType:         "volcengine-ark-agent-plan-image",
+			BaseURL:               "https://ark.cn-beijing.volces.com/api/plan/v3",
+			ArkPrivateAssetUpload: "true",
+		},
+		ReferenceImages: []providerMedia{{StorageKey: "resource:res-1", URL: "https://example.com/ref.png"}},
+	})
+	if err != nil {
+		t.Fatalf("prepareArkPrivateAssetReferences() error = %v", err)
 	}
 }
 

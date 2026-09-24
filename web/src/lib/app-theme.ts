@@ -164,6 +164,7 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
             colorLinkHover: color.solidHoverBg,
             colorLinkActive: color.solidActiveBg,
             colorTextLightSolid: color.solidFg,
+            controlOutlineWidth: 0,
             colorText: skin.text || undefined,
             colorTextSecondary: skin.textMuted || undefined,
             colorIcon: skin.icon || undefined,
@@ -196,6 +197,7 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
         },
         components: {
             Button: {
+                defaultShadow: "none",
                 primaryShadow: "none",
                 dangerShadow: "none",
                 dangerColor: color.dangerForeground,
@@ -234,6 +236,11 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 activeBorderColor: interactiveBorder,
                 hoverBorderColor: interactiveBorder,
                 activeShadow: focusShadow,
+            },
+            DatePicker: {
+                activeShadow: focusShadow,
+                activeBorderColor: interactiveBorder,
+                hoverBorderColor: interactiveBorder,
             },
             Switch: {
                 handleBg: color.switchOffHandle,
@@ -354,6 +361,20 @@ export function getAntThemeConfig(dark: boolean, skinID: unknown = "classic"): T
                 headerFontSize: 15,
                 bodyPadding: 18,
             },
+            Message: {
+                contentBg: elevatedBackground,
+                contentPadding: "10px 18px",
+            },
+            Notification: {
+                colorBgElevated: elevatedBackground,
+            },
+            Tooltip: {
+                colorBgSpotlight: elevatedBackground,
+                colorTextLightSolid: color.selectedFg,
+            },
+            Popover: {
+                colorBgElevated: elevatedBackground,
+            },
         },
     };
 }
@@ -380,11 +401,22 @@ export function getWorkspaceAntThemeConfig(): ThemeConfig {
                 defaultShadow: "none", primaryShadow: "none", dangerShadow: "none",
                 paddingInline: 14, paddingInlineSM: 10,
             },
-            Input: { borderRadius: 12, activeShadow: "0 0 0 2px var(--user-accent-soft)", paddingInline: 12 },
-            Select: { borderRadius: 12, optionSelectedBg: "var(--user-accent-soft)", optionSelectedColor: "var(--user-ink)", optionActiveBg: "var(--user-surface-muted)", optionPadding: "9px 12px" },
-            Dropdown: { borderRadiusLG: 16, controlItemBgHover: "var(--user-surface-muted)", paddingBlock: 6 },
+            Input: { borderRadius: 12, paddingInline: 12 },
+            Select: {
+                borderRadius: 12,
+                colorBgElevated: "var(--user-surface-raised)", boxShadowSecondary: "none",
+                colorFillTertiary: "var(--user-surface-muted)", colorFillSecondary: "var(--user-surface-hover)",
+                activeOutlineColor: "transparent",
+                optionSelectedBg: "var(--user-surface-hover)", optionSelectedColor: "var(--user-ink)",
+                optionActiveBg: "var(--user-surface-muted)", optionPadding: "9px 12px",
+            },
+            Dropdown: { borderRadiusLG: 16, colorBgElevated: "var(--user-surface-raised)", boxShadowSecondary: "none", controlItemBgHover: "var(--user-surface-muted)", paddingBlock: 6 },
+            Popover: { borderRadiusLG: 16, colorBgElevated: "var(--user-surface-raised)", boxShadowSecondary: "none" },
             Modal: { borderRadiusLG: 20 },
             Popconfirm: { borderRadiusLG: 16 },
+            Message: { borderRadiusLG: 14, contentPadding: "10px 18px" },
+            Notification: { borderRadiusLG: 18 },
+            Tooltip: { borderRadius: 8 },
         },
     };
 }

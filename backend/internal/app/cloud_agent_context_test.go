@@ -19,7 +19,7 @@ func TestCloudAgentContextCompactionPreservesToolPairsAndWrites(t *testing.T) {
 			map[string]any{"role": "tool", "tool_call_id": i, "content": body})
 	}
 	last, _ := json.Marshal(request.Messages[len(request.Messages)-2:])
-	if !compactCloudAgentContext(&request) {
+	if !compactCloudAgentContext(&request, cloudAgentContextBudgetFor(64_000, 8_000, "test")) {
 		t.Fatal("large read bodies not compacted")
 	}
 	if len(request.Messages) != 33 || request.Messages[0]["content"] != "original instructions" || request.Messages[4]["content"] != write {
@@ -34,8 +34,60 @@ func TestCloudAgentContextCompactionPreservesToolPairsAndWrites(t *testing.T) {
 			t.Fatal("tool pair broken")
 		}
 	}
-	if compactCloudAgentContext(&request) {
+	if compactCloudAgentContext(&request, cloudAgentContextBudgetFor(64_000, 8_000, "test")) {
 		t.Fatal("compaction is not idempotent")
+	}
+}
+
+func TestCloudAgentContextCompactionPreservesNodeExecutionFacts(t *testing.T) {
+	nodes := make([]any, 0, 40)
+	for i := 0; i < 40; i++ {
+		nodes = append(nodes, map[string]any{
+			"id":      "node-" + strings.Repeat("x", i+1),
+			"content": strings.Repeat("large rereadable body", 400),
+			"generation": map[string]any{
+				"taskId": "task-1", "generationId": "generation-1", "approvalId": "approval-1",
+				"taskSubmitted": true, "submissionOutcome": "accepted", "phase": "execution",
+				"diagnosticId": "diag-1", "fieldPath": "generationSpec.options.durationSeconds",
+				"cancellationSource": "user_request", "writebackReason": "node_deleted",
+				"billing": map[string]any{"orderId": "order-1", "status": "settled"},
+			},
+		})
+	}
+	body, _ := json.Marshal(map[string]any{"nodes": nodes, "page": 1})
+	request := canonicalAgentRequest{Messages: []map[string]any{
+		{"role": "user", "content": "读取画布"},
+		{"role": "assistant", "content": "", "tool_calls": []map[string]any{{"id": "read"}}},
+		{"role": "tool", "tool_call_id": "read", "content": string(body)},
+		{"role": "assistant", "content": "继续", "tool_calls": []map[string]any{{"id": "latest"}}},
+		{"role": "tool", "tool_call_id": "latest", "content": `{"status":"ok"}`},
+	}}
+	if !compactCloudAgentContext(&request, cloudAgentContextBudgetFor(64_000, 8_000, "test")) {
+		t.Fatal("large node read was not compacted")
+	}
+	var compacted map[string]any
+	if err := json.Unmarshal([]byte(stringField(request.Messages[2], "content")), &compacted); err != nil {
+		t.Fatal(err)
+	}
+	facts, ok := compacted["observedFacts"].([]any)
+	if !ok || len(facts) != 40 {
+		t.Fatalf("observed facts = %#v", compacted["observedFacts"])
+	}
+	generation := facts[0].(map[string]any)["generation"].(map[string]any)
+	for key, want := range map[string]any{
+		"taskId": "task-1", "generationId": "generation-1", "approvalId": "approval-1", "taskSubmitted": true,
+		"submissionOutcome": "accepted", "phase": "execution", "diagnosticId": "diag-1",
+		"fieldPath": "generationSpec.options.durationSeconds", "cancellationSource": "user_request", "writebackReason": "node_deleted",
+	} {
+		if generation[key] != want {
+			t.Fatalf("generation.%s = %#v, want %#v", key, generation[key], want)
+		}
+	}
+	if billing := generation["billing"].(map[string]any); billing["orderId"] != "order-1" || billing["status"] != "settled" {
+		t.Fatalf("billing facts lost: %#v", billing)
+	}
+	if compactCloudAgentContext(&request, cloudAgentContextBudgetFor(64_000, 8_000, "test")) {
+		t.Fatal("second compaction should be idempotent")
 	}
 }
 
@@ -44,6 +96,37 @@ func TestCloudAgentCanonicalUsesAutomaticToolChoice(t *testing.T) {
 	request := cloudAgentCanonical("system", nil, "读取画布", req)
 	if request.ToolChoice != "auto" {
 		t.Fatalf("cloud agent tool choice = %#v", request.ToolChoice)
+	}
+}
+
+func TestCloudAgentPlanDoesNotBustSystemPrefix(t *testing.T) {
+	state := cloudAgentRuntime{
+		Canonical: canonicalAgentRequest{
+			SystemPrompt:   "frozen-system",
+			PromptCacheKey: "cloud-agent:abc",
+			Messages:       []map[string]any{{"role": "user", "content": "做分镜"}},
+		},
+	}
+	first := cloudAgentCanonicalWithPlan(&state)
+	state.Plan = []cloudAgentPlanItem{{ID: "1", Title: "写分镜", Status: "doing"}}
+	second := cloudAgentCanonicalWithPlan(&state)
+	state.Plan[0].Status = "done"
+	state.Plan = append(state.Plan, cloudAgentPlanItem{ID: "2", Title: "生成视频", Status: "pending"})
+	third := cloudAgentCanonicalWithPlan(&state)
+	if first.SystemPrompt != "frozen-system" || second.SystemPrompt != first.SystemPrompt || third.SystemPrompt != first.SystemPrompt {
+		t.Fatalf("待办变化不得改写系统提示: %q / %q / %q", first.SystemPrompt, second.SystemPrompt, third.SystemPrompt)
+	}
+	if first.PromptCacheKey != "cloud-agent:abc" || second.PromptCacheKey != first.PromptCacheKey {
+		t.Fatal("prompt cache key 应保持冻结")
+	}
+	if isCloudAgentRuntimeContextMessage(first.Messages[len(first.Messages)-1]) {
+		t.Fatal("没有清单时不应追加运行状态")
+	}
+	if !strings.Contains(stringField(second.Messages[len(second.Messages)-1], "content"), "写分镜") {
+		t.Fatal("清单应挂在末尾消息")
+	}
+	if strings.Contains(stringField(state.Canonical.Messages[len(state.Canonical.Messages)-1], "content"), "生成视频") {
+		t.Fatal("运行态历史不得钉死清单快照")
 	}
 }
 
