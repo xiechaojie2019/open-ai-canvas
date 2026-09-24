@@ -2813,3 +2813,12 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 ### 验证
 
 - `dotnet build OpenAICanvas.sln` 0 错误；`dotnet test` 1505/1505 通过。
+
+### 收口批补充 · POST 创建路由 200 空响应缺陷修复
+
+- 缺陷：`POST /agent/runs`、`POST /agent/runs/{id}/messages`、
+  `GET /agent/runs/{id}/events` 三个端点在测试宿主下返回 200 空响应——
+  它们是仅有的三个「表达式体 lambda 直接调用返回 Task<IResult> 的方法」
+  形式的注册（端点元数据缺 4 项，delegate 未执行）。
+- 修复：统一改为块体 async lambda（与既有可用端点一致），三个路由全部
+  验证通过（空 body → 400 信封；未知 run → 404 信封）。

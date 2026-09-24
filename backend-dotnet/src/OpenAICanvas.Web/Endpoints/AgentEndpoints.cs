@@ -130,11 +130,17 @@ public static class AgentEndpoints
         });
 
         // 每条追加消息开启一个不可变轮次并返回其 ID。
-        api.MapPost("/agent/runs", (HttpContext context) =>
-            CreateHandlerAsync(context, service, sessions, rateLimiter, policyProvider, parentID: ""));
-        api.MapPost("/agent/runs/{id}/messages", (HttpContext context) =>
-            CreateHandlerAsync(context, service, sessions, rateLimiter, policyProvider,
-                parentID: (string?)context.Request.RouteValues["id"] ?? ""));
+        api.MapPost("/agent/runs", async (HttpContext context) =>
+        {
+            return await CreateHandlerAsync(
+                context, service, sessions, rateLimiter, policyProvider, parentID: "").ConfigureAwait(false);
+        });
+        api.MapPost("/agent/runs/{id}/messages", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            return await CreateHandlerAsync(
+                context, service, sessions, rateLimiter, policyProvider,
+                parentID: (string?)context.Request.RouteValues["id"] ?? "").ConfigureAwait(false);
+        });
 
         api.MapGet("/agent/runs/{id}", async (HttpContext context, CancellationToken cancellationToken) =>
         {
@@ -263,8 +269,10 @@ public static class AgentEndpoints
             }
         });
 
-        api.MapGet("/agent/runs/{id}/events", (HttpContext context) =>
-            EventsHandlerAsync(context, service, sessions, policyProvider));
+        api.MapGet("/agent/runs/{id}/events", async (HttpContext context) =>
+        {
+            return await EventsHandlerAsync(context, service, sessions, policyProvider).ConfigureAwait(false);
+        });
     }
 
     // ------------------------------------------------------------ 创建运行
