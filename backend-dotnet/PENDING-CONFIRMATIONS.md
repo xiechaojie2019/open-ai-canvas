@@ -548,3 +548,38 @@
   `handler/agent.go` 10 条路由 + SSE events → worker 调度钩子（advanceCloudAgents）。
 - 取舍：分批期间 `POST /agent/runs` 等路由整体未接线（避免「可建不可跑」的
   悬挂运行）；10 条路由待运行时闭环后一次性开放。
+
+
+### 69. `[进行中]` 全盘扫描后的最终剩余清单（2026-09-25 复核）
+- 扫描口径：Go 路由 319 条 vs .NET 端点；分组前缀还原后逐条核实。
+- **确认为假阳性（已实现）**：plugins 全部 10 条（PluginEndpoints.cs）、
+  payments 旧前缀 11 条（/admin/payments/*）、openapi.yaml（Program.cs 内嵌
+  backend openapi.yaml 原样输出）、/oauth/linuxdo/callback 根级别名
+  （Program.cs:406）、creation-runs 循环注册伪影。
+- **本批已补**：POST /admin/api-logs/{id}/query-task（服务层
+  AdminQueryProviderAsync 此前已有，仅缺端点接线）。
+- **真实剩余（按建议顺序，共约 22 条）**：
+  1. 工作流 v2 6 条：GET /projects/{id}（ProjectDetail 全量聚合，含
+     RegisterTaskOutputFromTask 补偿）、GET canvases 分页、GET workspace、
+     POST workflows、PATCH workflow-steps/{stepId}、POST task-output
+     （Go: project_workflow.go 679 行 + project_workbench_read.go）。
+  2. ~~timeline renders 1 条~~ ✅ 2026-09-25 已补：CreateTimelineRenderAsync
+     （HasMedia 校验 + timeline_render 任务）+ POST /timeline/renders 端点。
+  3. channels models/test 1 条：POST /admin/channels/{id}/models/test
+     （Go channel_models.go:643 TestAdminChannelModel，上游真调用测试）。
+  4. Eagle 5 条：/plugins/eagle/*（Go plugin.go 内，服务 EagleLibrary/
+     EagleItems/OpenEagleItemFile 等出站 SSRF 到用户 Eagle 服务器）。
+  5. system-update 4 条：GET /admin/system-update + check/start/rollback。
+     **规模提示（2026-09-25 复核）**：handler 仅 80 行，但依赖
+     internal/hostupdate 包 1669 行（GitHub releases 下载、备份/回滚、
+     updater 旁路 HTTP 服务）——Go 单二进制部署的自更新机制；.NET 生产
+     部署为 Docker（compose build 即升级），移植前需先决策：全量移植
+     hostupdate，或 Docker 部署下该组路由返回固定状态（需用户确认）。
+  6. 画布导入 2 条：POST /canvas-projects/{id}/import/libtv|tapnow
+     （Go libtv.go 86 行 + tapnow.go 36 行，外部服务出站）。
+  7. skills 安装 3 条：POST /skills/install（zip multipart）、
+     /skills/install/github、/skills/{id}/sync（Go skills.go，GitHub 出站 +
+     zip/markdown 归一，见 #65 部分解决）。
+  8. ai 中转 3 条：ANY /ai/custom、ANY /ai/system/{channelId}/*path（流式）、
+     POST /ai/models（Go custom_proxy.go 308 行 + system_proxy_stream.go 70 行，
+     浏览器↔上游双向流式中转，最后做）。
