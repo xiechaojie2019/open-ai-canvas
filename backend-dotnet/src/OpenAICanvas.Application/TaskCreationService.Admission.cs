@@ -12,6 +12,12 @@ using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
 namespace OpenAICanvas.Application;
 
 /// <summary>
+/// 内部 admission 约束，不是 JSON 字段。调用方不能借此选择任务 ID 或绕过报价上限。
+/// 对应 Go: <c>taskAdmission</c>。
+/// </summary>
+public sealed record TaskAdmission(string ID, long MaxCharge);
+
+/// <summary>
 /// 队列任务 admission：模型选路（前台/系统渠道/自定义渠道）、计费预留、项目守卫。
 /// 对应 Go: <c>task_creation.go</c> 的 CreateTask 队列分支、<c>model_router.go</c>、
 /// <c>finance.go</c> 的 taskBillingOrder。
@@ -39,7 +45,8 @@ public sealed partial class TaskCreationService
         string prompt,
         string traceId,
         string requestId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TaskAdmission? admission = null)
     {
         bool workflowProviderTask = TaskInputUsesWorkflowProvider(input);
         if (workflowProviderTask)
@@ -98,7 +105,7 @@ public sealed partial class TaskCreationService
 
         TaskEntity task = new()
         {
-            ID = IdGenerator.NewId(),
+            ID = admission?.ID ?? IdGenerator.NewId(),
             UserID = userId,
             TraceID = traceId,
             RequestID = requestId,
@@ -129,6 +136,27 @@ public sealed partial class TaskCreationService
 
         BillingOrder? billingOrder = await TaskBillingOrderAsync(userId, task, input, cancellationToken)
             .ConfigureAwait(false);
+        if (admission is not null && billingOrder is not null)
+        {
+            if (billingOrder.AmountMicrocredits > admission.MaxCharge)
+            {
+                throw AppError.BadAuthRequest("模型调用报价超过本轮 Agent 积分上限，尚未创建任务或扣费");
+            }
+            switch (billingOrder.BillingMode)
+            {
+                case "fixed_request":
+                case "per_second":
+                    // 金额已经由服务端价格目录和请求规格确定。
+                    break;
+                case "token":
+                    // 普通 Token 任务可在 usage 超过预估时补扣；Agent 必须把服务端报价固化为
+                    // 最终扣费上限，使所有已准入任务的报价之和就是可验证的硬预算。
+                    billingOrder.ChargeLimitMicrocredits = billingOrder.AmountMicrocredits;
+                    break;
+                default:
+                    throw AppError.BadAuthRequest("Agent 暂不支持当前模型计费方式");
+            }
+        }
 
         ProtectTaskSecrets(input);
         task.InputJSON = SerializeInput(input);
@@ -155,7 +183,8 @@ public sealed partial class TaskCreationService
         string prompt,
         string traceId,
         string requestId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TaskAdmission? admission = null)
     {
         (RoutedModel? routed, input) = await ResolveTaskModelSelectionAsync(
             input, request.LogicalModelID.Trim(), taskType, request.Operation,
@@ -165,7 +194,7 @@ public sealed partial class TaskCreationService
 
         TaskEntity task = new()
         {
-            ID = IdGenerator.NewId(),
+            ID = admission?.ID ?? IdGenerator.NewId(),
             UserID = userId,
             TraceID = traceId,
             RequestID = requestId,
@@ -195,6 +224,24 @@ public sealed partial class TaskCreationService
         await EnsureTaskProjectActiveAsync(userId, request.ProjectID, cancellationToken).ConfigureAwait(false);
         BillingOrder? billingOrder = await TaskBillingOrderAsync(userId, task, input, cancellationToken)
             .ConfigureAwait(false);
+        if (admission is not null && billingOrder is not null)
+        {
+            if (billingOrder.AmountMicrocredits > admission.MaxCharge)
+            {
+                throw AppError.BadAuthRequest("模型调用报价超过本轮 Agent 积分上限，尚未创建任务或扣费");
+            }
+            switch (billingOrder.BillingMode)
+            {
+                case "fixed_request":
+                case "per_second":
+                    break;
+                case "token":
+                    billingOrder.ChargeLimitMicrocredits = billingOrder.AmountMicrocredits;
+                    break;
+                default:
+                    throw AppError.BadAuthRequest("Agent 暂不支持当前模型计费方式");
+            }
+        }
         ProtectTaskSecrets(input);
         task.InputJSON = SerializeInput(input);
         if (billingOrder is not null)

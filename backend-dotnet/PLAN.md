@@ -341,15 +341,16 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 11.1 | Agent 运行时 | `app/cloud_agent_runtime.go` (1263 行) | ☐ |
+| 11.0 | 契约基座：画布能力注册表、策略文档、运行契约与哈希 | `canvas/capability`（4 文件）、`prompts/agent_policy.go`、`cloud_agent_json.go` | ✅ 2026-09-24 哈希与 Go 逐字节一致（能力集 `9f4199f9…`、系统策略 `82fc03…`、媒体策略 `abcd57…`，测试锁定） |
+| 11.1 | Agent 运行时 | `app/cloud_agent_runtime.go` (1263 行) | 🟡 状态 DTO/校验/Decode/Save 基座已落（`CloudAgent/CloudAgentContracts.cs`）；advance 推进循环待移植 |
 | 11.2 | Agent 会话与调度 | `app/cloud_agent.go` | ☐ |
 | 11.3 | 工具调用 | `app/cloud_agent_tools.go` | ☐ |
 | 11.4 | 媒体处理 | `app/cloud_agent_media.go` | ☐ |
-| 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | ☐ |
+| 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | 🟡 CanvasHash/MediaContentHash/creationHash 语义已落；分页投影待移植 |
 | 11.6 | 分镜生成 | `app/cloud_agent_storyboard.go` | ☐ |
 | 11.7 | 批量表格 | `app/cloud_agent_batch_table.go` | ☐ |
 | 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | ☐ |
-| 11.9 | Agent 档案 | `repository/agent_profile.go` | ☐ |
+| 11.9 | Agent 档案与执行记录仓储 | `repository/agent_profile.go`、`repository/cloud_agent.go` | 🟡 档案读写（含乐观锁）此前已通；执行记录/画布变更仓储 + 事务上下文本批已通（`Repository.CloudAgents.cs`）；档案服务 `AgentProfileService.cs` 已存在 |
 
 ### 阶段 12 · 迁移工具、部署与验收
 

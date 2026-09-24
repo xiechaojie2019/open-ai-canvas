@@ -514,3 +514,28 @@
     `discardAnnouncementImageDraft` 对齐）。
   - worker 的启动轮与每小时轮现已按 Go 顺序执行：**草稿 → 回收站 → 孤儿**，三者互不影响。
   - 仓储新增 `ExpiredArchivedAssetsAsync`（`status = archived AND updated_at <= cutoff`）。
+### 68. `[进行中]` 阶段 11（云 Agent）分批移植：契约基座已通，运行时与路由未动
+- 现状：阶段 11 按依赖切片推进。本批已落「契约基座」并保证与 Go 逐字节
+  一致（测试锁定，防漂移）：
+  - 画布能力注册表 `Domain/Canvas/Capability/CanvasCapabilities.cs`
+    （descriptor/registry/builtin；能力集哈希 `9f4199f9d89d5ce4ba08142f78c17cdd6c8f888c46069ea562786e0bfd8cf980`）。
+    关键还原点：Go `cloneDescriptor` 的空切片经 `append(nil…)` 变 nil → JSON `null`；
+    `normalizeConnectionKinds` 对连线输入类型做字典序排序。
+  - Agent 策略文档 `OpenAICanvas.Prompts/AgentPolicies/*.md`（嵌入资源）+
+    `AgentPolicyDocuments.cs`（解析/哈希与 Go `prompts.LoadAgentPolicies` 一致）。
+  - 执行记录/画布变更仓储 `Repository.CloudAgents.cs`（Ensure/查询/修订 CAS
+    互斥 `MutateCloudAgent`/终态 CAS/undo 标记）+ `CloudAgentMutationContext`
+    事务上下文（画布/任务/资源/配额 InTx）。
+  - 运行契约 `Application/CloudAgent/CloudAgentContracts.cs`：请求/状态/运行时/
+    审批/事件 DTO（字段顺序=Go 结构体声明顺序）、请求校验、确定性 ID/指纹、
+    画布/媒体内容哈希（键排序 + Go 转义 + 数字最短表示）、检查点异常。
+  - 全局 JSON 配置下沉 `Domain/Serialization/GoJson.cs`（Web `CanvasJson`
+    变为别名），Application 层不再依赖 Web。
+  - 任务 admission 扩展：`TaskAdmission`（确定性任务 ID + MaxCharge 报价上限
+    + token 计费 ChargeLimit 固化），挂在 CreateQueued/AdmitQueued。
+- 剩余（下批顺序）：`cloud_agent.go` 会话（Create/Run/IfChanged/续聊历史/锚点/
+  技能快照/画布摘要）→ 运行时 advance 循环与审批决策 → 工具（读工具+能力卡）
+  → 媒体（引用/草稿/完成回写）→ 分镜与批量表变更 → undo/recovery →
+  `handler/agent.go` 10 条路由 + SSE events → worker 调度钩子（advanceCloudAgents）。
+- 取舍：分批期间 `POST /agent/runs` 等路由整体未接线（避免「可建不可跑」的
+  悬挂运行）；10 条路由待运行时闭环后一次性开放。

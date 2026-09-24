@@ -2687,3 +2687,60 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 
 剩余 8 个警告是 xUnit 风格建议（测试方法里用 `ConfigureAwait`）与 `MSB3061` 文件锁
 （环境问题，`--no-incremental` 特有），均非代码缺陷，记在 PENDING-CONFIRMATIONS 第 19 条。
+
+## 阶段 1 补全 · SMTP 邮件发送器（已实发验证）
+
+对齐 Go `auth/email.go` 的 `sendSMTPMail`，补上 .NET 侧唯一缺失的发送实现：
+
+### 交付物
+
+- `Auth/SmtpMailSender.cs` — `IMailSender` 的真实实现（MailKit 4.18.0）：
+  `tls` = 465 式隐式 TLS（`SslOnConnect`）、`starttls` = 必须升级加密（服务器不支持即报错，
+  与 Go `client.StartTLS` 一致）、其余明文；连接超时 12s；用户名留空不认证；
+  相比 Go 的手写报文补了 RFC 5322 的 `Date` / `Message-ID` 头，降低被判垃圾邮件的概率。
+- `Web/Program.cs` — `CanvasService` 组装时传入 `SmtpMailSender`，
+  替换默认抛“邮件发送器尚未接线”的 `UnconfiguredMailSender`。
+- `tests/Endpoints/AuthEmailCodeTests.cs` — 注入记录式邮件替身的端到端测试：
+  取码 → 真实调用发送器 → 用码注册全链路；发送失败回删验证码记录且不进入 1 分钟冷却；
+  5xx 固定文案“系统处理失败，请稍后重试”的契约断言。
+
+### 验证结果
+
+- 干净工作树（HEAD + 本改动）全量测试 496/496 通过。
+- 本机用 smtp.qq.com 真实账号实发验证：465（tls）与 587（starttls）双通道均发送成功。
+- 部署注意：`publish/linux` 需重新生成，将新增 4 个依赖 DLL
+  （MailKit / MimeKit / BouncyCastle.Cryptography / Microsoft.Bcl.Cryptography）。
+
+## 阶段 11 · 云 Agent 契约基座（第一批）
+
+对齐 Go `canvas/capability`、`prompts/agent_policy.go`、`repository/cloud_agent.go`、
+`cloud_agent.go` 校验与哈希部分、`cloud_agent_json.go`。
+
+### 交付物
+
+- `Domain/Canvas/Capability/CanvasCapabilities.cs` — 画布能力注册表：
+  Descriptor/ConnectionPolicy/PatchField + builtin 8 类节点；能力集哈希与 Go
+  逐字节一致（9f4199f9…，测试锁定）。关键还原：Go `cloneDescriptor` 空切片
+  → JSON null；`normalizeConnectionKinds` 字典序排序。
+- `OpenAICanvas.Prompts` — Agent 系统/媒体策略文档（嵌入资源）+ 解析加载器，
+  哈希与 Go `LoadAgentPolicies` 一致（82fc03…/abcd57…，测试锁定）。
+- `Persistence/Repositories/Repository.CloudAgents.cs` — 执行记录与画布变更仓储：
+  Ensure（冲突忽略）、按用户/活动任务查询、根任务恢复、keyset 分页、
+  修订 CAS 互斥 MutateCloudAgent + 事务上下文、终态 CAS（failed/cancelled）、
+  undo 标记；`CloudAgentMutationContext` 提供事务内画布/任务/资源/配额读写。
+- `Application/CloudAgent/CloudAgentContracts.cs` — 请求/预算/策略与档案快照/
+  锚点/技能/调用/审批/事件/运行时状态/规范请求 DTO（字段顺序=Go 声明顺序），
+  请求校验、确定性 ID（ag…）与指纹、画布/媒体内容哈希（键排序 canonical JSON），
+  参数单对象解码（拒未知字段），检查点/参数错误类型。
+- `Domain/Serialization/GoJson.cs` — 全局 JSON 契约下沉 Domain；Web `CanvasJson`
+  改为别名，Application 不再依赖 Web。
+- `TaskCreationService.Admission.cs` — `TaskAdmission`（确定性任务 ID、报价上限
+  MaxCharge、token 计费固化 ChargeLimit），CreateQueued/AdmitQueued 接入。
+- `tests/CloudAgentContractHashTests.cs` — 能力集哈希/策略哈希/AgentID/画布哈希
+  与 Go 基线对照（夹具 `Fixtures/capability-hash-input.json`）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 警告 0 错误；`dotnet test` 513/513 通过。
+- Go 侧基线：`go run` capability/prompts 包现算，与 .NET 输出逐字节一致。
+- 未接线路由：`handler/agent.go` 10 条待运行时闭环后一次性开放（PENDING #67）。
