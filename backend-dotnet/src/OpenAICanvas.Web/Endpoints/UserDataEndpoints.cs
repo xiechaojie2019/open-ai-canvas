@@ -1424,6 +1424,24 @@ public static class UserDataEndpoints
             }
         });
 
+        // 管理员按 API 日志补查失败视频任务。对应 Go: handler/auth.go 的 query-task。
+        api.MapPost("/admin/api-logs/{id}/query-task", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                OpenAICanvas.Application.ProviderTaskQueryResultDto result = await service.TaskLifecycle
+                    .AdminQueryProviderAsync(actor, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapGet("/admin/api-logs-export.csv", async (HttpContext context, CancellationToken cancellationToken) =>
         {
             try
