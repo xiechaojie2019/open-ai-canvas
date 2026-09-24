@@ -206,6 +206,120 @@ public sealed partial class TaskCreationService
         return TaskForOutput(task);
     }
 
+    /// <summary>
+    /// 创建时间线渲染任务：本地 ffmpeg 合成，不经模型路由与计费。
+    /// 对应 Go: <c>app.CreateTimelineRenderTask</c>。
+    /// </summary>
+    public async Task<TaskEntity> CreateTimelineRenderAsync(
+        string userId,
+        TimelineRenderRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!RenderPlanHasMedia(request.Timeline))
+        {
+            throw AppError.BadAuthRequest("时间线没有可渲染的媒体片段");
+        }
+        Dictionary<string, JsonElement> input = new(StringComparer.Ordinal)
+        {
+            ["projectId"] = JsonSerializer.SerializeToElement(request.ProjectID.Trim()),
+            ["timeline"] = request.Timeline.Clone(),
+        };
+        TaskEntity task = new()
+        {
+            ID = IdGenerator.NewId(),
+            UserID = userId,
+            ProjectID = request.ProjectID.Trim(),
+            Type = "timeline_render",
+            Status = TaskStatus.TaskStatusQueued,
+            Stage = "等待队列调度",
+            Progress = 5,
+            Prompt = "时间线渲染",
+            Provider = "local",
+            Model = "ffmpeg",
+            InputJSON = JsonSerializer.Serialize(input),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        await CreateWithinStorageQuotaAsync(task, billingOrder: null, cancellationToken).ConfigureAwait(false);
+        await _repository.RecordUserActivityAsync(userId, "task", 1, DateTime.UtcNow, cancellationToken)
+            .ConfigureAwait(false);
+        return TaskForOutput(task);
+    }
+
+    /// <summary>
+    /// 渲染计划媒体判定：可见 video/image 轨片段（时长大于 0、directMedia 指向
+    /// resource: 存储键）展开后是否至少含一个真实媒体片段。
+    /// 对应 Go: <c>buildRenderPlan</c> 的 HasMedia 部分。
+    /// </summary>
+    public static bool RenderPlanHasMedia(JsonElement timeline)
+    {
+        if (timeline.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+        Dictionary<string, bool> visible = new(StringComparer.Ordinal);
+        if (timeline.TryGetProperty("tracks", out JsonElement tracks) && tracks.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement track in tracks.EnumerateArray())
+            {
+                if (track.ValueKind != JsonValueKind.Object
+                    || !track.TryGetProperty("id", out JsonElement idElement))
+                {
+                    continue;
+                }
+                bool isVisible = !track.TryGetProperty("visible", out JsonElement visibleElement)
+                    || visibleElement.ValueKind != JsonValueKind.False;
+                visible[idElement.GetString() ?? ""] = isVisible;
+            }
+        }
+        if (!timeline.TryGetProperty("clips", out JsonElement clips) || clips.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+        foreach (JsonElement clip in clips.EnumerateArray())
+        {
+            if (clip.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+            string kind = clip.TryGetProperty("kind", out JsonElement kindElement)
+                && kindElement.ValueKind == JsonValueKind.String
+                    ? kindElement.GetString() ?? ""
+                    : "";
+            if (kind is not ("video" or "image"))
+            {
+                continue;
+            }
+            if (clip.TryGetProperty("durationMs", out JsonElement durationElement)
+                && durationElement.ValueKind == JsonValueKind.Number
+                && durationElement.GetDouble() <= 0)
+            {
+                continue;
+            }
+            string trackID = clip.TryGetProperty("trackId", out JsonElement trackIdElement)
+                && trackIdElement.ValueKind == JsonValueKind.String
+                    ? trackIdElement.GetString() ?? ""
+                    : "";
+            if (!visible.TryGetValue(trackID, out bool trackVisible) || !trackVisible)
+            {
+                continue;
+            }
+            if (clip.TryGetProperty("directMedia", out JsonElement directMedia)
+                && directMedia.ValueKind == JsonValueKind.Object
+                && directMedia.TryGetProperty("storageKey", out JsonElement storageElement)
+                && storageElement.ValueKind == JsonValueKind.String)
+            {
+                string key = (storageElement.GetString() ?? "").Trim();
+                if (key.StartsWith("resource:", StringComparison.Ordinal)
+                    && key["resource:".Length..].Trim().Length > 0)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------ 准入共享件
 
     /// <summary>存储配额内的任务创建事务。对应 Go: <c>createTaskWithinStorageQuota</c>。</summary>
