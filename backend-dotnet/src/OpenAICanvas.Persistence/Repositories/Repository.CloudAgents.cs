@@ -132,20 +132,35 @@ public sealed partial class Repository
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<object?> MutateCloudAgentAsync(
+    /// <summary>无返回值回调版本：true=获得修订锁并完成；false=修订冲突。</summary>
+    public async Task<bool> MutateCloudAgentAsync(
         string userId,
         string id,
         long revision,
         Func<CloudAgentExecution, CloudAgentMutationContext, Task> mutate,
         CancellationToken cancellationToken = default)
-        => MutateCloudAgentAsync<object?>(
+    {
+        return await MutateCloudAgentAsync<object?>(
             userId, id, revision,
             async (run, context) =>
             {
                 await mutate(run, context).ConfigureAwait(false);
                 return null;
             },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false) is not null;
+    }
+
+    internal async Task<CloudAgentExecution?> CloudAgentInTxAsync(
+        DbConnection connection, DbTransaction transaction, string userId, string id,
+        CancellationToken cancellationToken)
+    {
+        return await FirstOrDefaultAsync<CloudAgentExecution>(
+            connection,
+            SqlBuilder.Select<CloudAgentExecution>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            new { id, userId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>事务内保存执行记录（GORM Save 语义）。对应 Go: <c>tx.Save(run)</c>。</summary>
     public async Task SaveCloudAgentInTxAsync(
@@ -279,6 +294,11 @@ public sealed class CloudAgentMutationContext
         _transaction = transaction;
         _repository = repository;
     }
+
+    /// <summary>事务内读执行记录。</summary>
+    public Task<CloudAgentExecution?> CloudAgentAsync(
+        string userId, string id, CancellationToken cancellationToken = default) =>
+        _repository.CloudAgentInTxAsync(_connection, _transaction, userId, id, cancellationToken);
 
     /// <summary>保存执行记录（GORM Save 语义，事务内）。</summary>
     public Task SaveRunAsync(CloudAgentExecution run, CancellationToken cancellationToken = default) =>

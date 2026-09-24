@@ -342,14 +342,14 @@ backend-dotnet/
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
 | 11.0 | 契约基座：画布能力注册表、策略文档、运行契约与哈希 | `canvas/capability`（4 文件）、`prompts/agent_policy.go`、`cloud_agent_json.go` | ✅ 2026-09-24 哈希与 Go 逐字节一致（能力集 `9f4199f9…`、系统策略 `82fc03…`、媒体策略 `abcd57…`，测试锁定） |
-| 11.1 | Agent 运行时 | `app/cloud_agent_runtime.go` (1263 行) | 🟡 状态 DTO/校验/Decode/Save 基座已落（`CloudAgent/CloudAgentContracts.cs`）；advance 推进循环待移植 |
+| 11.1 | Agent 运行时 | `app/cloud_agent_runtime.go` (1263 行) | 🟡 运行时校验/解码（含策略版本合同）+ 模型任务轮询（增量事件、结果解析、工具调用解析、无工具完成）已落（`CloudAgent/CloudAgentRuntimeService.cs`）；工具执行与下模型步入队随收口批接入（PENDING #68） |
 | 11.2 | Agent 会话与调度 | `app/cloud_agent.go` | 🟡 会话服务已通（`CloudAgent/CloudAgentSessionService.cs`）：创建（幂等/指纹/偏好固定/锚点/技能快照/续聊恢复/画布摘要/canonical + admission 预算）、读取、变更探测、执行行补建与输出装配；续聊分支的 advance 调用随运行时批次接入（PENDING #68） |
 | 11.3 | 工具调用 | `app/cloud_agent_tools.go` | 🟡 工具 schema 构建/能力卡数据/读写判定已通（`CloudAgent/CloudAgentTools.cs`，工具清单与 Go 一致，测试锁定）；读工具执行随运行时批次 |
-| 11.4 | 媒体处理 | `app/cloud_agent_media.go` | ☐ |
+| 11.4 | 媒体处理 | `app/cloud_agent_media.go` | 🟡 参数校验/画布文档校验/任务组装/模型目录与意图/草稿与完成节点写入/审批参数修改校验已落（`CloudAgent/CloudAgentMediaService.cs`）；提交入队与完成事务执行随收口批接线 |
 | 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | 🟡 哈希语义 + 分页投影/精读/分镜与批量表结构化投影/参考资产读取已通（`CloudAgent/CloudAgentCanvasState.cs`）；canvas_get_state 的 Mutate 事务执行随运行时批次 |
-| 11.6 | 分镜生成 | `app/cloud_agent_storyboard.go` | ☐ |
-| 11.7 | 批量表格 | `app/cloud_agent_batch_table.go` | ☐ |
-| 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | ☐ |
+| 11.6 | 分镜生成 | `app/cloud_agent_storyboard.go` | 🟡 创建/编辑干跑与执行已落（`CloudAgent/CloudAgentStructuredEdits.cs`） |
+| 11.7 | 批量表格 | `app/cloud_agent_batch_table.go` | 🟡 六种操作干跑与执行已落（`CloudAgent/CloudAgentStructuredEdits.cs`） |
+| 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | 🟡 画布 ops 规划/预览/连线校验/变更记录与事件投影已落（`CloudAgent/CloudAgentMutations.cs`）；审批决策与撤销随收口批接线 |
 | 11.9 | Agent 档案与执行记录仓储 | `repository/agent_profile.go`、`repository/cloud_agent.go` | 🟡 档案读写（含乐观锁）此前已通；执行记录/画布变更仓储 + 事务上下文本批已通（`Repository.CloudAgents.cs`）；档案服务 `AgentProfileService.cs` 已存在 |
 
 ### 阶段 12 · 迁移工具、部署与验收

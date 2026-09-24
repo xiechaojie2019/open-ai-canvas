@@ -14,7 +14,7 @@ public static class CloudAgentTools
 {
     public const int MaxStoryboardRows = 100;
 
-    private static readonly string[] StoryboardTextFields =
+    public static readonly string[] StoryboardTextFields =
     [
         "plotDescription", "dialogue", "videoMotionPrompt", "imageGenerationPrompt", "camera", "motion", "shotSize",
         "emotion", "lightingAndAtmosphere", "audioEffects", "narrativeIntent", "viewerPOV", "performanceBlocking",

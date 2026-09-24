@@ -2764,3 +2764,23 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 ### 验证
 
 - `dotnet build OpenAICanvas.sln` 0 错误；`dotnet test` 1505/1505。
+
+## 阶段 11 第三批 · 运行时与写路径（11.1/11.4/11.6/11.7/11.8 主体）
+
+- `CloudAgentMutations.cs` — 画布变更持久化（1MB 快照上限，超限 not_undoable）、
+  canvas_updated 事件投影（节点/连线差异 + 审批预览回填）、canvas_apply_ops
+  规划与应用（连线校验/锁定节点/patch 契约）、事务内画布保存（配额 + CAS +
+  Go 键序 canonical JSON）。
+- `CloudAgentStructuredEdits.cs` — 分镜脚本创建/编辑（100 行上限、行字段白名单、
+  重编号）与批量创作表六操作（500 行上限、@参考图 mentionToken、列管理）。
+- `CloudAgentMediaService.cs` — generate_media 参数校验、快照三态校验
+  （内容哈希/媒体哈希）、草稿续用守卫（owner 运行终态校验）、prospective 连线
+  准入、模型目录投影与意图解析、媒体草稿/提交节点写入、完成回写（资源就绪
+  校验、宽高比回填）。
+- `CloudAgentRuntimeService.cs` — 运行状态整体校验（事件序列/调用游标/预算/
+  历史去重/审批一致性）、执行解码（策略与能力合同版本比对）、模型任务轮询
+  （增量→事件、结果解析、8 调用/32KB 上限、无工具即完成）、失败分类与安全
+  文案、上下文压缩。
+- 已知裁剪（PENDING #68）：工具执行事务（AdvanceToolAsync）、下模型步入队
+  （EnqueueTaskAsync）、审批决策/取消/撤销/清理交接与决策接线随收口批；
+  路由与调度器仍整体未开放。

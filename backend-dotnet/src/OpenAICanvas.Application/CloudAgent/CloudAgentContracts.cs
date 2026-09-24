@@ -589,6 +589,14 @@ public static partial class CloudAgentContracts
     public const string CompilerVersion = "cloud-agent-policy-compiler/v3";
     public const string SkillEntryPath = "SKILL.md";
 
+    /// <summary>Go json.Marshal 语义的确定性序列化（键递归排序）。</summary>
+    public static string CanonicalJson(JsonNode? value)
+    {
+        StringBuilder json = new();
+        WriteCanonicalJson(value, json);
+        return json.ToString();
+    }
+
     /// <summary>UTF-8 SHA256 十六进制小写摘要。</summary>
     public static string Sha256Hex(string value)
     {
