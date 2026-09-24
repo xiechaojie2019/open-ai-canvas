@@ -145,6 +145,37 @@ builder.Services.AddSingleton(serviceProvider =>
         env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
 // 云 Agent 偏好档案（阶段 11.9 首批）。对应 Go 的 app/cloud_agent_profile.go。
 builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
+// 云 Agent 会话 / 媒体 / 运行时。对应 Go 的 app/cloud_agent*.go 组合根。
+builder.Services.AddSingleton(sp =>
+{
+    OpenAICanvas.Application.CanvasService canvas = sp.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.CloudAgent.CloudAgentSessionService(
+        canvas.Repository,
+        canvas.TaskCreations,
+        canvas.Skills,
+        sp.GetRequiredService<OpenAICanvas.Application.AgentProfileService>(),
+        sp.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+});
+builder.Services.AddSingleton(sp =>
+{
+    OpenAICanvas.Application.CanvasService canvas = sp.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.CloudAgent.CloudAgentMediaService(
+        canvas.Repository, canvas.ModelCatalog);
+});
+builder.Services.AddSingleton(sp =>
+{
+    OpenAICanvas.Application.CanvasService canvas = sp.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService(
+        canvas.Repository,
+        canvas.TaskCreations,
+        sp.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+        sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentMediaService>(),
+        sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
+        canvas.Skills,
+        canvas.TaskLifecycle);
+});
+// 云 Agent 调度器。对应 Go 的 worker 循环内 advanceCloudAgents。
+builder.Services.AddHostedService<OpenAICanvas.Web.Workers.CloudAgentSchedulerWorker>();
 // 外观配置（品牌标识 / 皮肤主题 / 登录页素材）。对应 Go 的 app/appearance*.go。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.Appearance.AppearanceService(
@@ -323,10 +354,14 @@ api.MapProjectAssetFolderRoutes(app.Services.GetRequiredService<OpenAICanvas.App
 // 项目单元与画布链接路由。对应 Go 的 handler.RegisterProjectRoutes 单元/链接部分。
 api.MapProjectUnitRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
-// 云 Agent 偏好档案路由。对应 Go 的 handler.RegisterAgentRoutes capabilities/profile 部分。
-api.MapAgentProfileRoutes(
+// 云 Agent 路由。对应 Go 的 handler.RegisterAgentRoutes。
+api.MapAgentRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
-    app.Services.GetRequiredService<OpenAICanvas.Application.AgentProfileService>());
+    app.Services.GetRequiredService<OpenAICanvas.Application.AgentProfileService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
 // 项目素材关联与角色路由。对应 Go 的 handler.RegisterProjectRoutes assets/characters 部分。
 api.MapProjectAssetLinkRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());

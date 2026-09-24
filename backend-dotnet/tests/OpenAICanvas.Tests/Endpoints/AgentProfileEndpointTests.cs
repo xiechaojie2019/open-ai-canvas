@@ -215,12 +215,18 @@ public sealed class AgentProfileEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task 执行引擎能力端点返回_501()
+    public async Task 执行引擎能力端点返回契约清单()
     {
         using HttpClient admin = await SignInAsAdminAsync();
 
         HttpResponseMessage response = await admin.GetAsync("/api/agent/capabilities");
-
-        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+        response.EnsureSuccessStatusCode();
+        JsonElement data = await ReadDataAsync(response);
+        Assert.Equal(2, data.GetProperty("version").GetInt32());
+        Assert.Equal("canvas-capabilities/v4", data.GetProperty("capabilitySetVersion").GetString());
+        Assert.True(data.GetProperty("skills").GetBoolean());
+        Assert.Equal("fixed_request", data.GetProperty("billing").GetString());
+        Assert.True(data.TryGetProperty("tools", out JsonElement tools) && tools.ValueKind == JsonValueKind.Array);
+        Assert.True(data.TryGetProperty("nodeTypes", out JsonElement nodes) && nodes.ValueKind == JsonValueKind.Array);
     }
 }

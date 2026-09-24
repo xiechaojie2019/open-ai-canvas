@@ -2784,3 +2784,32 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 - 已知裁剪（PENDING #68）：工具执行事务（AdvanceToolAsync）、下模型步入队
   （EnqueueTaskAsync）、审批决策/取消/撤销/清理交接与决策接线随收口批；
   路由与调度器仍整体未开放。
+
+## 阶段 11 收口批 · 执行事务、控制面与路由开放
+
+- `CloudAgentRuntimeExecution.cs`（partial）— 工具事务（写工具审批规划：
+  generate_media 干跑准入在事务外、草稿节点写入在事务内；参数语法错误可修复、
+  授权错误终态化）、`EnqueueTaskAsync`（预算 CAS、确定性步任务 ID、媒体规格
+  解析比对、事务内配额落库）、`MediaErrorAsync`/`AdvanceMediaAsync`（提交与
+  完成回写、删除画布下的失败检查点）、`DecideAsync`（幂等重放、拒绝终态、
+  `UpdateMediaApprovalAsync` 干跑校验）、`CancelAsync`（控制面取消 + 清理交接）、
+  `UndoAsync`（快照哈希校验、CAS undo、二次撤销幂等）、`FinishCleanupAsync`
+  （子任务取消竞争容忍 + 媒体完成收尾）。
+- `CloudAgentRuntimeReadTools.cs` — agent_profile_read / canvas_list_node_types /
+  canvas_get_state / canvas_read_storyboard / canvas_read_batch_table /
+  skill_read_file（事务外 + 双版本一致性校验 + 12k 分页）/ task_get。
+- `CloudAgentMutations`/`CloudAgentStructuredEdits`/`CloudAgentCanvasState`/
+  `CloudAgentPolicyCompiler` — 事务内/外读统一到 `CloudAgentMutationContext`
+  （非事务上下文可 Dispose，SQLite 不嵌套连接）。
+- `AgentEndpoints.cs` — 10 条路由全量开放：capabilities（契约清单）、profile
+  GET/PATCH、runs/messages 创建（128KB + 单对象 + 限流）、runs/{id}、cancel、
+  undo（4KB + 校验）、approvals/{approvalId}/decision、runs/{id}/events SSE
+  （Last-Event-ID/after 游标、1s 轮询、run_snapshot 无 id、15s 心跳、终态停止）。
+- `CloudAgentSchedulerWorker.cs` — 恢复根任务执行行 + keyset 游标推进，
+  409 冲突跳过；Program.cs 经 CanvasService 门面接线。
+- 测试：capabilities 断言从 501 改为契约清单（version=2 / canvas-capabilities/v4 /
+  fixed_request / tools / nodeTypes）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 错误；`dotnet test` 1505/1505 通过。

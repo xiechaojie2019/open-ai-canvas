@@ -5,6 +5,7 @@ using OpenAICanvas.Domain.Canvas.Capability;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Platform;
 
 namespace OpenAICanvas.Application.CloudAgent;
 
@@ -31,7 +32,7 @@ public static class CloudAgentCanvasState
     /// 对应 Go: <c>cloudAgentCanvasState</c>。
     /// </summary>
     public static async Task<JsonObject> ReadAsync(
-        Repository repository,
+        CloudAgentMutationContext repository,
         string userID,
         JsonObject doc,
         int offset,

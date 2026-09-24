@@ -19,26 +19,32 @@ namespace OpenAICanvas.Application.CloudAgent;
 /// 对应 Go: <c>app/cloud_agent_runtime.go</c>、<c>cloud_agent_recovery.go</c>、
 /// <c>cloud_agent_undo.go</c> 与 <c>DecideCloudAgentApproval</c>/<c>CancelCloudAgent</c>。
 /// </summary>
-public sealed class CloudAgentRuntimeService
+public sealed partial class CloudAgentRuntimeService
 {
     private readonly Repository _repository;
     private readonly TaskCreationService _taskCreation;
     private readonly IRuntimePolicyProvider _runtimePolicy;
     private readonly CloudAgentMediaService _media;
     private readonly CloudAgentSessionService _sessions;
+    private readonly SkillsService _skills;
+    private readonly TaskLifecycleService _taskLifecycle;
 
     public CloudAgentRuntimeService(
         Repository repository,
         TaskCreationService taskCreation,
         IRuntimePolicyProvider runtimePolicy,
         CloudAgentMediaService media,
-        CloudAgentSessionService sessions)
+        CloudAgentSessionService sessions,
+        SkillsService skills,
+        TaskLifecycleService taskLifecycle)
     {
         _repository = repository;
         _taskCreation = taskCreation;
         _runtimePolicy = runtimePolicy;
         _media = media;
         _sessions = sessions;
+        _skills = skills;
+        _taskLifecycle = taskLifecycle;
     }
 
     // ------------------------------------------------------------ 校验与解码
@@ -452,6 +458,19 @@ public sealed class CloudAgentRuntimeService
         await AdvanceAsync(run, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>调度器恢复入口：为还没有执行行的根任务补建执行行。对应 Go 恢复分支。</summary>
+    public async Task EnsureRootAsync(TaskEntity task, CancellationToken cancellationToken)
+    {
+        if (await _repository.CloudAgentAsync(task.UserID, task.ID, cancellationToken).ConfigureAwait(false)
+            is not null)
+        {
+            return;
+        }
+        (TaskEntity _, CloudAgentStateDto state) = await _sessions.LoadTaskAsync(
+            task.UserID, task.ID, cancellationToken).ConfigureAwait(false);
+        await _sessions.EnsureExecutionAsync(task, state, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// 推进一次。检查点失败必须终态化，而不是像瞬时 DB 错误那样无限重试。
     /// 对应 Go: <c>advanceCloudAgent</c>。
@@ -624,13 +643,49 @@ public sealed class CloudAgentRuntimeService
             run.Revision++;
             return;
         }
-        // 工具执行（AdvanceToolAsync）与下一模型步入队（EnqueueTaskAsync）随运行时
-        // 第二批接入（PENDING #68）：路由与调度器尚未开放，此分支当前不可达。
         if (state.CallIndex < state.Calls.Count)
         {
-            await FailAsync(run, state,
-                "Agent 工具执行批次尚未接入，本轮已停止；已有任务结果保留在任务中心").ConfigureAwait(false);
+            await AdvanceToolAsync(run, state, cancellationToken).ConfigureAwait(false);
+            return;
         }
+        if (CompactContext(state.Canonical))
+        {
+            // 被移出的读取正文必须可以重新读取。
+            state.SkillReads = null;
+            state.ProfileReads = null;
+        }
+        Dictionary<string, JsonElement> stepInput = new(StringComparer.Ordinal)
+        {
+            ["mode"] = JsonSerializer.SerializeToElement("text"),
+            ["prompt"] = JsonSerializer.SerializeToElement(state.Request.Prompt),
+            ["agentRequests"] = JsonSerializer.SerializeToElement(
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["canonical"] = JsonSerializer.SerializeToElement(state.Canonical, GoJson.WriteOptions),
+                }),
+            ["config"] = JsonSerializer.SerializeToElement(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["channelId"] = JsonSerializer.SerializeToElement(state.Request.ChannelID),
+                ["channelModelKey"] = JsonSerializer.SerializeToElement(state.Request.ChannelModelKey),
+                ["model"] = JsonSerializer.SerializeToElement(
+                    CloudAgentContracts.FirstNonEmpty(state.Request.ChannelModelKey, state.Request.Model)),
+            }),
+            ["textOptions"] = JsonSerializer.SerializeToElement(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["stream"] = JsonSerializer.SerializeToElement(true),
+                ["thinking"] = JsonSerializer.SerializeToElement(
+                    CloudAgentPolicyCompiler.ReasoningEnabled(state.Policy.ReasoningMode)),
+            }),
+        };
+        string canonicalRaw = JsonSerializer.Serialize(state.Canonical, GoJson.WriteOptions);
+        if (canonicalRaw.Length > 192 << 10)
+        {
+            await FailAsync(run, state, "模型上下文超过 192KB 上限").ConfigureAwait(false);
+            return;
+        }
+        await EnqueueTaskAsync(run, state, "canvas_text", state.Request.Prompt,
+            state.Request.Model, state.Request.LogicalModelID, stepInput,
+            media: null, cancellationToken).ConfigureAwait(false);
     }
 
     public sealed class ModelOutcome

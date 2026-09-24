@@ -537,8 +537,12 @@
   `CloudAgentPolicyCompiler.cs`（含偏好快照校验、锚点构建）、`CloudAgentTools.cs`
   （工具 schema，清单与 Go 一致）、`CloudAgentCanvasState.cs`（分页投影/精读/
   分镜与批量表结构化投影/媒体参考解析）。测试 1505/1505。
-- 已知取舍：CreateAsync 续聊分支不调用 advance（运行时未移植），父轮未推进时
-  按合同返回 409「上一轮 Agent 尚未结束」；10 条路由仍整体未接线。
+- 已知取舍（收口批 2026-09-25 已闭环）：CreateAsync 续聊分支的 advance 调用、
+  工具执行事务、步进入队、审批决策/取消/撤销/清理交接全部落地；10 条路由 +
+  SSE events + worker 调度钩子（CloudAgentSchedulerWorker，2s tick + keyset
+  游标 + 根任务恢复）已接线并开放。
+- 剩余：Docker 部署验证；Go `advanceCloudAgents` 的 Redis 多实例协调未移植
+  （调度器为单实例内存游标，与 PENDING #66 同族）。
 - 剩余（下批顺序）：运行时 advance 循环与审批决策 → 工具执行（读工具 + 写事务）
   → 媒体（引用/草稿/完成回写）→ 分镜与批量表变更 → undo/recovery →
   `handler/agent.go` 10 条路由 + SSE events → worker 调度钩子（advanceCloudAgents）。

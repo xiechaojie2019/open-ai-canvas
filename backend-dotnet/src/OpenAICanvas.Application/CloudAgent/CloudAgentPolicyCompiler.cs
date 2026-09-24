@@ -500,8 +500,26 @@ public static class CloudAgentJsonHelpers
     /// 解析媒体参考资产。返回（参考描述, 上游 payload 字段名, 错误）。
     /// 对应 Go: <c>cloudAgentReference</c>。
     /// </summary>
-    public static async Task<(JsonObject? Reference, string PayloadField, AppError? Error)> ReferenceAsync(
+    /// <summary>事务上下文重载：与事务内读同连接。</summary>
+    public static Task<(JsonObject? Reference, string PayloadField, AppError? Error)> ReferenceAsync(
+        CloudAgentMutationContext context, string userID, JsonObject node, CancellationToken cancellationToken)
+    {
+        return ReferenceCoreAsync(
+            (uid, resourceId) => context.ResourceForUserAsync(uid, resourceId, cancellationToken),
+            userID, node);
+    }
+
+    /// <summary>领域仓储重载：非事务读。</summary>
+    public static Task<(JsonObject? Reference, string PayloadField, AppError? Error)> ReferenceAsync(
         Repository repository, string userID, JsonObject node, CancellationToken cancellationToken)
+    {
+        return ReferenceCoreAsync(
+            (uid, resourceId) => repository.ResourceForUserAsync(uid, resourceId, cancellationToken),
+            userID, node);
+    }
+
+    private static async Task<(JsonObject? Reference, string PayloadField, AppError? Error)> ReferenceCoreAsync(
+        Func<string, string, Task<Resource?>> loadResource, string userID, JsonObject node)
     {
         (CapabilityDescriptor descriptor, bool known) =
             CloudAgentNodes.ForType(StringValue(Get(node, "type")));
@@ -533,8 +551,8 @@ public static class CloudAgentJsonHelpers
         {
             return (null, "", AppError.BadAuthRequest("参考资产尚未保存到账号资源库，请先上传；不能用外部地址代替"));
         }
-        Resource? resource = await repository.ResourceForUserAsync(
-            userID, key["resource:".Length..], cancellationToken).ConfigureAwait(false);
+        Resource? resource = await loadResource(
+            userID, key["resource:".Length..]).ConfigureAwait(false);
         if (resource is null)
         {
             return (null, "", AppError.BadAuthRequest("参考资产不存在或不属于当前用户"));

@@ -162,6 +162,23 @@ public sealed partial class Repository
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 打开非事务变更上下文：干跑规划在检查点事务外读取画布/资源（与 Go 的
+    /// prepare 在 MutateCloudAgent 之前执行一致）。SQLite 下同样不嵌套连接。
+    /// </summary>
+    public async Task<CloudAgentMutationContext> OpenCloudAgentContextAsync(
+        CancellationToken cancellationToken = default)
+    {
+        DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return new CloudAgentMutationContext(connection, transaction: null, this, ownsConnection: true);
+    }
+
+    /// <summary>事务内最近一次画布变更；不存在返回 null。</summary>
+    public Task<CloudAgentCanvasMutation?> LatestCloudAgentCanvasMutationInTxAsync(
+        DbConnection connection, DbTransaction transaction, string userId, string runId,
+        CancellationToken cancellationToken)
+        => LatestCloudAgentCanvasMutationByIdAsync(connection, transaction, userId, runId, cancellationToken);
+
     /// <summary>事务内保存执行记录（GORM Save 语义）。对应 Go: <c>tx.Save(run)</c>。</summary>
     public async Task SaveCloudAgentInTxAsync(
         DbConnection connection, DbTransaction transaction, CloudAgentExecution run,
@@ -217,6 +234,37 @@ public sealed partial class Repository
                 limitOffset: " ORDER BY created_at DESC, id DESC LIMIT 1"),
             new { userId, runId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<CloudAgentCanvasMutation?> LatestCloudAgentCanvasMutationByIdAsync(
+        DbConnection connection, DbTransaction? transaction, string userId, string runId,
+        CancellationToken cancellationToken)
+    {
+        return await FirstOrDefaultAsync<CloudAgentCanvasMutation>(
+            connection,
+            SqlBuilder.Select<CloudAgentCanvasMutation>(
+                "user_id = @userId AND run_id = @runId",
+                limitOffset: " ORDER BY created_at DESC, id DESC LIMIT 1"),
+            new { userId, runId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>事务内标记 undo；未命中返回 false。</summary>
+    public async Task<bool> MarkCloudAgentCanvasMutationUndoneInTxAsync(
+        DbConnection connection, DbTransaction transaction, string userId, string runId,
+        string mutationId, DateTime undoneAt, CancellationToken cancellationToken)
+    {
+        int updated = await ExecuteAsync(
+            connection,
+            """
+            UPDATE "cloud_agent_canvas_mutations" SET "status" = 'undone', "undone_at" = @undoneAt
+            WHERE "id" = @mutationId AND "user_id" = @userId AND "run_id" = @runId AND "status" = 'applied'
+            """,
+            new { mutationId, userId, runId, undoneAt },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+        return updated == 1;
     }
 
     /// <summary>把 applied 变更标记为 undone；未命中返回 false。对应 Go: <c>MarkCloudAgentCanvasMutationUndone</c>。</summary>
@@ -282,17 +330,29 @@ public sealed partial class Repository
 /// Agent 运行互斥变更上下文：回调内的画布/任务/资源读写都经由本上下文落在同一事务。
 /// 对应 Go: <c>MutateCloudAgent</c> 回调里的 <c>repo *Repository</c>（New(tx)）。
 /// </summary>
-public sealed class CloudAgentMutationContext
+public sealed class CloudAgentMutationContext : IAsyncDisposable
 {
     private readonly DbConnection _connection;
     private readonly DbTransaction _transaction;
     private readonly Repository _repository;
+    private readonly bool _ownsConnection;
 
-    internal CloudAgentMutationContext(DbConnection connection, DbTransaction transaction, Repository repository)
+    internal CloudAgentMutationContext(
+        DbConnection connection, DbTransaction? transaction, Repository repository,
+        bool ownsConnection = false)
     {
         _connection = connection;
-        _transaction = transaction;
+        _transaction = transaction!;
         _repository = repository;
+        _ownsConnection = ownsConnection;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_ownsConnection)
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>事务内读执行记录。</summary>
@@ -332,4 +392,15 @@ public sealed class CloudAgentMutationContext
     public Task CreateCloudAgentCanvasMutationAsync(
         CloudAgentCanvasMutation mutation, CancellationToken cancellationToken = default) =>
         _repository.CreateCloudAgentCanvasMutationInTxAsync(_connection, _transaction, mutation, cancellationToken);
+
+    public Task<CloudAgentCanvasMutation?> LatestCanvasMutationAsync(
+        string userId, string runId, CancellationToken cancellationToken = default) =>
+        _repository.LatestCloudAgentCanvasMutationByIdAsync(
+            _connection, _transaction, userId, runId, cancellationToken);
+
+    public Task<bool> MarkCanvasMutationUndoneAsync(
+        string userId, string runId, string mutationId, DateTime undoneAt,
+        CancellationToken cancellationToken = default) =>
+        _repository.MarkCloudAgentCanvasMutationUndoneInTxAsync(
+            _connection, _transaction, userId, runId, mutationId, undoneAt, cancellationToken);
 }

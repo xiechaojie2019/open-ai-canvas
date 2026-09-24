@@ -178,6 +178,21 @@ public static class CloudAgentStructuredEdits
     private static string StoryboardFieldText(JsonObject storyboard, string key) =>
         CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(storyboard, key));
 
+    /// <summary>按工具名分发分镜创建/编辑计划。</summary>
+    public static Task<(CanvasProject Canvas, JsonObject Document, string BeforeJSON, string BeforeHash, CloudAgentApprovalPreviewDto Preview)>
+        PrepareStoryboardAsync(
+            CloudAgentMutationContext context, string userID, string canvasID,
+            CloudAgentCallDto call, string toolName) =>
+        toolName == "canvas_create_storyboard"
+            ? PrepareStoryboardCreateAsync(context, userID, canvasID, call)
+            : PrepareStoryboardEditAsync(context, userID, canvasID, call);
+
+    /// <summary>批量创作表编辑计划别名。</summary>
+    public static Task<(CanvasProject Canvas, JsonObject Document, string BeforeJSON, string BeforeHash, CloudAgentApprovalPreviewDto Preview)>
+        PrepareBatchTableAsync(
+            CloudAgentMutationContext context, string userID, string canvasID, CloudAgentCallDto call) =>
+        PrepareBatchTableEditAsync(context, userID, canvasID, call);
+
     /// <summary>创建分镜计划。对应 Go: <c>prepareCloudAgentStoryboardCreate</c>。</summary>
     public static async Task<(CanvasProject Canvas, JsonObject Document, string BeforeJSON, string BeforeHash, CloudAgentApprovalPreviewDto Preview)>
         PrepareStoryboardCreateAsync(

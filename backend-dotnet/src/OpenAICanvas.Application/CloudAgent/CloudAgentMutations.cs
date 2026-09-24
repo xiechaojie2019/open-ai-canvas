@@ -103,6 +103,11 @@ public static class CloudAgentMutations
         await EmitCanvasChangeAsync(context, runID, state, input).ConfigureAwait(false);
     }
 
+    /// <summary>仅投影画布变更事件（不落变更记录）。对应 Go: <c>emitCloudAgentCanvasChange</c>。</summary>
+    public static Task EmitCanvasChangeOnlyAsync(
+        CloudAgentMutationContext context, string runID, CloudAgentRuntimeDto state,
+        CloudAgentMutationInput input) => EmitCanvasChangeAsync(context, runID, state, input);
+
     /// <summary>前后对象差异。对应 Go: <c>cloudAgentObjectChanges</c>。</summary>
     private static List<(JsonObject? Before, JsonObject After)> ObjectChanges(JsonNode? before, JsonNode? after)
     {
