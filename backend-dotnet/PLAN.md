@@ -343,14 +343,14 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 11.0 | 契约基座：画布能力注册表、策略文档、运行契约与哈希 | `canvas/capability`（4 文件）、`prompts/agent_policy.go`、`cloud_agent_json.go` | ✅ 2026-09-24 哈希与 Go 逐字节一致（能力集 `9f4199f9…`、系统策略 `82fc03…`、媒体策略 `abcd57…`，测试锁定） |
 | 11.1 | Agent 运行时 | `app/cloud_agent_runtime.go` (1263 行) | ✅ 2026-09-25 运行时校验/执行解码/模型任务轮询/工具事务/步进入队/失败分类/上下文压缩全部落齐（`CloudAgentRuntimeService.cs` + `CloudAgentRuntimeExecution.cs`） |
-| 11.2 | Agent 会话与调度 | `app/cloud_agent.go` | 🟡 会话服务已通（`CloudAgent/CloudAgentSessionService.cs`）：创建（幂等/指纹/偏好固定/锚点/技能快照/续聊恢复/画布摘要/canonical + admission 预算）、读取、变更探测、执行行补建与输出装配；续聊分支的 advance 调用随运行时批次接入（PENDING #68） |
+| 11.2 | Agent 会话与调度 | `app/cloud_agent.go` | ✅ 2026-09-25 创建/读取/续聊/调度恢复全通（ 会话服务已通`CloudAgent/CloudAgentSessionService.cs` + `CloudAgentRuntimeExecution.cs`）：幂等/指纹/偏好固定/锚点/技能快照/续聊恢复/画布摘要/canonical + admission 预算、读取、变更探测、执行行补建与输出装配；续聊分支 advance 调用已接（收口批） |
 | 11.3 | 工具调用 | `app/cloud_agent_tools.go` | ✅ schema + 权限判定 + 读工具全量执行（偏好层/能力卡/画布状态/分镜/批量表/技能文件分页/任务查询）已通 |
 | 11.4 | 媒体处理 | `app/cloud_agent_media.go` | ✅ 校验/目录/意图/草稿/提交入队（预算 CAS + 配额 + 节点写入）/完成回写/审批参数修改已通 |
-| 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | 🟡 哈希语义 + 分页投影/精读/分镜与批量表结构化投影/参考资产读取已通（`CloudAgent/CloudAgentCanvasState.cs`）；canvas_get_state 的 Mutate 事务执行随运行时批次 |
-| 11.6 | 分镜生成 | `app/cloud_agent_storyboard.go` | 🟡 创建/编辑干跑与执行已落（`CloudAgent/CloudAgentStructuredEdits.cs`） |
-| 11.7 | 批量表格 | `app/cloud_agent_batch_table.go` | 🟡 六种操作干跑与执行已落（`CloudAgent/CloudAgentStructuredEdits.cs`） |
-| 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | ✅ 审批决策（含幂等重放、拒绝终态化、媒体参数修改）、画布变更记录与事件投影、撤销（undo）已通 |
-| 11.9 | Agent 档案与执行记录仓储 | `repository/agent_profile.go`、`repository/cloud_agent.go` | 🟡 档案读写（含乐观锁）此前已通；执行记录/画布变更仓储 + 事务上下文本批已通（`Repository.CloudAgents.cs`）；档案服务 `AgentProfileService.cs` 已存在 |
+| 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | ✅ 2026-09-25 哈希语义 + 分页投影/精读/结构化投影/参考资产读取 + canvas_get_state 事务执行（`CloudAgent/CloudAgentCanvasState.cs`）；canvas_get_state 的 Mutate 事务执行随运行时批次 |
+| 11.6 | 分镜生成 | `app/cloud_agent_storyboard.go` | ✅ 2026-09-25 创建/编辑干跑与事务执行（`CloudAgent/CloudAgentStructuredEdits.cs`） |
+| 11.7 | 批量表格 | `app/cloud_agent_batch_table.go` | ✅ 2026-09-25 六种操作干跑与事务执行（`CloudAgent/CloudAgentStructuredEdits.cs`） |
+| 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | ✅ 2026-09-25 审批决策（含幂等重放、拒绝终态化、媒体参数修改）、画布变更记录与事件投影、撤销（undo）已通 |
+| 11.9 | Agent 档案与执行记录仓储 | `repository/agent_profile.go`、`repository/cloud_agent.go` | ✅ 2026-09-25 档案读写（含乐观锁）此前已通；执行记录/画布变更仓储 + 事务上下文本批已通（`Repository.CloudAgents.cs`）；档案服务 `AgentProfileService.cs` 已存在 |
 
 ### 阶段 12 · 迁移工具、部署与验收
 
