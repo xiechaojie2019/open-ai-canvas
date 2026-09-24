@@ -581,5 +581,14 @@
      /skills/install/github、/skills/{id}/sync（Go skills.go，GitHub 出站 +
      zip/markdown 归一，见 #65 部分解决）。
   8. ai 中转 3 条：ANY /ai/custom、ANY /ai/system/{channelId}/*path（流式）、
-     POST /ai/models（Go custom_proxy.go 308 行 + system_proxy_stream.go 70 行，
-     浏览器↔上游双向流式中转，最后做）。
+     POST /ai/models（Go custom_proxy.go 308 行 + system_proxy_stream.go 70 行）。
+     **依赖栈实测（2026-09-25，最难的部分）**：除 handler 外还需移植——
+     ValidateCustomRelayURL（SSRF 出站校验）、DecodeRelayOutboundHeaders/
+     ApplyOutboundHeaders/ApplyDefaultOutboundHeaders、CustomRelayHTTPClient、
+     AcquireCustomRelaySlot（Redis 并发槽，platform_bridge.go 226 行）、
+     InterceptResponseText（response_interception.go 157 行）、outbound_alias.go
+     81 行；/ai/system 系统渠道流式另有渠道授权、authorizeSystemProxy、
+     ChannelAPIURLForProtocol、AcquireChannelSlot、代理计费/退款、API 调用日志
+     ——合计约 1200-1700 行 Go（出站 SSRF + Redis 槽 + 代理计费三大基础设施），
+     需独立完整轮次。建议顺序：先 /ai/custom + /ai/models（约 1200 行），
+     /ai/system 流式（依赖渠道计费栈）单独一批。
