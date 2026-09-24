@@ -145,6 +145,9 @@ builder.Services.AddSingleton(serviceProvider =>
         env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
 // 云 Agent 偏好档案（阶段 11.9 首批）。对应 Go 的 app/cloud_agent_profile.go。
 builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.PlatformSettingsService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+    env.DataDir));
 // 云 Agent 会话 / 媒体 / 运行时。对应 Go 的 app/cloud_agent*.go 组合根。
 builder.Services.AddSingleton(sp =>
 {
@@ -360,6 +363,14 @@ api.MapAgentRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.AgentProfileService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
+// 用户自定义渠道中转。对应 Go 的 RegisterCustomRelayRoutes 与 /ai/models。
+api.MapCustomRelayRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>().Features,
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 

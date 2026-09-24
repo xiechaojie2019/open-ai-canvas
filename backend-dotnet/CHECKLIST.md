@@ -2822,3 +2822,25 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
   形式的注册（端点元数据缺 4 项，delegate 未执行）。
 - 修复：统一改为块体 async lambda（与既有可用端点一致），三个路由全部
   验证通过（空 body → 400 信封；未知 run → 404 信封）。
+
+## 阶段 11 收口后 · ai 中转第一批（/ai/custom + /ai/models）
+
+- `Endpoints/CustomRelayEndpoints.cs` — 用户自定义渠道中转全链路：
+  - `POST /ai/models`：登录 + CustomChannels 特性 + 30/min 限流 +
+    `FetchChannelModelCatalogAsync`（既有服务）。
+  - `Map /ai/custom`：登录 + 特性 + CustomRelayPerMinute 限流 + 进程内并发槽
+    （Redis 协调为 PENDING #66 同族）+ `ValidateCustomRelayUrl`（长度 4096 /
+    无凭据 / 无片段 / http 仅可信私网主机）+ `authorizeCustomRelay` 完整白名单
+    （openai/gemini/claude 三格式 GET/POST 路径与查询参数规则 + 6 组视频路径
+    正则）+ Bearer Key 校验 + base64(JSON) 出站头解码 + 请求体上限 +
+    Accept 归一 + gemini/claude/openai 密钥头分发 + 无重定向客户端 +
+    SSE 流式转发（32KB 块 + 跨块密钥 REDACTED 滑动窗口）+ 二进制
+    video/audio/octet 白名单路径 + JSON 大小限制 + 错误文案响应拦截 +
+    4xx/5xx 信封（reason 映射）。
+- `Program.cs` — `MapCustomRelayRoutes` 接线 + `PlatformSettingsService`
+  注册为单例（原先仅在 MapAdminPlatformSettingsRoutes 内 new）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 错误；全量测试 1504/1505（单例失败为
+  已知顺序波动：PaymentReconciliation/ChannelAdmin 轮换，单跑全过）。
