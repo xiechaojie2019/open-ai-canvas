@@ -353,25 +353,41 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
         submissionRequestRef.current = true;
         setBusy(true);
         let accepted = false;
+        let requestSent = false;
         try {
             const pending = pendingSubmission.current;
             // An ambiguous previous POST owns its body/key until reconciled.
             // Editing model settings or prompt must not silently create a new charge.
             if (pending?.request && pending.request.prompt !== value) throw new Error("上一条请求结果待确认，请先原样重试上一条消息，再发送新要求");
             if (!pending?.request) {
-                if (profileLoading) throw new Error("正在确认长期偏好快照，请稍后再发送");
-                if (!profileView || profileError) throw new Error("长期偏好快照尚未确认，请重新读取后再发送");
                 const capabilities = await getAgentCapabilities();
                 if (currentScope.current !== scope) return;
                 if (!capabilities.permissionModes.includes(permissionMode)) throw new Error("当前后端不支持所选 Agent 权限，请更新后端");
                 if (selectedSkillIds.length && !capabilities.skills) throw new Error("当前后端尚未接入技能库");
                 await saveRemoteUserDataNow();
                 if (currentScope.current !== scope) return;
+                ++profileRequestRef.current;
+                setProfileLoading(true);
+                let profile: AgentProfileView;
+                try {
+                    profile = await getAgentProfile({ projectId: domainProjectId, canvasId });
+                } catch (cause) {
+                    if (currentScope.current === scope) {
+                        setProfileView(null);
+                        setProfileError(cause instanceof Error ? cause.message : String(cause));
+                    }
+                    throw cause;
+                } finally {
+                    if (currentScope.current === scope) setProfileLoading(false);
+                }
+                if (currentScope.current !== scope) return;
+                setProfileView(profile);
+                setProfileError(undefined);
                 const agentConfig = { ...config, model: selectedModel };
                 const requestConfig = resolveModelRequestConfig(agentConfig, selectedModel);
                 const logicalModelId = logicalModelIDForConfig(agentConfig);
                 const input = {
-                    canvasId, prompt: value, reasoningMode: reasoningSupported ? reasoningMode : "off", profileRevision: profileView.revision,
+                    canvasId, prompt: value, reasoningMode: reasoningSupported ? reasoningMode : "off", profileRevision: profile.revision,
                     model: modelOptionName(selectedModel) || undefined,
                     ...(logicalModelId ? { logicalModelId } : requestConfig.channelId ? { channelId: requestConfig.channelId, channelModelKey: modelOptionName(selectedModel) || undefined } : {}),
                     skillIds: [...new Set([...selectedSkillIds, ...resolveSkillMentions(value, installedSkills).map((skill) => skill.skillId)])],
@@ -403,6 +419,7 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
             if (currentScope.current !== scope) return;
             setPrompt("");
             setMessages(nextMessages);
+            requestSent = true;
             const result = submission.parentRunId ? await sendAgentMessage(submission.parentRunId, request) : await createAgentRun(request);
             accepted = true;
             if (currentScope.current === scope) setRun(result.run);
@@ -424,7 +441,7 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                     }
                 }
             }
-            setMessages((current) => appendAgentError(current, `submit-error-${activeConversationId}`, cause, agentSubmissionErrorTitle(cause, accepted)));
+            setMessages((current) => appendAgentError(current, `submit-error-${activeConversationId}`, cause, agentSubmissionErrorTitle(cause, accepted, requestSent)));
         } finally {
             submissionRequestRef.current = false;
             if (currentScope.current === scope) setBusy(false);
