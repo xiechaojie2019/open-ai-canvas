@@ -949,6 +949,14 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         ChannelModels.SaveAdminChannelModelAsync(actor, channelId, id, request, cancellationToken);
 
+    /// <summary>测试后台渠道模型配置，不写入模型或定价数据。</summary>
+    public Task<long> TestAdminChannelModelAsync(
+        User actor,
+        string channelId,
+        ChannelModelRequest request,
+        CancellationToken cancellationToken = default) =>
+        ChannelModels.TestAdminChannelModelAsync(actor, channelId, request, cancellationToken);
+
     /// <summary>对应 Go: <c>Service.DeleteAdminChannelModel</c>。</summary>
     public Task<long> DeleteAdminChannelModelAsync(
         User actor,

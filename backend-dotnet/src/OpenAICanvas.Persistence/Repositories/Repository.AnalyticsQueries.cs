@@ -169,6 +169,23 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>按渠道、模型和能力查唯一积分定价组合。</summary>
+    public async Task<ModelPricing?> ModelPricingByKeyAsync(
+        string channelID,
+        string model,
+        string capability,
+        CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await FirstOrDefaultAsync<ModelPricing>(
+            connection,
+            SqlBuilder.Select<ModelPricing>(
+                "channel_id = @channelID AND model = @model AND capability = @capability",
+                limitOffset: " LIMIT 1"),
+            new { channelID, model, capability },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>保存模型价格（GORM Save 的 update-or-insert 语义）。对应 Go: <c>Save</c>。</summary>
     public async Task SaveModelPricingAsync(
         ModelPricing pricing, CancellationToken cancellationToken = default)

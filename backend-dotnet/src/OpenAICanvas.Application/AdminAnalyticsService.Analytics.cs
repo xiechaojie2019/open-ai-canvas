@@ -392,7 +392,16 @@ public sealed partial class AdminAnalyticsService
             }
             pricing = current;
         }
-        pricing.ChannelID = request.ChannelID.Trim();
+        string channelID = request.ChannelID.Trim();
+        ModelPricing? duplicate = await _repository.ModelPricingByKeyAsync(
+            channelID, model, capability, cancellationToken).ConfigureAwait(false);
+        if (duplicate is not null && !string.Equals(duplicate.ID, pricing.ID, StringComparison.Ordinal))
+        {
+            throw AppError.New(
+                409,
+                "相同渠道、模型和能力的积分定价已存在，请直接编辑已有配置");
+        }
+        pricing.ChannelID = channelID;
         pricing.Model = model;
         pricing.Capability = capability;
         pricing.Currency = currency;

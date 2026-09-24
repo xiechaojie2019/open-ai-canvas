@@ -14,9 +14,7 @@ namespace OpenAICanvas.Web.Endpoints;
 /// 系统渠道管理路由。对应 Go: <c>internal/handler/auth.go</c> 的渠道部分与
 /// <c>internal/handler/finance.go</c> 的渠道模型部分。
 /// </summary>
-/// <remarks>
-/// 渠道模型的 fetch/import/test 依赖出站 HTTP 客户端，属阶段 5/10，另行接线。
-/// </remarks>
+/// <remarks>渠道模型的 fetch/import/test 均通过 Application 层统一接线。</remarks>
 public static class ChannelEndpoints
 {
     public static void MapChannelRoutes(
@@ -300,6 +298,32 @@ public static class ChannelEndpoints
                     .ImportAdminChannelModelsAsync(actor, id, request.Models, cancellationToken)
                     .ConfigureAwait(false);
                 return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/channels/{id}/models/test", async (
+            HttpContext context,
+            string id,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ChannelModelRequest? request = await ReadJsonAsync<ChannelModelRequest>(
+                    context, cancellationToken, maxBytes: 256 << 10).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+
+                long durationMs = await service.TestAdminChannelModelAsync(
+                    actor, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { durationMs });
             }
             catch (Exception error)
             {

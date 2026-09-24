@@ -155,6 +155,18 @@ public sealed class AdminInsightEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         Assert.Equal("CNY", (await ReadDataAsync(updated)).GetProperty("pricing").GetProperty("currency").GetString());
 
+        // 相同渠道、模型和能力不能创建第二条配置，避免数据库唯一约束被包装成 500。
+        HttpResponseMessage duplicate = await admin.PostAsJsonAsync("/api/admin/model-pricings", new
+        {
+            model = "gpt-video",
+            capability = "video",
+            currency = "CNY",
+            perRequestMicros = 60,
+        });
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        using JsonDocument duplicateDoc = JsonDocument.Parse(await duplicate.Content.ReadAsStringAsync());
+        Assert.Contains("已存在", duplicateDoc.RootElement.GetProperty("msg").GetString());
+
         // 校验：缺模型 → 400；负价格 → 400。
         HttpResponseMessage blank = await admin.PostAsJsonAsync("/api/admin/model-pricings", new
         {

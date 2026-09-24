@@ -1,11 +1,14 @@
 #nullable enable
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Outbound;
 using OpenAICanvas.Protocol;
 using OpenAICanvas.Persistence.Repositories;
+using OpenAICanvas.Providers;
 
 namespace OpenAICanvas.Application;
 
@@ -123,6 +126,78 @@ public sealed class ChannelModelAdminService
         _catalog = catalog ?? new ChannelModelCatalogService();
     }
 
+    /// <summary>测试管理员当前编辑的渠道模型连接，不写入模型或价格配置。</summary>
+    public async Task<long> TestAdminChannelModelAsync(
+        User actor,
+        string channelId,
+        ChannelModelRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        CanvasService.RequireAdmin(actor);
+
+        ModelChannel? channel = await _repository.AdminSystemChannelAsync(channelId, cancellationToken)
+            .ConfigureAwait(false);
+        if (channel is null)
+        {
+            throw AppError.NotFound("系统渠道不存在或已删除");
+        }
+
+        (string modelKey, string providerModelKey, string capability, string protocol) =
+            NormalizeChannelModelContract(channel, request);
+        if (capability != "text")
+        {
+            throw AppError.New(501, "当前仅支持测试文本模型，图片、视频和音频模型请直接保存后验证");
+        }
+
+        ChannelModel? model = await _repository.ChannelModelByKeyIncludingDisabledAsync(
+            channel.ID, modelKey, cancellationToken).ConfigureAwait(false);
+        if (model is null)
+        {
+            throw AppError.NotFound("该渠道尚未保存此模型，请先保存模型配置");
+        }
+
+        ProviderConfig config = new()
+        {
+            ChannelID = channel.ID,
+            ChannelModelKey = modelKey,
+            ProviderModelKey = providerModelKey,
+            APIFormat = channel.APIFormat,
+            InterfaceType = protocol,
+            BaseURL = channel.BaseURL,
+            APIKey = channel.APIKey,
+            SecretKey = channel.SecretKey,
+            Headers = OutboundGuard.ParseOutboundHeadersJson(channel.HeadersJSON),
+            Model = providerModelKey,
+        };
+
+        TextTaskInput input = new()
+        {
+            Mode = "text",
+            Prompt = "Reply with OK.",
+            Config = config,
+            TextOptions = new CanvasTextOptions { Stream = false },
+            MaxOutputTokens = 32,
+        };
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        try
+        {
+            _ = await new ProviderTextTask().RunTextTaskAsync(input, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            throw AppError.Wrap(502, "模型服务请求失败，请检查渠道地址、协议和密钥", error);
+        }
+
+        stopwatch.Stop();
+        return Math.Max(0, stopwatch.ElapsedMilliseconds);
+    }
+
     /// <summary>保存渠道模型（创建或更新）。对应 Go: <c>SaveAdminChannelModel</c>。</summary>
     public async Task<ChannelModel> SaveAdminChannelModelAsync(
         User actor,
@@ -161,7 +236,6 @@ public sealed class ChannelModelAdminService
         List<ChannelModelPriceTier> tiers = await NormalizeChannelModelPriceTiersAsync(
             request, capability, protocol, providerModelKey, cancellationToken).ConfigureAwait(false);
 
-        _ = await _repository.NextPrefixedIdAsync("MODEL", cancellationToken).ConfigureAwait(false);
         ChannelModel item;
         if (id.Length == 0)
         {
