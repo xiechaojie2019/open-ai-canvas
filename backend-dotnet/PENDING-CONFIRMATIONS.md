@@ -573,8 +573,9 @@
      **规模提示（2026-09-25 复核）**：handler 仅 80 行，但依赖
      internal/hostupdate 包 1669 行（GitHub releases 下载、备份/回滚、
      updater 旁路 HTTP 服务）——Go 单二进制部署的自更新机制；.NET 生产
-     部署为 Docker（compose build 即升级），移植前需先决策：全量移植
-     hostupdate，或 Docker 部署下该组路由返回固定状态（需用户确认）。
+     部署为 Docker（compose build 即升级）。**用户已决策（2026-09-25）：
+     .NET 走 Docker，不移植 hostupdate**——该组路由按 Docker 部署语义
+     返回固定状态（status=managed-by-docker 形态），随实现批落地。
   6. 画布导入 2 条：POST /canvas-projects/{id}/import/libtv|tapnow
      （Go libtv.go 86 行 + tapnow.go 36 行，外部服务出站）。
   7. skills 安装 3 条：POST /skills/install（zip multipart）、
