@@ -2744,3 +2744,23 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 - `dotnet build OpenAICanvas.sln` 0 警告 0 错误；`dotnet test` 513/513 通过。
 - Go 侧基线：`go run` capability/prompts 包现算，与 .NET 输出逐字节一致。
 - 未接线路由：`handler/agent.go` 10 条待运行时闭环后一次性开放（PENDING #67）。
+
+## 阶段 11 第二批 · 会话与读取面（11.2/11.3/11.5）
+
+- `CloudAgentPolicyCompiler.cs` — 策略编译 + 能力速查 + 偏好快照构建/校验
+  （`CloudAgentProfileSnapshots`）与创作锚点（`CloudAgentAnchors`，含参考资产
+  解析与 16 个上限）。
+- `CloudAgentSessionService.cs` — 创建运行（请求校验、幂等键/指纹、偏好固定与
+  冲突、续聊历史恢复 + 续聊摘要、技能快照、画布摘要、canonical 规范形、
+  TaskAdmission 积分硬顶、并发同键回读）、读取运行（执行行补建、输出装配、
+  账单合计）、IfChanged 轻量探测、云 Agent 状态 JSON 编解码复用基座。
+- `CloudAgentTools.cs` — 13 个工具 schema（工具清单与 Go 现算一致，测试锁定）、
+  能力 patch/分镜/批量表 schema、Allowed/IsWrite。
+- `CloudAgentCanvasState.cs` — canvas_get_state 分页摘要与 nodeIds 精读、
+  分镜/批量表结构化投影、媒体参考资产公开特征。
+- 测试：`CloudAgentSessionContractTests`（工具清单、缓存键、续聊历史恢复、
+  请求合同、确定性 ID）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 错误；`dotnet test` 1505/1505。

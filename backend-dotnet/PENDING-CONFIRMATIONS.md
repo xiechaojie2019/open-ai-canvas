@@ -533,8 +533,13 @@
     变为别名），Application 层不再依赖 Web。
   - 任务 admission 扩展：`TaskAdmission`（确定性任务 ID + MaxCharge 报价上限
     + token 计费 ChargeLimit 固化），挂在 CreateQueued/AdmitQueued。
-- 剩余（下批顺序）：`cloud_agent.go` 会话（Create/Run/IfChanged/续聊历史/锚点/
-  技能快照/画布摘要）→ 运行时 advance 循环与审批决策 → 工具（读工具+能力卡）
+- 第二批（11.2/11.3/11.5 会话与读取面）已通：`CloudAgentSessionService.cs`、
+  `CloudAgentPolicyCompiler.cs`（含偏好快照校验、锚点构建）、`CloudAgentTools.cs`
+  （工具 schema，清单与 Go 一致）、`CloudAgentCanvasState.cs`（分页投影/精读/
+  分镜与批量表结构化投影/媒体参考解析）。测试 1505/1505。
+- 已知取舍：CreateAsync 续聊分支不调用 advance（运行时未移植），父轮未推进时
+  按合同返回 409「上一轮 Agent 尚未结束」；10 条路由仍整体未接线。
+- 剩余（下批顺序）：运行时 advance 循环与审批决策 → 工具执行（读工具 + 写事务）
   → 媒体（引用/草稿/完成回写）→ 分镜与批量表变更 → undo/recovery →
   `handler/agent.go` 10 条路由 + SSE events → worker 调度钩子（advanceCloudAgents）。
 - 取舍：分批期间 `POST /agent/runs` 等路由整体未接线（避免「可建不可跑」的

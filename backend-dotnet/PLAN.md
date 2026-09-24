@@ -343,10 +343,10 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 11.0 | 契约基座：画布能力注册表、策略文档、运行契约与哈希 | `canvas/capability`（4 文件）、`prompts/agent_policy.go`、`cloud_agent_json.go` | ✅ 2026-09-24 哈希与 Go 逐字节一致（能力集 `9f4199f9…`、系统策略 `82fc03…`、媒体策略 `abcd57…`，测试锁定） |
 | 11.1 | Agent 运行时 | `app/cloud_agent_runtime.go` (1263 行) | 🟡 状态 DTO/校验/Decode/Save 基座已落（`CloudAgent/CloudAgentContracts.cs`）；advance 推进循环待移植 |
-| 11.2 | Agent 会话与调度 | `app/cloud_agent.go` | ☐ |
-| 11.3 | 工具调用 | `app/cloud_agent_tools.go` | ☐ |
+| 11.2 | Agent 会话与调度 | `app/cloud_agent.go` | 🟡 会话服务已通（`CloudAgent/CloudAgentSessionService.cs`）：创建（幂等/指纹/偏好固定/锚点/技能快照/续聊恢复/画布摘要/canonical + admission 预算）、读取、变更探测、执行行补建与输出装配；续聊分支的 advance 调用随运行时批次接入（PENDING #68） |
+| 11.3 | 工具调用 | `app/cloud_agent_tools.go` | 🟡 工具 schema 构建/能力卡数据/读写判定已通（`CloudAgent/CloudAgentTools.cs`，工具清单与 Go 一致，测试锁定）；读工具执行随运行时批次 |
 | 11.4 | 媒体处理 | `app/cloud_agent_media.go` | ☐ |
-| 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | 🟡 CanvasHash/MediaContentHash/creationHash 语义已落；分页投影待移植 |
+| 11.5 | 画布状态同步 | `app/cloud_agent_canvas_state.go` | 🟡 哈希语义 + 分页投影/精读/分镜与批量表结构化投影/参考资产读取已通（`CloudAgent/CloudAgentCanvasState.cs`）；canvas_get_state 的 Mutate 事务执行随运行时批次 |
 | 11.6 | 分镜生成 | `app/cloud_agent_storyboard.go` | ☐ |
 | 11.7 | 批量表格 | `app/cloud_agent_batch_table.go` | ☐ |
 | 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | ☐ |

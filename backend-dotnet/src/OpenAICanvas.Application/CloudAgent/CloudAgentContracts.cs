@@ -589,6 +589,13 @@ public static partial class CloudAgentContracts
     public const string CompilerVersion = "cloud-agent-policy-compiler/v3";
     public const string SkillEntryPath = "SKILL.md";
 
+    /// <summary>UTF-8 SHA256 十六进制小写摘要。</summary>
+    public static string Sha256Hex(string value)
+    {
+        byte[] sum = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(sum).ToLowerInvariant();
+    }
+
     /// <summary>确定性运行/任务 ID。对应 Go: <c>cloudAgentID</c>。</summary>
     public static string AgentID(string userId, string key)
     {
