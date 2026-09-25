@@ -2844,3 +2844,15 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 
 - `dotnet build OpenAICanvas.sln` 0 错误；全量测试 1504/1505（单例失败为
   已知顺序波动：PaymentReconciliation/ChannelAdmin 轮换，单跑全过）。
+
+## 补充 · channels models/test（1 条）
+
+- `ChannelModelAdminService.TestAdminChannelModelAsync` — 渠道加载、
+  合同归一（复用 NormalizeChannelModelContract）、能力画像校验
+  （NormalizeModelCapabilityConfigForModel）、三要素检查、测试默认参数
+  （video 分辨率取画像枚举首值，image 取画像 Size/Quality 默认，缺省
+  1024x1024/auto 与 16:9/720）。
+- `TaskWorkerService.RunProviderProbeAsync` — 公开探测入口：10 分钟超时、
+  ProviderRequestContext 构造与后台执行同源（含声明式协议快照），
+  text/image/video/audio 四分支，失败 502（超时 504）。
+- `POST /admin/channels/{id}/models/test` — 5/min 限流，返回 {durationMs}。

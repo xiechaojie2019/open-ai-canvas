@@ -138,6 +138,50 @@ public sealed class TaskWorkerService
     }
 
     /// <summary>测试与运维入口：领取并同步处理一个任务。对应 Go: <c>processNextTask</c>。</summary>
+    /// <summary>
+    /// 管理端渠道模型连通性测试：复用真实生成协议与运行时策略，
+    /// 不创建用户任务或计费订单。对应 Go: <c>TestAdminChannelModel</c> 的执行分支。
+    /// </summary>
+    public async Task<long> RunProviderProbeAsync(
+        string capability, TextTaskInput input, CancellationToken cancellationToken = default)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(10));
+        ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();
+        ProviderRequestContext context = new(_policy, _coordinator, declarativeAdapter: declarativeAdapters);
+        long startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        try
+        {
+            switch (capability)
+            {
+                case "text":
+                    await new ProviderTextTask(context).RunTextTaskAsync(
+                        input, cancellationToken: timeout.Token).ConfigureAwait(false);
+                    break;
+                case "image":
+                    await new ProviderImageTask(context).RunAsync(input, timeout.Token).ConfigureAwait(false);
+                    break;
+                case "video":
+                    await new ProviderVideoTask(context).RunAsync(
+                        input, cancellationToken: timeout.Token).ConfigureAwait(false);
+                    break;
+                case "audio":
+                    await new ProviderAudioTask(context).RunAsync(input, timeout.Token).ConfigureAwait(false);
+                    break;
+                default:
+                    throw AppError.BadAuthRequest("不支持测试的模型能力");
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            bool timeoutHit = !cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested;
+            string message = error.Message;
+            throw AppError.Wrap(
+                timeoutHit ? 504 : 502, "模型测试失败：" + message, error);
+        }
+        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - startedAt;
+    }
+
     public async Task<bool> ProcessNextTaskAsync(CancellationToken cancellationToken = default)
     {
         if (_coordinator is null)

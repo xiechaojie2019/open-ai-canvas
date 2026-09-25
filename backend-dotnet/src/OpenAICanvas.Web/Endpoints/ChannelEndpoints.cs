@@ -22,7 +22,8 @@ public static class ChannelEndpoints
     public static void MapChannelRoutes(
         this IEndpointRouteBuilder api,
         CanvasService service,
-        IRateLimiter limiter)
+        IRateLimiter limiter,
+        TaskWorkerService worker)
     {
         api.MapGet("/admin/channels", async (HttpContext context, CancellationToken cancellationToken) =>
         {
@@ -152,6 +153,39 @@ public static class ChannelEndpoints
                 ChannelModel model = await service.SaveAdminChannelModelAsync(
                     actor, id, "", request, cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { model });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        // 管理端渠道模型连通性测试。对应 Go: channel_models.go 的 models/test。
+        api.MapPost("/admin/channels/{id}/models/test", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                if (!await AuthEndpoints.EnforceRateLimitAsync(
+                        context, limiter, "admin-channel-model-test:" + actor.ID + ":" + id,
+                        5, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                {
+                    return Results.Empty;
+                }
+                ChannelModelRequest? request = await ReadJsonAsync<ChannelModelRequest>(
+                    context, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                long durationMs = await service.TestAdminChannelModelAsync(
+                    actor, id, request, worker, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["durationMs"] = durationMs,
+                });
             }
             catch (Exception error)
             {

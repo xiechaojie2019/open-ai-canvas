@@ -5,6 +5,7 @@ using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Protocol;
+using OpenAICanvas.Providers;
 using OpenAICanvas.Persistence.Repositories;
 
 namespace OpenAICanvas.Application;
@@ -521,6 +522,116 @@ public sealed class ChannelModelAdminService
     }
 
     // ------------------------------------------------------------ 合同与校验
+
+    /// <summary>
+    /// 管理端渠道模型连通性测试。对应 Go: <c>app.TestAdminChannelModel</c>。
+    /// 复用真实生成协议与运行时并发/熔断策略，不创建用户任务或计费订单。
+    /// </summary>
+    public async Task<long> TestAdminChannelModelAsync(
+        User actor,
+        string channelId,
+        ChannelModelRequest request,
+        TaskWorkerService worker,
+        CancellationToken cancellationToken = default)
+    {
+        if (worker is null)
+        {
+            throw AppError.New(503, "任务执行引擎尚未就绪");
+        }
+        ModelChannel channel = await _repository.AdminSystemChannelAsync(channelId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw AppError.NotFound("系统渠道不存在或已停用");
+        (string modelKey, string providerModelKey, string capability, string protocol) =
+            NormalizeChannelModelContract(channel, request);
+        Capabilities.ModelCapabilityConfig? profile = null;
+        if (capability is "text" or "image" or "video")
+        {
+            profile = ModelCapabilityConfigOps.NormalizeModelCapabilityConfigForModel(
+                capability, protocol, providerModelKey, request.CapabilityConfig);
+        }
+        if (channel.BaseURL.Trim().Length == 0 || channel.APIKey.Trim().Length == 0)
+        {
+            throw AppError.BadAuthRequest("请先在渠道中配置 Base URL 和 API Key");
+        }
+        List<Outbound.OutboundHeader> headers = Outbound.OutboundGuard.ParseOutboundHeadersJson(channel.HeadersJSON);
+
+        string prompt = capability switch
+        {
+            "image" => "A simple gray circle on a white background.",
+            "video" => "A static gray circle on a white background.",
+            "audio" => "Model test.",
+            _ => "Reply with OK.",
+        };
+        string videoSeconds = "6";
+        string imageSize = "", imageQuality = "";
+        string videoRatio = "16:9", videoResolution = "720";
+        if (capability == "image")
+        {
+            (imageSize, imageQuality) = ImageTestDefaults(profile?.Image);
+        }
+        if (capability == "video")
+        {
+            videoResolution = VideoTestDefaultResolution(profile?.Video);
+        }
+        TextTaskInput input = new()
+        {
+            Mode = capability,
+            Prompt = prompt,
+            Config = new ProviderConfig
+            {
+                ChannelID = channel.ID,
+                APIFormat = channel.APIFormat,
+                InterfaceType = protocol,
+                BaseURL = channel.BaseURL,
+                APIKey = channel.APIKey,
+                SecretKey = channel.SecretKey ?? "",
+                Headers = headers,
+                Model = providerModelKey,
+                ChannelModelKey = modelKey,
+                Size = capability switch { "image" => imageSize, "video" => videoRatio, _ => "" },
+                Quality = imageQuality,
+                Count = "1",
+                VideoSeconds = videoSeconds,
+                VQuality = videoResolution,
+                VideoGenerateAudio = "false",
+                VideoWatermark = "false",
+                AudioVoice = "alloy",
+                AudioFormat = "mp3",
+                AudioSpeed = "1",
+            },
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal),
+            ImageCapability = null,
+            VideoCapability = null,
+        };
+        return await worker.RunProviderProbeAsync(capability, input, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 视频测试默认分辨率。.NET 的 VideoCapabilityConfig 只声明分辨率枚举
+    /// （比例由声明式协议回填），取第一个枚举值，缺省 720。
+    /// 对应 Go: <c>videoTestDefaults</c>。
+    /// </summary>
+    private static string VideoTestDefaultResolution(Capabilities.VideoCapabilityConfig? profile)
+    {
+        if (profile is null || profile.Resolutions.Count == 0)
+        {
+            return "720";
+        }
+        string resolution = profile.Resolutions[0].Trim();
+        return resolution.Length > 0 ? resolution : "720";
+    }
+
+    /// <summary>图片测试默认尺寸/质量。对应 Go: <c>imageTestDefaults</c>。</summary>
+    private static (string Size, string Quality) ImageTestDefaults(Capabilities.ImageCapabilityConfig? profile)
+    {
+        if (profile is null)
+        {
+            return ("1024x1024", "auto");
+        }
+        string size = profile.Size.Parameter != "none" ? profile.Size.Default.Trim() : "";
+        string quality = profile.Quality.Supported ? profile.Quality.Default.Trim() : "";
+        return (size.Length > 0 ? size : "1024x1024", quality.Length > 0 ? quality : "auto");
+    }
 
     /// <summary>对应 Go: <c>normalizeChannelModelContract</c>。</summary>
     private static (string ModelKey, string ProviderModelKey, string Capability, string Protocol)

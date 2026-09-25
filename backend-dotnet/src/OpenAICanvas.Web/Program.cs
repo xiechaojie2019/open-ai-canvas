@@ -300,7 +300,8 @@ api.MapModelRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.Canv
 // 系统渠道管理路由。对应 Go 的 handler.RegisterAuthRoutes / RegisterFinanceRoutes 渠道部分。
 api.MapChannelRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
-    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>());
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.TaskWorkerService>());
 
 // 本地媒体分片上传路由。对应 Go 的 handler.RegisterChunkedUploadRoutes。
 api.MapChunkedUploadRoutes(

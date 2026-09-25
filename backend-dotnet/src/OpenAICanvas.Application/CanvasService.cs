@@ -940,6 +940,15 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         ChannelAdmin.UpdateAdminChannelModelSortAsync(actor, channelId, modelId, sortOrder, cancellationToken);
 
+    /// <summary>对应 Go: <c>Service.TestAdminChannelModel</c>。</summary>
+    public Task<long> TestAdminChannelModelAsync(
+        User actor,
+        string channelId,
+        ChannelModelRequest request,
+        TaskWorkerService worker,
+        CancellationToken cancellationToken = default) =>
+        ChannelModels.TestAdminChannelModelAsync(actor, channelId, request, worker, cancellationToken);
+
     /// <summary>对应 Go: <c>Service.SaveAdminChannelModel</c>。</summary>
     public Task<Domain.Entities.ChannelModel> SaveAdminChannelModelAsync(
         User actor,
