@@ -2893,3 +2893,20 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 - `Repository.Channels.cs` / `Repository.AdminAnalytics.cs`：系统渠道读取与 API 调用日志写入。
 - 取舍：完整代理计费预留与 token usage 结算暂不伪造，日志状态使用 `billing_pending`，已写入 PENDING #72。
 - 验证：`dotnet build OpenAICanvas.sln` 0 errors；全量测试 1520-22/1522（失败项单跑均通过，属既有顺序污染）。
+
+## PLAN 残余批 · 时间线执行器与资产删除补强
+
+- `TimelineTaskExecutor.cs`：whisper.cpp 转写（multipart 上传、segments/SRT/
+  language 结果）与 ffmpeg 渲染（render plan → concat 滤镜、黑场静音补齐、
+  字幕 SRT 输出、x264/aac 编码），进度 15/40/80 与终态/ResultJSON 落库，
+  资源归属与本地资源写入配额校验。
+- `TaskWorkerService`：timeline_transcription/timeline_render 分支接入执行器，
+  不再抛“任务类型没有可用的执行分支”。
+- `OutboundGuard`：loopback 精确校验修正（whisper 本机服务调用）。
+- `DELETE /assets/{id}`：引用快照任务状态感知（queued/running/unknown 阻塞，
+  终态任务视为历史），`AssetDeleteTests` 回归 4/4。
+
+### 验证
+
+- 全量测试 1530/1531（单例 ChannelAdmin 兜底同步单跑通过）。
+- 解决方案 build 0 错误。

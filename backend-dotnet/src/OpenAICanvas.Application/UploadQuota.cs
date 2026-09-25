@@ -64,7 +64,23 @@ public sealed class UploadQuota
     }
 
     /// <summary>
-    /// 预留重试额度：失败资源记录已计入账号存储用量，重试只重新预留当日上传额度。
+    /// 预留生成资源额度：单文件上限使用 GeneratedFileMB，账号存储和当日上传额度仍按资源策略校验。
+    /// 对应 Go: <c>reserveGeneratedResourceQuota</c>。
+    /// </summary>
+    public Task<string> ReserveGeneratedResourceQuotaAsync(
+        string userId, long size, CancellationToken cancellationToken = default)
+    {
+        RuntimeResourcePolicy resource = _policyProvider.Current().Resource;
+        return ReserveStoredFileQuotaAsync(
+            userId,
+            size,
+            Megabyte * resource.GeneratedFileMB + 1,
+            Megabyte * resource.DailyUploadMB,
+            Gigabyte * resource.StoredFileGB,
+            $"单个生成文件不能超过 {resource.GeneratedFileMB}MB",
+            cancellationToken);
+    }
+
     /// 对应 Go: <c>reserveRetryUploadQuota</c>。
     /// </summary>
     public async Task<string> ReserveRetryUploadQuotaAsync(string userId, long size, CancellationToken cancellationToken = default)

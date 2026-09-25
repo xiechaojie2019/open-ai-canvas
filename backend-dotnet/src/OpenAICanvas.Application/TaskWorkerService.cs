@@ -32,15 +32,18 @@ public sealed class TaskWorkerService
     private readonly TaskTerminalService _terminal;
     private readonly IRuntimePolicyProvider _policy;
     private readonly Coordinator? _coordinator;
+    private readonly TimelineTaskExecutor? _timeline;
 
     public TaskWorkerService(
         Repository repository,
         IRuntimePolicyProvider policy,
-        Coordinator? coordinator = null)
+        Coordinator? coordinator = null,
+        TimelineTaskExecutor? timeline = null)
     {
         _repository = repository;
         _policy = policy;
         _coordinator = coordinator;
+        _timeline = timeline;
         // CanvasService 只为文本回放收尾服务；未注入时退化为基础任务服务（回放跳过）。
         _terminal = new TaskTerminalService(repository, CanvasService?.Tasks ?? new TaskService(repository));
     }
@@ -260,10 +263,33 @@ public sealed class TaskWorkerService
                 return null;
             }
 
-            // 时间线转写/渲染依赖本地 whisper.cpp 与 ffmpeg 执行器（阶段 4.14），到此处直接失败。
             if (claimed.Type is "timeline_transcription" or "timeline_render")
             {
-                throw new InvalidOperationException("任务类型没有可用的执行分支");
+                if (_timeline is null)
+                {
+                    throw new TimelineTaskException("时间线 Worker 未配置本地执行器");
+                }
+
+                await _repository.UpdateTaskProgressForLeaseAsync(
+                    claimed.ID, claimed.LeaseOwner, "准备本地媒体任务", 10, ct).ConfigureAwait(false);
+                Dictionary<string, object?> timelineResult = await _timeline
+                    .ExecuteAsync(claimed, ct).ConfigureAwait(false);
+                latest = await _repository.TaskAsync(claimed.ID, ct).ConfigureAwait(false);
+                if (latest is null)
+                {
+                    throw new InvalidOperationException("任务记录不存在");
+                }
+                if (latest.Status == TaskStatus.TaskStatusCancelled)
+                {
+                    await _terminal.HandleCancelledResultAsync(latest).ConfigureAwait(false);
+                    return null;
+                }
+
+                string timelineResultJSON = JsonSerializer.Serialize(
+                    timelineResult, ProjectCharacterService.GoPayloadOptions);
+                await SaveCompletionWithinQuotaAsync(latest, timelineResultJSON, ct).ConfigureAwait(false);
+                await _terminal.HandleSuccessAsync(latest).ConfigureAwait(false);
+                return null;
             }
 
             string stage = "调用生成模型";
@@ -646,6 +672,14 @@ public sealed class TaskWorkerService
         if (taskType.StartsWith("canvas_audio", StringComparison.Ordinal))
         {
             return TimeSpan.FromMinutes(task.AudioTimeoutMinutes);
+        }
+        if (taskType == "timeline_transcription")
+        {
+            return TimeSpan.FromMinutes(20);
+        }
+        if (taskType == "timeline_render")
+        {
+            return TimeSpan.FromMinutes(60);
         }
         if (taskType.StartsWith("canvas_text", StringComparison.Ordinal))
         {

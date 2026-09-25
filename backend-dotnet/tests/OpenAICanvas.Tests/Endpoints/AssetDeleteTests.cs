@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Persistence.Repositories;
+using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 using Xunit;
+using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
 
 namespace OpenAICanvas.Tests.Endpoints;
 
@@ -209,6 +211,56 @@ public sealed class AssetDeleteTests : IDisposable
             Repository repository = scope.ServiceProvider.GetRequiredService<Repository>();
             Assert.NotNull(await repository.AssetForUserAsync(_userId, "asset-del2"));
         }
+    }
+
+    [Fact]
+    public async Task 删除已完成任务历史输出引用的素材()
+    {
+        await SignInAsAdminAsync();
+        await SeedResourceAndAssetAsync("RES_DEL3", "asset-del3");
+
+        await using (AsyncServiceScope scope = _factory.Services.CreateAsyncScope())
+        {
+            Repository repository = scope.ServiceProvider.GetRequiredService<Repository>();
+            DateTime now = DateTime.UtcNow;
+            string output = "{\"url\":\"/api/resources/RES_DEL3/file\"}";
+            await repository.CreateAsync(new TaskEntity
+            {
+                ID = "task-del-complete",
+                UserID = _userId,
+                Status = TaskStatus.TaskStatusSucceeded,
+                Prompt = "已完成生成",
+                ResultJSON = output,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+            await repository.CreateAsync(new TaskLog
+            {
+                ID = "task-log-del-complete",
+                UserID = _userId,
+                TaskID = "task-del-complete",
+                Message = "已完成",
+                Payload = output,
+                CreatedAt = now,
+            });
+            await repository.CreateAsync(new Result
+            {
+                ID = "result-del-complete",
+                UserID = _userId,
+                TaskID = "task-del-complete",
+                Kind = "image",
+                URL = "/api/resources/RES_DEL3/file",
+                Payload = output,
+                CreatedAt = now,
+            });
+        }
+
+        HttpResponseMessage deleted = await _adminClient!.DeleteAsync("/api/assets/asset-del3");
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+
+        await using AsyncServiceScope verifyScope = _factory.Services.CreateAsyncScope();
+        Repository verifyRepository = verifyScope.ServiceProvider.GetRequiredService<Repository>();
+        Assert.Null(await verifyRepository.AssetForUserAsync(_userId, "asset-del3"));
     }
 
     [Fact]

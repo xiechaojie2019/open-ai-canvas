@@ -672,3 +672,13 @@
   ReserveProxyBilling/token usage settlement（当前 billing_pending，不伪造账单）。
 - 文档过期项：阶段 1.12 EF 配置、5.8 后端数据导出、9.4 host-updater、
   10.3/10.4/10.6 install/sync/import、10.7/10.8 “未实现”描述已按实际代码更新。
+
+
+### 74. `[已解决]` 时间线执行器与资产删除补强（2026-09-25）
+- TimelineTaskExecutor：转写（ffmpeg 16k 单声道预处理 + whisper.cpp multipart，
+  CANVAS_WHISPER_BASE_URL）与渲染（render plan 展开 + ffmpeg concat 滤镜链）
+  接入 Worker dispatch；进度/终态/ResultJSON 落库；UploadQuota 新增
+  ReserveGeneratedResourceQuotaAsync（GeneratedFileMB）。
+- DELETE /assets/{id} 与资源引用快照补齐任务状态感知：queued/running/unknown
+  阻塞删除，终态任务按历史处理；回归测试 AssetDeleteTests 4/4。
+- 全量测试本轮 1530/1531（单例顺序波动单跑通过）；解决方案 build 0 错误。

@@ -137,7 +137,12 @@ builder.Services.AddHostedService<OpenAICanvas.Web.Workers.BillingReviewWorker>(
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.TaskWorkerService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
     serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
-    platformCoordinator));
+    platformCoordinator,
+    new OpenAICanvas.Application.TimelineTaskExecutor(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>().Features)));
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),

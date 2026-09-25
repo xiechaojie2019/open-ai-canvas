@@ -13,7 +13,7 @@ namespace OpenAICanvas.Persistence.Repositories;
 /// 对应 Go: <c>repository.ResourceReferenceSnapshot</c> 系列。
 /// </summary>
 public sealed record ResourceReferenceDocument(
-    string Kind, string ID, string Title, string PrimaryJSON, string SecondaryJSON);
+    string Kind, string ID, string Title, string PrimaryJSON, string SecondaryJSON, string TaskStatus = "");
 
 public sealed record ResourceDirectReference(
     string Kind, string ID, string Title, string ResourceID);
@@ -140,13 +140,39 @@ public sealed partial class Repository
         foreach (TaskEntity task in await QueryAsync<TaskEntity>(
                      connection,
                      SqlBuilder.SelectColumns<TaskEntity>(
-                         ["ID", "Prompt", "InputJSON", "ResultJSON"], "user_id = @userId"),
+                         ["ID", "Prompt", "Status", "InputJSON", "ResultJSON"], "user_id = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            documents.Add(new ResourceReferenceDocument("任务", task.ID, task.Prompt, task.InputJSON, task.ResultJSON));
+            documents.Add(new ResourceReferenceDocument(
+                "任务", task.ID, task.Prompt, task.InputJSON, task.ResultJSON, task.Status));
         }
 
+        Dictionary<string, string> taskStatuses = documents
+            .Where(document => document.Kind == "任务")
+            .ToDictionary(document => document.ID, document => document.TaskStatus, StringComparer.Ordinal);
+
+        foreach (TaskLog taskLog in await QueryAsync<TaskLog>(
+                     connection,
+                     SqlBuilder.SelectColumns<TaskLog>(["ID", "TaskID", "Message", "Payload"], "user_id = @userId"),
+                     new { userId },
+                     cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            documents.Add(new ResourceReferenceDocument(
+                "任务日志", taskLog.ID, taskLog.Message, taskLog.Payload, "",
+                taskStatuses.GetValueOrDefault(taskLog.TaskID, "")));
+        }
+
+        foreach (Result result in await QueryAsync<Result>(
+                     connection,
+                     SqlBuilder.SelectColumns<Result>(["ID", "TaskID", "Kind", "URL", "Payload"], "user_id = @userId"),
+                     new { userId },
+                     cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            documents.Add(new ResourceReferenceDocument(
+                "任务结果", result.ID, result.Kind, result.URL, result.Payload,
+                taskStatuses.GetValueOrDefault(result.TaskID, "")));
+        }
         foreach (CreationRun run in await QueryAsync<CreationRun>(
                      connection,
                      SqlBuilder.Select<CreationRun>("user_id = @userId"),
@@ -163,24 +189,6 @@ public sealed partial class Repository
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             documents.Add(new ResourceReferenceDocument("创作执行项", submission.ID, submission.ItemKey, submission.RequestJSON, ""));
-        }
-
-        foreach (TaskLog taskLog in await QueryAsync<TaskLog>(
-                     connection,
-                     SqlBuilder.SelectColumns<TaskLog>(["ID", "Message", "Payload"], "user_id = @userId"),
-                     new { userId },
-                     cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            documents.Add(new ResourceReferenceDocument("任务日志", taskLog.ID, taskLog.Message, taskLog.Payload, ""));
-        }
-
-        foreach (Result result in await QueryAsync<Result>(
-                     connection,
-                     SqlBuilder.SelectColumns<Result>(["ID", "Kind", "URL", "Payload"], "user_id = @userId"),
-                     new { userId },
-                     cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            documents.Add(new ResourceReferenceDocument("任务结果", result.ID, result.Kind, result.URL, result.Payload));
         }
 
         foreach (Project project in await QueryAsync<Project>(

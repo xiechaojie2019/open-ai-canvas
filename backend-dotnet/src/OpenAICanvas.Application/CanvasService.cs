@@ -61,8 +61,8 @@ public sealed class CanvasService
         LogicalModels = new LogicalModelService(repository);
         ChannelAdmin = new ChannelAdminService(repository, LogicalModels);
         ChannelModels = new ChannelModelAdminService(repository, LogicalModels);
-        UserData = new UserDataService(repository, RuntimePolicy);
         ResourceDelete = new ResourceDeleteService(repository, dataDir);
+        UserData = new UserDataService(repository, RuntimePolicy, ResourceDelete);
         CanvasShares = new CanvasShareService(repository);
         ProjectUnits = new ProjectUnitService(repository);
         ProjectAssetFolders = new ProjectAssetFolderService(repository);
@@ -472,7 +472,7 @@ public sealed class CanvasService
         string userId,
         string id,
         CancellationToken cancellationToken = default) =>
-        ResourceDelete.DeleteUserAssetWithResourcesAsync(userId, id, cancellationToken);
+        UserData.DeleteUserAssetAsync(userId, id, cancellationToken);
 
     /// <summary>对应 Go: <c>Service.UserAssetsByIDs</c>。</summary>
     public Task<List<JsonElement>> UserAssetsByIDsAsync(

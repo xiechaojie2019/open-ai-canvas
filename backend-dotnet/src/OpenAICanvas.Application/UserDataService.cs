@@ -93,8 +93,8 @@ public sealed class CanvasLibraryPageDto
 /// <c>user_data.go</c> / <c>user_data_page.go</c> / <c>canvas_asset_guard.go</c>。
 /// </summary>
 /// <remarks>
-/// 存储锁为进程内信号量（Go 为 Service 级互斥锁，同样进程内）；每日活跃记录与
-/// 资源联动删除属后续节点（已记入 PENDING-CONFIRMATIONS.md）。
+/// 存储锁为进程内信号量（Go 为 Service 级互斥锁，同样进程内）；素材删除通过
+/// <see cref="ResourceDeleteService"/> 复用资源引用校验与 Outbox 清理。
 /// </remarks>
 public sealed class UserDataService
 {
@@ -103,15 +103,36 @@ public sealed class UserDataService
 
     private readonly Repository _repository;
     private readonly IRuntimePolicyProvider _runtimePolicy;
+    private readonly ResourceDeleteService _resourceDelete;
     private readonly SemaphoreSlim _storageLock = new(1, 1);
 
-    public UserDataService(Repository repository, IRuntimePolicyProvider? runtimePolicy = null)
+    public UserDataService(
+        Repository repository,
+        IRuntimePolicyProvider? runtimePolicy = null,
+        ResourceDeleteService? resourceDelete = null)
     {
         _repository = repository;
         _runtimePolicy = runtimePolicy ?? new DefaultRuntimePolicyProvider();
+        _resourceDelete = resourceDelete ?? new ResourceDeleteService(repository);
     }
 
-    // ------------------------------------------------------------ 画布工程
+    public async Task DeleteUserAssetAsync(
+        string userId,
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        await _storageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _resourceDelete.DeleteUserAssetWithResourcesAsync(userId, id, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _storageLock.Release();
+        }
+    }
+
 
     /// <summary>用户全部画布 payload。对应 Go: <c>UserCanvasProjects</c>。</summary>
     public async Task<List<JsonElement>> UserCanvasProjectsAsync(
