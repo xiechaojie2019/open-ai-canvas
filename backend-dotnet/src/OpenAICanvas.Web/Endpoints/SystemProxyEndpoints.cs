@@ -180,11 +180,14 @@ public static class SystemProxyEndpoints
             return ApiResults.FailService(error, context);
         }
 
-        if (channel.APIKey.Trim().Length == 0)
+        string apiKey = AuthService.DecryptSecret(channel.APIKey).Trim();
+        if (apiKey.Length == 0)
         {
             return ApiResults.FailService(
                 AppError.BadAuthRequest("系统渠道未配置 API Key"), context);
         }
+        // 后续请求装配与日志脱敏只使用解密后的内存值，永不持久化回渠道实体。
+        channel.APIKey = apiKey;
 
         Uri target;
         try
@@ -207,13 +210,22 @@ public static class SystemProxyEndpoints
             return ApiResults.FailService(error, context);
         }
 
-        int concurrencyLimit = channel.ConcurrencyLimit > 0
-            ? (int)channel.ConcurrencyLimit
-            : Coordinator.EffectiveChannelConcurrencyLimit(policyProvider.Current().Task.ChannelConcurrency);
-        if (concurrencyLimit is < Coordinator.MinChannelConcurrencyLimit or > Coordinator.MaxChannelConcurrencyLimit)
+        long configuredConcurrency = channel.ConcurrencyLimit;
+        int concurrencyLimit;
+        if (configuredConcurrency > 0)
         {
-            return ApiResults.FailInternal(StatusCodes.Status503ServiceUnavailable,
-                new InvalidOperationException("渠道并发配置超出 1-999 范围"), context);
+            if (configuredConcurrency < Coordinator.MinChannelConcurrencyLimit
+                || configuredConcurrency > Coordinator.MaxChannelConcurrencyLimit)
+            {
+                return ApiResults.FailInternal(StatusCodes.Status503ServiceUnavailable,
+                    new InvalidOperationException("渠道并发配置超出 1-999 范围"), context);
+            }
+            concurrencyLimit = (int)configuredConcurrency;
+        }
+        else
+        {
+            concurrencyLimit = Coordinator.EffectiveChannelConcurrencyLimit(
+                policyProvider.Current().Task.ChannelConcurrency);
         }
 
         Func<ValueTask> release;
@@ -409,9 +421,10 @@ public static class SystemProxyEndpoints
             {
                 continue;
             }
-            foreach (string value in values)
+            foreach (string? value in values)
             {
-                pairs.Add(Uri.EscapeDataString(key) + "=" + Uri.EscapeDataString(value));
+                string safeValue = value ?? "";
+                pairs.Add(Uri.EscapeDataString(key) + "=" + Uri.EscapeDataString(safeValue));
             }
         }
         builder.Query = string.Join('&', pairs);
@@ -447,14 +460,20 @@ public static class SystemProxyEndpoints
         {
             return normalized;
         }
-        foreach (string segment in normalized.Split('/'))
+        string[] segments = normalized.Split('/');
+        if (segments.Any(segment => segment is "." or ".."))
         {
-            if (segment is "." or "..")
-            {
-                throw AppError.BadAuthRequest("系统渠道请求路径无效");
-            }
+            throw AppError.BadAuthRequest("系统渠道请求路径无效");
         }
-        return normalized;
+        string cleaned = "/" + string.Join(
+            "/", segments.Where(segment => segment.Length > 0));
+        string expected = "/" + decoded.TrimStart('/');
+        if (!string.Equals(cleaned, decoded, StringComparison.Ordinal)
+            && !string.Equals(cleaned, expected, StringComparison.Ordinal))
+        {
+            throw AppError.BadAuthRequest("系统渠道请求路径无效");
+        }
+        return cleaned;
     }
 
     internal static string? AuthorizeSystemProxy(
@@ -669,8 +688,10 @@ public static class SystemProxyEndpoints
     {
         try
         {
-            return MediaTypeHeaderValue.Parse(contentType).MediaType.Equals(
-                expected, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(
+                MediaTypeHeaderValue.Parse(contentType).MediaType,
+                expected,
+                StringComparison.OrdinalIgnoreCase);
         }
         catch (FormatException)
         {
