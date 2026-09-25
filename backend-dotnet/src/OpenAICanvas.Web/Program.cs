@@ -374,6 +374,10 @@ api.MapCustomRelayRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
+// 系统更新状态（Docker 部署：固定状态，用户决策 2026-09-25）。对应 Go 的 RegisterAdminUpdateRoutes。
+api.MapSystemUpdateRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+
 // 项目素材关联与角色路由。对应 Go 的 handler.RegisterProjectRoutes assets/characters 部分。
 api.MapProjectAssetLinkRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapProjectCharacterRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
