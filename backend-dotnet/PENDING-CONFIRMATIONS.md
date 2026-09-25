@@ -697,3 +697,23 @@
 - 后续建议：管理端价格档表单应对 provider_model_key 为空时回落
   channelModel.ProviderModelKey，并对官方目录示例模型做黑名单提示，
   避免再次误配。
+
+### 76. `[已验证]` 端到端功能域全覆盖冒烟（2026-09-25，部署站点实测）
+- 部署站点 192.168.0.211:8081 实测覆盖所有主要功能域（52 个端点），
+  结果：绝大多数 200，少数非 200 均为正确行为（参数校验 400、
+  功能门控 403、资源不存在 404、Eagle 未安装 502）。
+- **已验证功能域**：健康检查、认证会话、画布 CRUD、项目 CRUD（含
+  ProjectDetail 全量聚合）、画布分页、单元/章节 CRUD、workspace 工作台、
+  工作流创建（6 步模板）与步骤状态推进、资产/素材/候选/文件夹、
+  资源列表、技能列表、系统渠道读取、系统代理 `/models`（双渠道）、
+  ai models 中转、Agent 能力/档案/会话（glm + gpt-6-luna 双模型）、
+  Eagle 路由（404 = Eagle 应用未安装属预期）、时间线转录、钱包、公告、
+  风格档案、配音档案、提示词模板、管理后台全部（用户/分析/渠道/
+  支付/对账/账单/API 日志/资源/设置×7/存储/性能/更新/公告/价格档/
+  逻辑模型/引用/方舟素材/提示词）、公开路由、诊断导出、OpenAPI。
+- **修正**：冒烟脚本中 `asset-candidates` 500 与 `project-detail` 404
+  均因使用了 canvas-project ID 而非 short-drama project ID；使用正确
+  ID 后所有 `/projects/{id}/*` 路由均返回 200。
+- **实际 openai-response 白名单语义**：openai-response 渠道的
+  `/chat/completions` 被 403 拒绝是 Go 白名单语义的正确复刻
+  （该协议只允许 `/responses`），`/responses` 非流式与 SSE 均 200。

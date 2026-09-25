@@ -2910,3 +2910,7 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 
 - 全量测试 1530/1531（单例 ChannelAdmin 兜底同步单跑通过）。
 - 解决方案 build 0 错误。
+
+## 端到端功能域全覆盖冒烟（部署站点 192.168.0.211 实测）
+
+52 个端点跨所有主要功能域全部通过（详见 PENDING #76）。

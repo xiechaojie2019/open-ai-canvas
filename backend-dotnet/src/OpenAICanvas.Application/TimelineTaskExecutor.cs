@@ -74,6 +74,10 @@ public sealed class TimelineTaskExecutor
         {
             throw;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new TimelineTaskException("时间线任务执行超时");
+        }
     }
 
     private async Task<Dictionary<string, object?>> ExecuteTranscriptionAsync(
