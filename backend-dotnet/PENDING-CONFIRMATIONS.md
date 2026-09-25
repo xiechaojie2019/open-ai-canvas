@@ -682,3 +682,18 @@
 - DELETE /assets/{id} 与资源引用快照补齐任务状态感知：queued/running/unknown
   阻塞删除，终态任务按历史处理；回归测试 AssetDeleteTests 4/4。
 - 全量测试本轮 1530/1531（单例顺序波动单跑通过）；解决方案 build 0 错误。
+
+
+### 75. `[已解决-数据修复]` 测试站 CH1 dagent 聊天 404 根因（2026-09-25）
+- 现象：Agent 会话经 CHANNEL_000001（openai-response，token 计费）执行时
+  上游 404「模型或模型接口不存在」；CHANNEL_000004（kimi-chat）正常。
+- 根因：价格档 `PTIER_000002` 的 `provider_model_key` 被误配为官方协议目录
+  示例模型 `gpt-5.6-luna`（上游网关不存在该模型）。执行端按设计取
+  价格档 provider_model_key 作为上游模型名，与 Go 语义一致——属渠道
+  配置数据错误，非翻译缺陷。
+- 修复：价格档 provider_model_key 校正为 `glm-5.3-flash` 后，
+  Agent 会话 succeeded（assistant 回复正常，spent 0.0185 积分，
+  /responses 非流式与 SSE 均 200）。
+- 后续建议：管理端价格档表单应对 provider_model_key 为空时回落
+  channelModel.ProviderModelKey，并对官方目录示例模型做黑名单提示，
+  避免再次误配。
