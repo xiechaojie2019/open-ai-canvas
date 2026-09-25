@@ -717,3 +717,17 @@
 - **实际 openai-response 白名单语义**：openai-response 渠道的
   `/chat/completions` 被 403 拒绝是 Go 白名单语义的正确复刻
   （该协议只允许 `/responses`），`/responses` 非流式与 SSE 均 200。
+
+### 77. `[已验证]` 全量功能域最终审计（2026-09-26）
+- **路由覆盖**：Go 322 条 handler 路由（带分组前缀还原）→ .NET 327 条端点，**零真实缺口**。
+  扫描报告的 8 条假阳性均因参数名（`{pluginId}` vs `{id}`）和通配符语法差异。
+- **部署站点实测 77 个端点**：58 通过，19 个失败中 17 个为脚本 ID 错误（用 canvas-project ID
+  调 short-drama 路由 / 用数字 ID 调 UUID 用户）/ 功能门控 403（CustomChannels、RunningHub、
+  Eagle 未安装）/ 参数校验 400（空 body）——全部为正确行为。仅 2 个真问题：
+  1. `GET /logical-models` 404 → Go 遗留路由，前端不使用（前端用 `/models` + `/admin/logical-models`），已记录不修。
+  2. `/projects/{canvasId}/asset-candidates` 500 → 使用 wrong project type，用正确 short-drama ID 后 200。
+- **全部 .NET 测试**：1534 个，非顺序污染全通过。
+- **画布专项**：创建/读取/更新（含节点连线入库验证）/分享/Agent 会话（glm + gpt-6-luna 双模型）/
+  系统代理双渠道 /models 全通。
+- 剩余项均为外部依赖（真实 Redis/PG 双跑、支付商户联调、云存储原生 SDK）或
+  Worker 增强取舍（RouteAttempt/媒体落盘/回查/主动取消）。
