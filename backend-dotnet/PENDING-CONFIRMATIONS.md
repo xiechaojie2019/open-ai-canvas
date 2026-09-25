@@ -565,8 +565,9 @@
      （Go: project_workflow.go 679 行 + project_workbench_read.go）。
   2. ~~timeline renders 1 条~~ ✅ 2026-09-25 已补：CreateTimelineRenderAsync
      （HasMedia 校验 + timeline_render 任务）+ POST /timeline/renders 端点。
-  3. channels models/test 1 条：POST /admin/channels/{id}/models/test
-     （Go channel_models.go:643 TestAdminChannelModel，上游真调用测试）。
+  3. ~~channels models/test 1 条~~ ✅ 2026-09-25 已补：
+     ChannelModelAdminService.TestAdminChannelModelAsync + TaskWorkerService.
+     RunProviderProbeAsync + POST /admin/channels/{id}/models/test 端点。
   4. Eagle 5 条：/plugins/eagle/*（Go plugin.go 内，服务 EagleLibrary/
      EagleItems/OpenEagleItemFile 等出站 SSRF 到用户 Eagle 服务器）。
   5. ~~system-update 4 条~~ ✅ 2026-09-25 已补（用户决策：.NET 走 Docker，
