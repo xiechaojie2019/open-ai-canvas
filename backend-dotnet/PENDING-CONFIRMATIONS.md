@@ -602,3 +602,39 @@
      （内存槽位，PENDING #66 同族）、InterceptResponseText（接既有
      response-interception 设置服务）、流式密钥 REDACTED 滑动窗口。
      一个标准轮次可完成；/ai/system 流式随后单独一批。
+
+---
+**交接补充（2026-09-25，转交其他开发）**：
+
+- 已再完成 1 条：`POST /admin/channels/{id}/models/test`（提交 0585381e /
+  6231eaa2 / 35320c71：含 TaskWorkerService.RunProviderProbeAsync 公开探测入口、
+  PlatformSettingsService 单例注册修复、SystemUpdateEndpoints Docker 固定状态 4 条）。
+- **工作流 v2 6 条的基础设施缺口（做之前必读）**：.NET 仓储层缺整套 workflow
+  方法——WorkflowTemplateVersion 读写、WorkflowInstanceForScope、WorkflowSteps、
+  CreateWorkflowInstance（实例+步骤同事务）、NextWorkflowStep、UpdateWorkflowProgress、
+  RegisterWorkflowTaskOutput（幂等回填：成功任务+步骤+表示唯一键）、
+  ProjectWorkflowInstances、WorkflowStepForProject；实体
+  WorkflowInstance/WorkflowStepInstance/WorkflowTemplateVersion/WorkflowStepTask/
+  ProductionTaskLink 已在 ModelsProject.cs。Go 侧方法集中在
+  `repository/project_workflow.go`（需新建同名 .NET 文件），服务层在
+  `app/project_workflow.go` 679 行 + `app/project_workbench_read.go` 422 行。
+  GET /projects/{id}（ProjectDetail）还依赖
+  reconcileCharacterTurnaroundTasks 补偿与 TasksWithOptions(limit 100)，
+  可先降级为不含补偿（旧任务产物不回填，主功能可用）。
+- Eagle 5 条：服务层 app/eagle.go 410 行 + eagle_thumbnail.go 59 行
+  （出站到用户 Eagle 服务器，走 OutboundGuard SSRF；file/thumbnail 为
+  流式二进制转发）。
+- 画布导入 2 条：handler libtv.go 86 行 + tapnow.go 36 行；服务侧入口在
+  auth_bridge.go（service 域转 canvas 域），需先评估 canvas 域移植量。
+- skills 安装 3 条：handler/skills.go 16/52/197 行；依赖 zip multipart 解析
+  与 GitHub 出站下载（archiveFromZip/archiveFromMarkdown/normalizeSkillArchiveRoot，
+  见 #65 部分解决）。
+- /ai/system 流式 1 条（最难，最后做）：还需 SystemChannel/SystemChannelModel
+  授权读、authorizeSystemProxy 白名单（handler/security.go 171-235 行可照移）、
+  ChannelAPIURLForProtocol、ValidateChannelOutboundURL、AcquireChannelSlot
+  （渠道并发，Redis→本地槽）、ReserveProxyBillingWithBody/MarkBillingRunning/
+  退款三件套、EnsureChatCompletionStreamUsageRequest、API 调用日志。
+  建议拆两步：先 GET /models 与非流式 POST，再补 SSE 转发与计费联动。
+- 部署：全部完成后统一发布 192.168.0.211（publish linux-x64 →
+  /opt/open-ai-canvas-dotnet/linux → compose build backend → up -d；
+  index.html 已带 no-cache，注意本地直推用 ssh.github.com:443）。

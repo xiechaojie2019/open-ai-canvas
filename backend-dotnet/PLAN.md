@@ -352,6 +352,14 @@ backend-dotnet/
 | 11.8 | 审批与预览 | `app/cloud_agent_approval_preview.go` | ✅ 2026-09-25 审批决策（含幂等重放、拒绝终态化、媒体参数修改）、画布变更记录与事件投影、撤销（undo）已通 |
 | 11.9 | Agent 档案与执行记录仓储 | `repository/agent_profile.go`、`repository/cloud_agent.go` | ✅ 2026-09-25 档案读写（含乐观锁）此前已通；执行记录/画布变更仓储 + 事务上下文本批已通（`Repository.CloudAgents.cs`）；档案服务 `AgentProfileService.cs` 已存在 |
 
+> **交接（2026-09-25，转其他开发）**：阶段 11 的 9 个子节点全部完成；
+> 全盘路由扫描后另确认 11 条平台路由待移植（Eagle 5 / 画布导入 2 /
+> skills 安装 3 → 工作流 v2 6 / /ai/system 流式 1），已按依赖顺序、
+> Go 源位置与依赖栈规模写入 `PENDING-CONFIRMATIONS.md` #69 交接补充，
+> 其中 system-update 4 条已按用户决策以 Docker 固定状态实现完毕。
+> 执行批已落地：channels models/test、/ai/custom、/ai/models、
+> query-task、timeline/renders。
+
 ### 阶段 12 · 迁移工具、部署与验收
 
 | # | 模块 | 对应 Go | 状态 |
