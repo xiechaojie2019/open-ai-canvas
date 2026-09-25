@@ -305,7 +305,7 @@ public sealed partial class SkillsService
             }
 
             ImportedSkillArchive archive = ArchiveFromZipPackage(buffer.ToArray(), spec.Subdir);
-            string sourceCommit = response.Headers.ETag?.Tag?.Trim() ?? "";
+            string sourceCommit = response.Headers.ETag?.Tag?.Trim().Trim('"') ?? "";
             if (sourceCommit.Length == 0)
             {
                 sourceCommit = archive.ContentHash;

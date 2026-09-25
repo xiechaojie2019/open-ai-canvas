@@ -134,7 +134,18 @@ public static partial class SkillsEndpoints
             result = false;
             return true;
         }
-        return bool.TryParse(value, out result);
+        if (value is "1" or "true" or "True" or "TRUE")
+        {
+            result = true;
+            return true;
+        }
+        if (value is "0" or "false" or "False" or "FALSE")
+        {
+            result = false;
+            return true;
+        }
+        result = false;
+        return false;
     }
 
 }

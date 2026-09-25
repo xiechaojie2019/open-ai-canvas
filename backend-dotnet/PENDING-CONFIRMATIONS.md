@@ -553,7 +553,7 @@
   backend openapi.yaml 原样输出）、/oauth/linuxdo/callback 根级别名
   （Program.cs:406）、creation-runs 循环注册伪影。
 - **本批已补**：工作流 v2 6 条：GET /projects/{id}（ProjectDetail 全量聚合与成功任务产物补偿）、GET canvases 分页、GET workspace、POST workflows、PATCH workflow-steps/{stepId}、POST task-output。新增 `Repository.ProjectWorkflow.cs` 的 Dapper 查询/事务方法与 `ProjectWorkflowService`，覆盖模板初始化、工作流实例/步骤、状态门禁、项目/单元/镜头归属校验、产物幂等回填。
-- **真实剩余**：工作流 v2 六条已从清单移除；以下仍按建议顺序推进：
+- **真实剩余**：工作流 v2、Eagle、skills 安装/同步、LibTV/TapNow 导入均已完成；以下只剩最后的系统渠道流式中转：
   1. ~~timeline renders 1 条~~ ✅ 2026-09-25 已补：CreateTimelineRenderAsync
      （HasMedia 校验 + timeline_render 任务）+ POST /timeline/renders 端点。
   2. ~~channels models/test 1 条~~ ✅ 2026-09-25 已补：
@@ -565,8 +565,9 @@
   4. ~~system-update 4 条~~ ✅ 2026-09-25 已补（用户决策：.NET 走 Docker，
      不移植 hostupdate）：GET/check 返回固定 supported=false 状态，
      start/rollback 返回 409「请通过 docker compose build 完成升级」。
-  5. 画布导入 2 条：POST /canvas-projects/{id}/import/libtv|tapnow
-     （Go libtv.go 86 行 + tapnow.go 36 行，外部服务出站）。
+  5. ~~画布导入 2 条~~ ✅ 2026-09-25 已补：CanvasImportService +
+     CanvasImportEndpoints（LibTV token 读取/外部详情归一与 TapNow 分享解析，
+     16KB body 限制、项目归属与受控出站）。
   6. ~~skills 安装 3 条~~ ✅ 2026-09-25 已补：SkillsService.Install/GitHub
      + SkillsInstallEndpoints（multipart Markdown/ZIP、GitHub URL/ref/subdir、
      commit 固定、sync 状态更新与归档清理）。后台 6 小时自动同步 worker 仍属
@@ -639,3 +640,8 @@
   3 个既有顺序污染用例单跑均通过。
 - 剩余真实能力族：画布导入 libtv/tapnow 2 条、/ai/system 流式中转（系统渠道授权/
   渠道计费/API 日志联动）。skills 自动同步 worker 作为后续增强，不阻塞手动 sync 路由。
+
+### 71. `[部分解决]` 2026-09-25 清单批次继续
+- 工作流 v2 六条、Eagle 六路由、skills install/github/sync 三路由、LibTV/TapNow 两路由均已实现、接线并通过 focused tests。
+- 本轮全量 .NET 测试 **1519/1519** 通过，解决方案 build 0 errors（16 existing warnings）。
+- 最后剩余能力族：`ANY /ai/system/{channelId}/*path` 系统渠道流式中转（渠道模型授权、AcquireChannelSlot、代理计费/退款、API 日志联动）；该批独立实施。

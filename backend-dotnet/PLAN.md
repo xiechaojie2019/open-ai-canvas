@@ -292,6 +292,8 @@ backend-dotnet/
 | 6.8 | 风格档案 | `handler/style_profile.go` | ✅ CRUD/收藏/最近使用/归一化校验（voice-profiles 列表已通） |
 | 6.9 | 功能开关门禁 | `handler/feature_availability.go` | ✅ |
 
+> 2026-09-25 复核：工作流 v2 六条、Eagle 集成六路由、技能安装/同步三路由、LibTV/TapNow 导入两路由均已接线并通过全量测试。
+
 ### 阶段 7 · 画布与分享
 
 | # | 模块 | 对应 Go | 状态 |

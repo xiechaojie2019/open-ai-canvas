@@ -149,6 +149,9 @@ builder.Services.AddSingleton<OpenAICanvas.Application.EagleService>();
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.PlatformSettingsService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
     env.DataDir));
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.CanvasImportService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+    serviceProvider.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>()));
 // 云 Agent 会话 / 媒体 / 运行时。对应 Go 的 app/cloud_agent*.go 组合根。
 builder.Services.AddSingleton(sp =>
 {
@@ -415,6 +418,9 @@ api.MapCanvasShareRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     env.DataDir);
+api.MapCanvasImportRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasImportService>());
 
 // 插件协议目录路由。对应 Go 的 handler/plugin.go GET /plugins/catalog（插件中心 10.1 另行移植）。
     api.MapPluginRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
