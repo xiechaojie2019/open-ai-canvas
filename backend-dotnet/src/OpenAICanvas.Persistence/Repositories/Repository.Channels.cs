@@ -17,9 +17,20 @@ namespace OpenAICanvas.Persistence.Repositories;
 /// </remarks>
 public sealed partial class Repository
 {
-    /// <summary>
-    /// 系统渠道列表。对应 Go: <c>SystemChannels(includeDisabled)</c>。
-    /// </summary>
+    /// <summary>按 ID 查启用系统渠道，并仅用于服务端代理读取凭证。</summary>
+    public async Task<ModelChannel?> SystemChannelForProxyAsync(
+        string id, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await FirstOrDefaultAsync<ModelChannel>(
+            connection,
+            SqlBuilder.Select<ModelChannel>(
+                SoftDelete.Apply("model_channels", "id = @id AND scope = @scope AND enabled = @enabled"),
+                limitOffset: " LIMIT 1"),
+            new { id, scope = "system", enabled = Dialect.Boolean(true) },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<ModelChannel>> SystemChannelsAsync(
         bool includeDisabled,
         CancellationToken cancellationToken = default)

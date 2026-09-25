@@ -986,7 +986,30 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         ChannelAdmin.SaveAdminChannelOrderAsync(actor, channelId, ids, expectedIds, cancellationToken);
 
-    /// <summary>对应 Go: <c>Service.DeleteAdminChannelModels</c>。</summary>
+    /// <summary>系统代理读取启用渠道。凭证只供服务端代理使用。</summary>
+    public Task<ModelChannel?> SystemChannelAsync(
+        string channelId, CancellationToken cancellationToken = default) =>
+        Repository.SystemChannelForProxyAsync(channelId.Trim(), cancellationToken);
+
+    /// <summary>系统代理按启用模型键读取渠道模型。</summary>
+    public Task<ChannelModel?> SystemChannelModelAsync(
+        string channelId, string modelKey, CancellationToken cancellationToken = default) =>
+        Repository.ChannelModelByKeyAsync(
+            channelId.Trim(),
+            modelKey.Trim().StartsWith("models/", StringComparison.Ordinal)
+                ? modelKey.Trim()["models/".Length..]
+                : modelKey.Trim(),
+            cancellationToken);
+
+    /// <summary>系统代理轮询路径的协议存在性校验。</summary>
+    public async Task<bool> SystemChannelHasProtocolAsync(
+        string channelId, string protocol, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<ChannelModel> models = await Repository
+            .ChannelModelsAsync(channelId.Trim(), enabledOnly: true, cancellationToken).ConfigureAwait(false);
+        return models.Any(model => string.Equals(model.Protocol, protocol, StringComparison.Ordinal));
+    }
+
     public Task<long> DeleteAdminChannelModelsAsync(
         User actor,
         string channelId,

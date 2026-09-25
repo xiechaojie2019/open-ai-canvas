@@ -45,7 +45,27 @@ public sealed partial class Repository
 {
     private const string ResourceProviderExpression = "COALESCE(NULLIF(\"provider\", ''), 'local')";
 
-    /// <summary>API 日志分页。对应 Go: <c>QueryAPICallLogs</c>。</summary>
+    /// <summary>写入一条 API 调用日志。代理路径只写已脱敏报文，不接收凭证字段。</summary>
+    public async Task CreateApiCallLogAsync(
+        ApiCallLog log, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(log.ID))
+        {
+            log.ID = IdGenerator.NewId();
+        }
+        if (log.CreatedAt == default)
+        {
+            log.CreatedAt = DateTime.UtcNow;
+        }
+        if (log.StartedAt == default)
+        {
+            log.StartedAt = log.CreatedAt.AddMilliseconds(-Math.Max(log.DurationMs, 0));
+        }
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            SqlBuilder.Insert(typeof(ApiCallLog)), log, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
     public async Task<(IReadOnlyList<ApiCallLog> Logs, long Total)> QueryApiCallLogsAsync(
         ApiCallLogFilter filter, CancellationToken cancellationToken = default)
     {

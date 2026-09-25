@@ -321,6 +321,28 @@ public static class ProviderTransport
     /// 不能直接用 <c>ProtocolRequestBuilder.BuildUrl</c> 的默认拼接（那是"base+path"的朴素形态）：
     /// 渠道地址可能已带 <c>/v1</c>、<c>/v1/</c> 或显式 <c>/v2</c>，必须走版本前缀归一。
     /// </remarks>
+    /// <summary>
+    /// 按协议构造渠道 URL。Gemini 默认使用 <c>/v1beta</c>，其余协议使用
+    /// <c>/v1</c>；显式版本前缀优先。Agnes 的专用接口不追加版本前缀。
+    /// </summary>
+    public static string ChannelApiUrlForProtocol(string baseUrl, string path, string interfaceType)
+    {
+        if (interfaceType == "agnes-video" && path.TrimStart().StartsWith("/agnesapi", StringComparison.Ordinal))
+        {
+            Uri baseUri = new(baseUrl.Trim());
+            UriBuilder builder = new(baseUri)
+            {
+                Path = path.Trim(),
+                Query = "",
+                Fragment = "",
+            };
+            return builder.Uri.ToString();
+        }
+
+        string defaultPrefix = interfaceType is "gemini-veo" or "gemini-image" ? "/v1beta" : "/v1";
+        return ApiUrlWithDefaultPrefix(baseUrl, path, defaultPrefix);
+    }
+
     public static string ChannelApiUrl(string baseUrl, string path) =>
         ApiUrlWithDefaultPrefix(baseUrl, path, "/v1");
 

@@ -645,3 +645,10 @@
 - 工作流 v2 六条、Eagle 六路由、skills install/github/sync 三路由、LibTV/TapNow 两路由均已实现、接线并通过 focused tests。
 - 本轮全量 .NET 测试 **1519/1519** 通过，解决方案 build 0 errors（16 existing warnings）。
 - 最后剩余能力族：`ANY /ai/system/{channelId}/*path` 系统渠道流式中转（渠道模型授权、AcquireChannelSlot、代理计费/退款、API 日志联动）；该批独立实施。
+
+### 72. `[部分解决]` 系统渠道流式中转最小闭环（2026-09-25）
+- `SystemProxyEndpoints.cs` 已接线 `ANY /ai/system/{channelId}/*path`：
+  - GET `/models` 与 POST OpenAI/Claude/Gemini/MiniMax/Agnes 白名单；路径归一、模型/协议授权、query 密钥剔除、固定渠道 URL + OutboundGuard SSRF。
+  - 请求/响应大小上限、渠道并发 lease、ResponseHeadersRead SSE 逐块 flush、`X-Accel-Buffering: no`、二进制/JSON 分支、上游状态与 Retry-After 透传。
+  - API 调用日志已落库，敏感 URL/Key 不写入；取消/超时/上游失败均记失败状态。
+- 取舍：完整 Go `ReserveProxyBillingWithBody/MarkBillingRunning/usage settlement/refund` 尚未强行伪造；本批日志 `billing_pending` 明示待核账，避免误扣或假成功。多实例渠道槽使用现有 Coordinator lease；单实例退化已记录。

@@ -380,6 +380,13 @@ api.MapCustomRelayRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
+// 系统渠道服务端代理。对应 Go: /api/ai/system/{channelId}/*path。
+api.MapSystemProxyRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.Coordinator>());
+
 // 系统更新状态（Docker 部署：固定状态，用户决策 2026-09-25）。对应 Go 的 RegisterAdminUpdateRoutes。
 api.MapSystemUpdateRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());

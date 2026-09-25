@@ -2866,3 +2866,10 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
   与后台执行同源的 ProviderRequestContext（含声明式协议快照）、四能力分支；
   失败 502（超时 504），文案「模型测试失败：…」。
 - `POST /admin/channels/{id}/models/test` — 5/min 限流，返回 {durationMs}。
+
+## 最后能力族 · 系统渠道中转最小闭环
+
+- `SystemProxyEndpoints.cs`：`ANY /ai/system/{channelId}/*path`，渠道/模型/协议授权、SSRF、query 密钥剔除、请求/响应上限、GET models、OpenAI/Claude/Gemini/MiniMax/Agnes 白名单、非流式与 SSE ResponseHeadersRead 转发、Retry-After/错误状态透传。
+- `Repository.Channels.cs` / `Repository.AdminAnalytics.cs`：系统渠道读取与 API 调用日志写入。
+- 取舍：完整代理计费预留与 token usage 结算暂不伪造，日志状态使用 `billing_pending`，已写入 PENDING #72。
+- 验证：`dotnet build OpenAICanvas.sln` 0 errors；全量测试 1520-22/1522（失败项单跑均通过，属既有顺序污染）。
