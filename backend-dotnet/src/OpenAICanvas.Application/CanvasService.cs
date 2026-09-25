@@ -96,11 +96,11 @@ public sealed class CanvasService
         CreationRuns.UserData = UserData;
         Diagnostics = new DiagnosticsService(repository, dataDir);
         SystemPerformance = new SystemPerformanceService(repository, dataDir);
-        // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
+        // 支付适配器注册表复用插件启动加载的官方 RPC provider；测试可注入替身。
         Payments = new PaymentService(
             repository,
-            paymentRegistry ?? new Payment.PaymentRegistry(),
-            pluginAvailability ?? new ManifestPluginAvailability(),
+            paymentRegistry ?? Plugins.PaymentRegistry,
+            pluginAvailability ?? new RuntimePaymentPluginAvailability(Plugins, repository),
             Features);
     }
 

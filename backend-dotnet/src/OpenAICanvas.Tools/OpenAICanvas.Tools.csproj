@@ -8,6 +8,11 @@
 
   <!-- 等价于 Go 的 cmd/migrate-*、cmd/payment-*、cmd/host-updater 等一次性命令。 -->
 
+  <!-- host-updater 使用 Kestrel 监听 Unix domain socket。 -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\OpenAICanvas.Application\OpenAICanvas.Application.csproj" />
   </ItemGroup>

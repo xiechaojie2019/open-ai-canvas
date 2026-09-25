@@ -2,9 +2,11 @@
 
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Payment;
 using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Protocol;
 
@@ -98,6 +100,7 @@ public sealed class PluginRuntime
     private readonly string _registryPath;
     private readonly string _packageDir;
     private Dictionary<string, PluginRecord> _records = new(StringComparer.Ordinal);
+    private readonly PaymentRegistry _paymentRegistry = new();
 
     public PluginRuntime(Repository? repository, string? dataDir)
     {
@@ -106,6 +109,9 @@ public sealed class PluginRuntime
         _registryPath = Path.Combine(root, "plugin_registry.json");
         _packageDir = Path.Combine(root, "plugin-packages");
     }
+
+    /// <summary>当前官方 RPC 支付适配器快照；插件重载时原位更新。</summary>
+    public PaymentRegistry PaymentRegistry => _paymentRegistry;
 
     /// <summary>当前可执行协议适配器快照（含不可用项，供目录展示）。</summary>
     public ProtocolAdapterRegistry RegistrySnapshot()
@@ -132,7 +138,7 @@ public sealed class PluginRuntime
         }
     }
 
-    /// <summary>宿主内置适配器解析：支付等 host: 后端。首期注册表为空。</summary>
+    /// <summary>宿主内置适配器解析：协议插件的 host: 后端。</summary>
     private IProtocolAdapter? HostAdapterResolver(string name) => null;
 
     /// <summary>
@@ -189,10 +195,25 @@ public sealed class PluginRuntime
                 builtInIDs.Add(pluginID);
                 DateTime now = DateTime.UtcNow;
                 PluginRegistryRecord? existing = byID.TryGetValue(pluginID, out PluginRegistryRecord? found) ? found : null;
+                byte[] manifestRaw = package.ManifestRaw;
+                if (existing is not null && existing.Manifest.Length > 0)
+                {
+                    try
+                    {
+                        Manifest previous = ProtocolManifestCodec.Decode(existing.Manifest);
+                        Manifest current = package.Manifest;
+                        current.Metadata.Enabled = previous.Metadata.Enabled;
+                        manifestRaw = ProtocolManifestCodec.Encode(current);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // 损坏的旧注册表状态不能覆盖官方包的有效清单。
+                    }
+                }
                 PluginRegistryRecord record = new()
                 {
                     ID = pluginID,
-                    Manifest = package.ManifestRaw,
+                    Manifest = manifestRaw,
                     Source = "official",
                     FileName = Path.GetFileName(packageFile),
                     PackagePath = cachedPath,
@@ -223,10 +244,23 @@ public sealed class PluginRuntime
             builtInIDs.Add(pluginID);
             DateTime now = DateTime.UtcNow;
             PluginRegistryRecord? existing = byID.TryGetValue(pluginID, out PluginRegistryRecord? found) ? found : null;
+            Manifest bundledManifest = manifest;
+            if (existing is not null && existing.Manifest.Length > 0)
+            {
+                try
+                {
+                    Manifest previous = ProtocolManifestCodec.Decode(existing.Manifest);
+                    bundledManifest.Metadata.Enabled = previous.Metadata.Enabled;
+                }
+                catch (InvalidOperationException)
+                {
+                    // 损坏的旧注册表状态不能覆盖内置回退清单。
+                }
+            }
             byID[pluginID] = new PluginRegistryRecord
             {
                 ID = pluginID,
-                Manifest = ProtocolManifestCodec.Encode(manifest),
+                Manifest = ProtocolManifestCodec.Encode(bundledManifest),
                 Source = "bundled",
                 InstalledAt = existing?.InstalledAt ?? now,
                 UpdatedAt = now,
@@ -299,6 +333,7 @@ public sealed class PluginRuntime
     private void Reload(List<PluginRegistryRecord> records)
     {
         Dictionary<string, PluginRecord> next = new(StringComparer.Ordinal);
+        List<IPaymentProvider> paymentProviders = [];
         foreach (PluginRegistryRecord record in records)
         {
             PluginRecord entry = new() { Registry = record };
@@ -327,23 +362,36 @@ public sealed class PluginRuntime
                 && manifest.Contributes.PaymentProviders.Count > 0;
             if (isPaymentOnly)
             {
-                // 支付插件走系统宿主适配器，不进协议注册表；RPC 物化暂缓（注册表为空）。
+                // 支付插件走独立 RPC 进程，不进通用协议注册表。
                 string backend = manifest.Runtime.Backend.Trim();
                 if (record.Source.Trim() == "uploaded")
                 {
                     entry.Status = "invalid";
-                    entry.Error = "上传插件不能使用宿主内置执行器";
+                    entry.Error = "上传支付插件不能使用系统支付适配器";
                 }
-                else if (backend is not ("rpc" or "wasm"))
+                else if (backend != "rpc")
                 {
                     entry.Status = "invalid";
-                    entry.Error = "上传支付插件必须声明 rpc 或 wasm 后端";
+                    entry.Error = "支付插件必须声明 rpc 后端";
+                }
+                else if (!manifest.Metadata.Enabled)
+                {
+                    entry.Status = "disabled";
                 }
                 else
                 {
-                    // 内置（bundled/official）支付插件保持停用态，由管理端配置后经
-                    // 平台状态行放行；不进协议注册表。
-                    entry.Status = "disabled";
+                    try
+                    {
+                        paymentProviders.AddRange(LoadPaymentProviders(record, manifest));
+                        entry.Status = "enabled";
+                    }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException
+                                                  or InvalidOperationException or NotSupportedException
+                                                  or ArgumentException)
+                    {
+                        entry.Status = "invalid";
+                        entry.Error = error.Message;
+                    }
                 }
                 next[record.ID] = entry;
                 continue;
@@ -365,6 +413,144 @@ public sealed class PluginRuntime
         lock (_lock)
         {
             _records = next;
+        }
+        _paymentRegistry.Replace(paymentProviders.ToArray());
+    }
+
+    private IEnumerable<IPaymentProvider> LoadPaymentProviders(
+        PluginRegistryRecord record, Manifest manifest)
+    {
+        string digest = (record.PackageSha256 ?? "").Trim().ToLowerInvariant();
+        if (digest.Length != 64 || !digest.All(Uri.IsHexDigit))
+        {
+            throw new InvalidOperationException("支付插件包摘要无效");
+        }
+
+        string packagePath = Path.IsPathRooted(record.PackagePath ?? "")
+            ? record.PackagePath!
+            : Path.Combine(_packageDir, Path.GetFileName(record.PackagePath ?? ""));
+        byte[] packageBytes = File.ReadAllBytes(packagePath);
+        if (!string.Equals(PluginHash(packageBytes), digest, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("支付插件包完整性校验失败");
+        }
+
+        ProtocolPluginPackage package = ProtocolPluginPackage.Parse(packageBytes);
+        if (!string.Equals(package.Manifest.Metadata.ID, manifest.Metadata.ID, StringComparison.Ordinal)
+            || !string.Equals(package.Manifest.Runtime.Backend, "rpc", StringComparison.Ordinal)
+            || !string.Equals(package.Manifest.Runtime.BackendEntry, manifest.Runtime.BackendEntry, StringComparison.Ordinal)
+            || !package.Manifest.Contributes.PaymentProviders.Select(item => item.ID)
+                .SequenceEqual(manifest.Contributes.PaymentProviders.Select(item => item.ID), StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("支付插件运行清单与包内容不匹配");
+        }
+
+        string runtimeDir = MaterializePaymentBackend(digest, package);
+        return manifest.Contributes.PaymentProviders.Select(contribution =>
+            new RpcPaymentProvider(
+                PaymentPluginManifests.DescriptorFromManifest(manifest, contribution),
+                runtimeDir,
+                manifest.Runtime.BackendEntry));
+    }
+
+    private string MaterializePaymentBackend(string digest, ProtocolPluginPackage package)
+    {
+        string runtimeRoot = Path.Combine(_packageDir, "runtime");
+        string target = Path.Combine(runtimeRoot, digest);
+        string entry = package.Manifest.Runtime.BackendEntry;
+        if (PaymentRuntimeReady(target, digest, entry))
+        {
+            return target;
+        }
+
+        Directory.CreateDirectory(runtimeRoot);
+        SetPrivateDirectory(runtimeRoot);
+        string temporary = Path.Combine(runtimeRoot, ".payment-runtime-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporary);
+        SetPrivateDirectory(temporary);
+        try
+        {
+            foreach ((string name, byte[] content) in package.Files)
+            {
+                if (!name.StartsWith("backend/", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                string destination = Path.GetFullPath(Path.Combine(
+                    temporary, name.Replace('/', Path.DirectorySeparatorChar)));
+                string relative = Path.GetRelativePath(temporary, destination);
+                if (Path.IsPathRooted(relative) || relative == ".."
+                    || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("支付插件运行文件路径无效");
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                SetPrivateDirectory(Path.GetDirectoryName(destination)!);
+                File.WriteAllBytes(destination, content);
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(destination,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                }
+            }
+
+            string marker = Path.Combine(temporary, ".ready");
+            File.WriteAllText(marker, digest + "\n", Encoding.ASCII);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(marker, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+
+            if (Directory.Exists(target))
+            {
+                Directory.Delete(target, recursive: true);
+            }
+            Directory.Move(temporary, target);
+        }
+        finally
+        {
+            if (Directory.Exists(temporary))
+            {
+                Directory.Delete(temporary, recursive: true);
+            }
+        }
+
+        if (!PaymentRuntimeReady(target, digest, entry))
+        {
+            throw new InvalidOperationException("支付插件运行文件未完整写入");
+        }
+        return target;
+    }
+
+    private static bool PaymentRuntimeReady(string root, string digest, string entry)
+    {
+        try
+        {
+            string marker = Path.Combine(root, ".ready");
+            string readyDigest = File.ReadAllText(marker, Encoding.ASCII).Trim();
+            string executable = Path.GetFullPath(Path.Combine(root, entry.Replace('/', Path.DirectorySeparatorChar)));
+            string relative = Path.GetRelativePath(root, executable);
+            return string.Equals(readyDigest, digest, StringComparison.Ordinal)
+                && !Path.IsPathRooted(relative)
+                && relative != ".."
+                && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && File.Exists(executable)
+                && !Directory.Exists(executable);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static void SetPrivateDirectory(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
     }
 
@@ -452,27 +638,28 @@ public sealed class PluginRuntime
         }
     }
 
-    /// <summary>管理员启停插件（改写注册表 source 的 enabled 位由清单驱动，此处直接改内存态再持久化）。</summary>
+    /// <summary>修改系统插件的清单启用位并重载运行时。支付停用后不会在重启时被官方包恢复。</summary>
     public async Task SetEnabledAsync(string pluginID, bool enabled, CancellationToken cancellationToken = default)
     {
         await _mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             List<PluginRegistryRecord> records = ReadRegistry();
-            PluginRegistryRecord? record = records.FirstOrDefault(item => item.ID == pluginID);
-            if (record is null)
-            {
-                throw AppError.NotFound($"插件 {pluginID} 不存在");
-            }
-            // Enabled 位在 manifest 内：改写注册表前先改清单字段的编码不可行，
-            // 与 Go 一致，启用/停用通过平台状态行 + 用户行控制，运行时只保留加载结果。
-            await Task.CompletedTask.ConfigureAwait(false);
+            PluginRegistryRecord record = records.FirstOrDefault(item => item.ID == pluginID.Trim())
+                ?? throw AppError.NotFound($"插件 {pluginID} 不存在");
+            Manifest manifest = ProtocolManifestCodec.Decode(record.Manifest);
+            manifest.Metadata.Enabled = enabled;
+            record.Manifest = ProtocolManifestCodec.Encode(manifest);
+            record.UpdatedAt = DateTime.UtcNow;
+            WriteRegistry(records);
+            await ReloadAsync(records, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _mutationLock.Release();
         }
     }
+
 
     /// <summary>管理员卸载插件。对应 Go: <c>UninstallPlugin</c>。</summary>
     public async Task<string?> UninstallAsync(string pluginID, CancellationToken cancellationToken = default)
@@ -623,7 +810,7 @@ public sealed class PluginRuntime
                     Installable = payment.Installable,
                 },
                 Surfaces = ["wallet", "settings"],
-                Runtime = new ManifestRuntime { Backend = payment.Runtime, Web = "host" },
+                Runtime = new ManifestRuntime { Backend = payment.Runtime, BackendEntry = "backend/provider" },
                 Permissions = ["payment.create", "payment.query", "payment.close", "payment.reconcile"],
                 Configuration = new ManifestConfiguration { Fields = payment.ConfigFields },
                 Contributes = new ManifestContributions { PaymentProviders = [payment.Contribution] },

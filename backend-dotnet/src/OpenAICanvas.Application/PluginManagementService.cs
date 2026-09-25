@@ -258,24 +258,42 @@ public sealed class PluginManagementService
             ? ManagementForPlugin(plugin)
             : ManagementFor(pluginID) ?? ManagementFallback;
 
+        bool runtimeChanged = false;
+        bool previousRuntimeEnabled = plugin?.Status == "enabled";
         if (management.ActivationScope == "system" && plugin is not null)
         {
-            // 系统插件的"平台可用"直接等于运行时启用位；首期不改写清单，
-            // 只允许停用方向（重新启用需重新配置支付渠道）。
+            await _runtime.SetEnabledAsync(pluginID, available, cancellationToken).ConfigureAwait(false);
+            runtimeChanged = previousRuntimeEnabled != available;
         }
 
-        PluginStateView state = plugin is null
-            ? new PluginStateView { PluginID = pluginID, PlatformAvailable = available }
-            : await StateForUserAsync(actor.ID, plugin, cancellationToken).ConfigureAwait(false);
-
-        await _repository.SavePluginPlatformStateAsync(new PluginPlatformState
+        try
         {
-            PluginID = pluginID,
-            Available = available,
-            UpdatedBy = actor.ID,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        }, cancellationToken).ConfigureAwait(false);
+            await _repository.SavePluginPlatformStateAsync(new PluginPlatformState
+            {
+                PluginID = pluginID,
+                Available = available,
+                UpdatedBy = actor.ID,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (runtimeChanged)
+            {
+                try
+                {
+                    await _runtime.SetEnabledAsync(pluginID, previousRuntimeEnabled, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 保留原始持久化错误；下一次启动会按 registry 状态重新加载。
+                }
+            }
+            throw;
+        }
+
         await AppendAuditAsync(actor, "plugin.availability.update", "plugin", pluginID,
             (available ? "启用" : "停用") + "插件 " + pluginID,
             new { available, kind = management.Kind, origin = management.Origin },

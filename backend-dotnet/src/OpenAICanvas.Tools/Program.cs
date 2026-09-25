@@ -8,7 +8,7 @@ using OpenAICanvas.Tools.Commands;
 /// </summary>
 internal static class Program
 {
-    private static int Main(string[] args)
+    private static async Task<int> Main(string[] args)
     {
         if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
         {
@@ -22,6 +22,18 @@ internal static class Program
             {
                 case "schema-ddl":
                     return SchemaDdlCommand.Run(args);
+                case "migrate-schema":
+                    return await MigrateSchemaCommand.RunAsync(args).ConfigureAwait(false);
+                case "migrate-sqlite-postgres":
+                    return await MigrateSqlitePostgresCommand.RunAsync(args).ConfigureAwait(false);
+                case "migrate-logical-model-families":
+                    return await LogicalModelFamiliesCommand.RunAsync(args).ConfigureAwait(false);
+                case "migrate-channel-model-price-tiers":
+                    return await ChannelModelPriceTiersCommand.RunAsync(args).ConfigureAwait(false);
+                case "reseed-logical-model-sources":
+                    return await ReseedLogicalModelSourcesCommand.RunAsync(args).ConfigureAwait(false);
+                case "host-updater":
+                    return await HostUpdaterCommand.RunAsync(args).ConfigureAwait(false);
                 default:
                     Console.Error.WriteLine($"尚未实现的命令：{args[0]}");
                     PrintUsage();
@@ -41,15 +53,15 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("已实现：");
         Console.WriteLine("  schema-ddl [sqlite|postgres] [输出路径]   输出建表脚本");
+        Console.WriteLine("  migrate-schema [up|status|verify]       数据库结构迁移");
+        Console.WriteLine("  migrate-sqlite-postgres                 SQLite → PostgreSQL 数据迁移");
+        Console.WriteLine("  migrate-logical-model-families [--apply] 逻辑模型族迁移");
+        Console.WriteLine("  migrate-channel-model-price-tiers [--apply] 渠道模型价格档迁移");
+        Console.WriteLine("  reseed-logical-model-sources [--apply] 逻辑模型来源重播种");
+        Console.WriteLine("  host-updater                            宿主更新器协议服务");
         Console.WriteLine();
-        Console.WriteLine("计划支持（对应 Go 版 cmd/）：");
-        Console.WriteLine("  migrate-schema                     数据库结构迁移");
-        Console.WriteLine("  migrate-sqlite-postgres            SQLite → PostgreSQL 数据迁移");
-        Console.WriteLine("  migrate-logical-model-families     逻辑模型族迁移");
-        Console.WriteLine("  migrate-channel-model-price-tiers  渠道模型价格档迁移");
-        Console.WriteLine("  reseed-logical-model-sources       逻辑模型来源重播种");
+        Console.WriteLine("环境变量：CANVAS_DATABASE_DRIVER、DATABASE_URL、CANVAS_BACKEND_DATA_DIR");
         Console.WriteLine("  payment-alipay                     支付宝支付回调处理");
         Console.WriteLine("  payment-wechat                     微信支付回调处理");
-        Console.WriteLine("  host-updater                       宿主更新器");
     }
 }

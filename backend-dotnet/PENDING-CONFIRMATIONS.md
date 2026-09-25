@@ -120,9 +120,14 @@
   `CANVAS_ALLOW_PRIVATE_UPSTREAMS` / `CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS`（OutboundGuard）。
 - 已实现：`CANVAS_CHANNEL_CIRCUIT_*`（RuntimePolicy）。
 
-### 17. `[待移植]` 阶段 12 部署与验收
-- `migrate-schema` / `migrate-sqlite-postgres` 等工具、Dockerfile / Compose 对齐、
-  SQLite 与 PostgreSQL 双跑互认、329 条路由全量比对（当前 54/329）。
+### 17. `[部分完成·待部署双跑]` 阶段 12 部署与验收
+- 已补齐 `OpenAICanvas.Tools` 的 `migrate-schema`、`migrate-sqlite-postgres`、
+  `migrate-logical-model-families`、`migrate-channel-model-price-tiers`、
+  `reseed-logical-model-sources`；已补齐 `backend-dotnet/Dockerfile` 与独立 Compose。
+- 已实现最小 `host-updater` 协议宿主（Linux Unix socket + Bearer token + Release 检查），
+  但 .NET Docker update/rollback 明确返回 409；完整主机备份、镜像切换、数据库回滚仍使用 Go updater。
+- 已验证：Tools 独立构建、全量 solution build、SQLite schema 15 生命周期、Compose config、
+  22 条迁移/插件回归测试。未验证：真实 PostgreSQL SQLite→PG 双跑、真实 Docker build/up、329 条路由全量比对。
 
 ## 六、协作与工程卫生
 
@@ -652,3 +657,18 @@
   - 请求/响应大小上限、渠道并发 lease、ResponseHeadersRead SSE 逐块 flush、`X-Accel-Buffering: no`、二进制/JSON 分支、上游状态与 Retry-After 透传。
   - API 调用日志已落库，敏感 URL/Key 不写入；取消/超时/上游失败均记失败状态。
 - 取舍：完整 Go `ReserveProxyBillingWithBody/MarkBillingRunning/usage settlement/refund` 尚未强行伪造；本批日志 `billing_pending` 明示待核账，避免误扣或假成功。多实例渠道槽使用现有 Coordinator lease；单实例退化已记录。
+
+### 73. `[部分解决]` PLAN 残余审计与迁移/支付批（2026-09-25）
+- 真实代码批已补：Tools `migrate-schema`、`migrate-sqlite-postgres`、
+  `migrate-logical-model-families`、`migrate-channel-model-price-tiers`、
+  `reseed-logical-model-sources`、Docker self-contained Dockerfile/Compose、
+  host-updater Docker 409 兼容；PaymentRegistry 官方 RPC 包发现/摘要校验/
+  运行时注册/启停回滚。
+- 专项验证：迁移/插件 22/22、支付 55/55；全量当前 1528 测试中并行运行偶发
+  2 个既有 ChannelModelCatalog/ChannelOrder 顺序污染，单跑均通过。
+- 仍需外部验收/决策：真实 PostgreSQL 双跑、Linux ELF 支付 provider 与商户凭证、
+  云存储 Aliyun/Tencent/Qiniu SDK 或 REST 签名、Worker timeline ffmpeg/whisper
+  执行器与媒体落盘/RouteAttempt、Redis 实集成、Go/.NET 双跑比较口径、系统代理
+  ReserveProxyBilling/token usage settlement（当前 billing_pending，不伪造账单）。
+- 文档过期项：阶段 1.12 EF 配置、5.8 后端数据导出、9.4 host-updater、
+  10.3/10.4/10.6 install/sync/import、10.7/10.8 “未实现”描述已按实际代码更新。

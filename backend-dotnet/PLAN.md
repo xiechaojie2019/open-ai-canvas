@@ -194,7 +194,7 @@ backend-dotnet/
 | 0.6 | JSON 序列化契约 | 全量 tag | `CanvasJsonOptions`（camelCase + omitempty 等价 + time 格式） | ✅ |
 | 0.7 | 请求关联中间件 | `handler/request-context.go` | `RequestCorrelationMiddleware`（`X-Request-ID` / `X-Canvas-Trace-ID`） | ✅ |
 | 0.8 | CORS 中间件 | `main.go:211-318` | `CanvasCorsMiddleware`（逐字照搬白名单与 403 行为） | ✅ |
-| 0.9 | 环境变量契约 | 全量 `os.Getenv` | `CanvasEnvironment` 强类型封装（核心变量已实现，缺 20+ 见待确认 #16） | 🟡 |
+| 0.9 | 环境变量契约 | 全量 `os.Getenv` | 核心部署变量已封装；长尾注册/公开 URL/SQLite 源路径/代理变量仍待统一强类型化（#16） | 🟡 |
 | 0.10 | 启动编排 | `cmd/server/main.go` | `Program.cs`（迁移 → 种子 → 监听 → 优雅退出） | ✅ |
 | 0.11 | 健康/系统状态路由 | `cmd/server/system_status.go` | 5 条路由 | ✅ |
 | 0.12 | OpenAPI 静态资源 | `handler/openapi_embed.go` + `openapi.yaml` | 原样内嵌输出 | ✅ |
@@ -214,10 +214,10 @@ backend-dotnet/
 | 1.9 | 任务与创作实体 | `model/models_task.go` `models_creation.go` | `Task` `TaskTextDelta` `TaskLog` `Result` `CreationRun` `CreationSubmission` | ✅ |
 | 1.10 | 其余实体 | `model/*.go` | `CloudAgent*` `AgentProfile` `Skill*` `Resource*` `Announcement*` `CanvasShare` `StyleProfile` `VoiceProfile` | ✅ |
 | 1.11 | `AppDbContext` | `database/schema.go: Models()` | ✅ 80 实体列映射（`EntityMetadata` + `SqlBuilder`，Dapper 方案） | ✅ |
-| 1.12 | 实体配置 | GORM tag | 逐表 `IEntityTypeConfiguration`（主键/长度/索引/唯一约束） | ☐ |
+| 1.12 | 实体配置 | GORM tag | Dapper `EntityMetadata` + 静态 SQLite/Postgres DDL（已替代 EF 配置方案） | ✅ |
 | 1.13 | 连接与连接池 | `database/database.go` | sqlite / postgres 双驱动 + 池配置 | ✅ |
 | 1.14 | Schema 对齐与迁移 | `database/migrations.go` `schema.go` | 6 段特殊迁移等价实现 | ✅ |
-| 1.15 | 仓储层 | `repository/*.go` (40 文件) | 🟡 按需逐个迁移（当前 162/498 方法，随业务节点推进） | 🟡 |
+| 1.15 | 仓储层 | `repository/*.go` | 🟡 49 个 .NET 仓储文件/约 468 方法；方法级全量 Go 对照与双跑仍待验收 | 🟡 |
 
 ### 阶段 2 · 认证与用户（47 条路由）
 
@@ -236,9 +236,9 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 3.1 | 渠道管理 | `app/channel*.go` | 🟡 列表/创建/复制/更新/删除/排序已通；models 子资源路由已通（见 3.2） |
-| 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | 🟡 列表/排序/价格档附着已通；保存/删除/fetch/import/test 待做 |
-| 3.3 | 逻辑模型与版本 | `app/logical_models.go` | 🟡 公开目录/管理端 CRUD/模拟/报价已通；工作流选路待做 |
+| 3.1 | 渠道管理 | `app/channel*.go` | ✅ 列表/创建/复制/更新/删除/排序与子资源已通 |
+| 3.2 | 渠道模型 + 价格档 | `app/channel_models.go` | ✅ 保存/删除/fetch/import/test/排序/价格档附着已通 |
+| 3.3 | 逻辑模型与版本 | `app/logical_models.go` | ✅ 公开目录/管理端 CRUD/模拟/报价/任务选路已通；多实例协调取舍另记 |
 | 3.4 | 模型目录发现 | `provider/registry.go` | ✅ 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest wire 类型/校验归一化/ManifestAdapter/适配器注册表）；声明式 Providers 执行接入完成（`ProviderProtocolTask` create→poll→download 编排，图片/视频入口按 ctx 注册表路由）；运行时注册表动态注入完成（PluginRuntime 快照经 TaskWorker 注入） |
 | 3.5 | 模型能力矩阵 | `app/model_capability.go` | ✅ 读路径完成（解码/归一化/投影/校验） |
 | 3.6 | 路由目录快照与健康度 | `app/model_router.go` | ✅ 快照/匹配/选路/模拟完成（Redis 协调待接） |
@@ -262,7 +262,7 @@ backend-dotnet/
 | 4.11 | 工作流 Provider | `app/workflow_provider.go` (2155 行) | ✅ `ProviderWorkflowTask` 全链路已通：JSON→节点表解析（含槽位计数与列表展开）、字段角色推断/覆盖安全性、分辨率默认值与槽位文案归一（与 Go 完全一致，无默认值返回原值）、`runninghub-workflow-{image,video,audio}` 三类 interfaceType 提交、轮询统一走 `ProviderVideoPolling`（声明式策略可注入，image 遗留分支固定 2.5s 间隔 1h 预算）、结果下载与 media 归一、协议信封解析；已挂接 Worker 执行分支与创建准入（`workflowPluginIDForInterface` 对齐 Go，仅认三类后缀）；28 条契约测试覆盖解析/归一/提交/轮询/下载/信封/SSRF 前置；剩余：插件启用校验留在 admission 层（与 Go 相同），插件注册表仍视为未启用（4.12 的 plugin runtime） |
 | 4.12 | RunningHub 集成 | `app/runninghub_management.go` | ✅ `WorkflowPluginGate` 插件门控（平台/用户两级状态，创建准入与 Worker 执行双闸，默认禁用）、RunningHub 管理代理（workflow-info / app-info 拉取上游参数模板，SSRF 前置 + 128KB 上限）、`GET /plugins/status` 状态聚合；平台开关由 `plugin_platform_states` 数据行控制，插件中心安装/启停 UI 留 10.1 |
 | 4.13 | 视频转码与播放副本 | `app/video_transcode.go` | ✅ 本地视频编码探测；H.265/MPEG-4 转 H.264/AAC 播放副本；上传触发、启动回填与 `variant=playback` 下发已通（云存储不转码） |
-| 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 transcription 创建已通（whisper 执行待）；render 创建待做 |
+| 4.14 | 时间轴转录 / 渲染 | `app/transcription*.go` `timeline*.go` | 🟡 创建端点与 HasMedia 校验已通；Worker 执行器仍待 ffmpeg/whisper 接入 |
 | 4.15 | 创作运行与提交 | `app/creation*.go` | ✅ 运行生命周期/报价/批准/执行 13 条（批 1）+ 画布提交 3 条（批 2，#63 关闭）；agentRequests 占位符水合待（#64） |
 
 ### 阶段 5 · 资源、素材与存储
@@ -276,7 +276,7 @@ backend-dotnet/
 | 5.5 | 素材库 | `app/asset*.go` `repository/asset_library.go` | ✅ CRUD/分页/facets/分类/移动 + 摘要内嵌角色卡（阶段 6.5）；✅ 资源展示修复：远端 storageKey 优先恢复图片/视频 URL，Blob 读取禁用 304 条件缓存，资产库与创作对话统一使用资源地址 |
 | 5.6 | 存储位置与 OSS 设置 | `app/storage*.go` | 🟡 管理端与个人 OSS 设置读写、加密持久化、存储位置历史、S3 兼容 create → verify → delete 连接测试已通；阿里云 / 腾讯云 / 七牛原生 SDK 连接测试待迁移 |
 | 5.7 | Eagle 集成 | `app/eagle.go` | ✅ 六条 HTTP 路由 + loopback/41595 禁代理出站 + 文件路径边界校验 |
-| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | 🟡 画布/素材/分享/资源 CRUD/导入/用量/OSS 直链/提示词偏好/个人 OSS 设置已通（约 30 条）；数据导出待做 |
+| 5.8 | 用户数据导出/分页 | `handler/user_data.go` (31 条) | ✅ `/user-data/snapshot` 与画布/素材分页已通；“后端导出”是旧计划术语，前端本地 ZIP 另行实现 |
 
 ### 阶段 6 · 项目与短剧工作流（47 条路由）
 
@@ -312,7 +312,7 @@ backend-dotnet/
 | 8.3 | 支付订单与通知 | `internal/payment` + `cmd/payment-*` | ✅ orders/notify/return/query/close |
 | 8.4 | 对账 | `app/payment_reconciliation.go` | ✅ reconciliations + 手动核对/批量解决 |
 | 8.5 | 兑换码批次 | `app/redeem*.go` | ✅ 批次/码/禁用/兑换 |
-| 8.6 | 支付宝 / 微信支付适配 | `payment-sdk/` `payment-plugins/` | 🟡 注册表/清单/插件宿主已通；内置 SDK 适配器未移植（#33） |
+| 8.6 | 支付宝 / 微信支付适配 | `payment-sdk/` `payment-plugins/` | 🟡 官方 RPC 包发现/摘要校验/注册/启停已通；Linux provider 联调、真实商户凭证、退款/证书轮换仍待外部验收 |
 
 ### 阶段 9 · 管理后台
 
@@ -321,8 +321,8 @@ backend-dotnet/
 | 9.1 | 管理员审计事件 | `model.AdminAuditEvent` | ✅ 写入/分页/按目标查询 |
 | 9.2 | 分析统计 | `app/analytics.go` `handler/admin_analytics.go` | ✅ overview/models/users/export.csv + API 日志/导出/存储统计 + 模型价格 CRUD |
 | 9.3 | 存储管理 | `handler/admin_storage.go` | ✅ 存储统计/资源分页（筛选校验）/批量删除（引用阻塞+Outbox，**含外观引用检查**）/管理员直连下发（Range/download）完成 |
-| 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ☐ |
-| 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览与缓存清理已通；数据库/Redis 连接池对象已补齐 Go JSON 契约，`Platform/Coordinator` 已提供多实例协调能力（限流/并发/熔断/路由版本），Redis 实时维度可据此接入 |
+| 9.4 | 系统更新（host-updater） | `internal/hostupdate` `updaterclient` | ✅ Docker 部署固定状态路由；不移植 Go 主机自更新（用户决策） |
+| 9.5 | 系统性能 | `handler/admin_system_performance.go` | 🟡 总览/缓存清理/DB统计已通；真实连接池/Redis/Worker/loadAverage 指标仍待补 |
 | 9.6 | 系统设置 | `app/settings.go` | 🟡 注册/邮件/LinuxDO/积分/运行时策略/绘图工具/响应拦截/方舟素材库/OSS 设置完成；LibTV 管理配置读取、保存与连接测试已接入；S3 兼容测试已通，阿里云 / 腾讯云 / 七牛原生 SDK 测试待做 |
 | 9.7 | 公告与已读 | `app/announcement.go` | ✅ feed/已读/CRUD/关闭/配图草稿消费与丢弃 + 配图上传（阶段 9.5） |
 
@@ -332,12 +332,12 @@ backend-dotnet/
 | --- | --- | --- | --- |
 | 10.1 | 插件运行时与状态 | `app/plugin_runtime*` `app/plugin_management.go` | ✅ `PluginRuntime`（官方包目录扫描、包缓存、bundled 工作流/支付清单合并、registry JSON 持久化、安装/卸载/包下载）+ `PluginManagementService`（来源策略表、用户启停、平台两级可用性、管理端可用性/安装/卸载）+ 插件中心端点（catalog/status/activation/plugins CRUD/admin availability，插件中心组受 FeatureNames.PluginCenter 门控） |
 | 10.2 | 声明式协议插件 | `app/protocol_plugins.go` `protocol_registry.go` | ✅ 元数据注册表已接（内置 13 协议+插件包）；声明式 Protocol 层完成（表达式引擎/manifest 线格式/校验归一化/适配器注册表 + 官方 fallback 加载）；Providers 执行层完成（`ProviderProtocolTask` 三阶段编排 + 图片/视频入口注册表路由，ctx 注入语义与 Go 一致）；运行时管理完成（安装/启停/删除，已安装声明式插件经 PluginRuntime 注册表进入协议执行） |
-| 10.3 | 技能库 | `internal/skills` + `app/skills.go` | 🟡 列表/详情/删除/加入/点赞 + 包文件读取 5 条 + 创建/更新完成（15 条路由）；install/sync 待做 |
-| 10.4 | 技能包管理 | `repository/skill_packages.go` | ☐ 包目录布局与 manifest 解析待移植（install/sync/file 读的前置） |
+| 10.3 | 技能库 | `internal/skills` + `app/skills.go` | ✅ 列表/详情/删除/加入/点赞/包读取/创建/更新/install/GitHub install/sync 已通；自动 6h sync worker 为可选增强 |
+| 10.4 | 技能包管理 | `repository/skill_packages.go` | ✅ ZIP/Markdown 归一、manifest、路径/大小/软链接安全与版本同步已通 |
 | 10.5 | 提示词模板与用户定制 | `internal/prompts` | ✅ 管理端模板 CRUD/启停 + 用户偏好列表/定制三模式/重置（模板渲染 CompilePrompt 待做） |
-| 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | 🟡 LibTV 管理配置读取、保存与连接测试完成；画布导入与 TapNow 待做 |
-| 10.7 | 自定义渠道中转 | `handler/custom_proxy.go` | ☐ |
-| 10.8 | 系统代理与路径转发 | `handler/system_proxy_stream.go` | ☐ |
+| 10.6 | LibTV / TapNow 集成 | `handler/libtv.go` `handler/tapnow.go` | ✅ 管理设置/连接测试 + 两条画布导入已通 |
+| 10.7 | 自定义渠道中转 | `handler/custom_proxy.go` | ✅ `/ai/custom` + `/ai/models` 已通；单实例并发槽/密钥脱敏取舍已记录 |
+| 10.8 | 系统代理与路径转发 | `handler/system_proxy_stream.go` | 🟡 `/ai/system` 授权/SSRF/SSE/日志已通；完整 ReserveProxyBilling/usage settlement 未伪造（PENDING） |
 
 ### 阶段 11 · 云 Agent（20 个 app 文件）
 
@@ -366,15 +366,15 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 12.1 | `migrate-schema` | `cmd/migrate-schema` | ☐ |
-| 12.2 | `migrate-sqlite-postgres` | `cmd/migrate-sqlite-postgres` | ☐ |
-| 12.3 | `migrate-logical-model-families` | 同名 cmd | ☐ |
-| 12.4 | `migrate-channel-model-price-tiers` | 同名 cmd | ☐ |
-| 12.5 | `reseed-logical-model-sources` | 同名 cmd | ☐ |
-| 12.6 | `host-updater` | `cmd/host-updater` | ☐ |
-| 12.7 | Dockerfile / Compose 对齐 | `backend/Dockerfile` | ☐ |
-| 12.8 | 契约回归测试 | `*_test.go` | 🟡 483 项端到端契约测试通过（随节点持续补充） |
-| 12.9 | 双跑对比验收 | — | ☐ |
+| 12.1 | `migrate-schema` | `cmd/migrate-schema` | ✅ Tools 已实现 `up/status/verify`，复用 `SchemaMigrator`，SQLite 15 版生命周期已冒烟 |
+| 12.2 | `migrate-sqlite-postgres` | `cmd/migrate-sqlite-postgres` | 🟡 已实现 SQLite 完整性检查、目标库结构保护、实体逐表批量复制与 SHA-256 逐字段核对；未在本机连接真实 PostgreSQL，需部署环境双跑验证 |
+| 12.3 | `migrate-logical-model-families` | 同名 cmd | 🟡 已实现 PostgreSQL dry-run / `--apply` 安全门、能力合并、旧 SKU 归档和活动任务保护；GPT Image 2 等 Go 特殊分支未在此最小版本自动合并 |
+| 12.4 | `migrate-channel-model-price-tiers` | 同名 cmd | 🟡 已实现 PostgreSQL dry-run / `--apply`、活动档同步与无档位默认档转换；未自动删除旧 SKU 或复刻全部图像/视频家族清理分支 |
+| 12.5 | `reseed-logical-model-sources` | 同名 cmd | ✅ 已实现 PostgreSQL dry-run / `--apply`、单系统线路筛选、活动任务保护和系统模型来源重播种 |
+| 12.6 | `host-updater` | `cmd/host-updater` | 🟡 已实现 Linux Unix socket、Bearer token、状态/Release 检查协议；Docker 部署下 update/rollback 明确返回 409，完整主机备份/切换/回滚仍由既有 Go updater 承担 |
+| 12.7 | Dockerfile / Compose 对齐 | `backend-dotnet/Dockerfile` | ✅ 新增 `backend-dotnet/Dockerfile` 与独立 Compose：self-contained Web/Tools、migrate 一次性服务、Web schema 校验、Postgres/Redis 健康依赖；updater 使用可选 profile |
+| 12.8 | 契约回归测试 | `*_test.go` | 🟡 当前 .NET 全量 1519+ 测试；Go/.NET 双跑逐字节口径仍待确认 |
+| 12.9 | 双跑对比验收 | — | ☐ Go/.NET 逐字节或语义比对口径、双实例与上游 fixtures 待外部验收决策 |
 
 ---
 

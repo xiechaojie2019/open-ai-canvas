@@ -793,9 +793,28 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
-## 部署（阶段 12.7 部分完成）
+## 部署（阶段 12.7：.NET Compose 对齐）
 
-.NET 后端已部署至 **192.168.0.211**（Docker，独立目录 /opt/open-ai-canvas-dotnet）：
+新增独立 `backend-dotnet/Dockerfile` 与 `backend-dotnet/docker-compose.deploy.yml`：
+
+- Dockerfile 同时发布 self-contained `OpenAICanvas.Web` 与 `OpenAICanvas.Tools`，运行镜像包含 `migrate-schema`、五个数据迁移命令和 `host-updater`。
+- Compose 由 `migrate` 一次性服务执行 `migrate-schema up`；`backend` 设置
+  `CANVAS_AUTO_MIGRATE=false`，只校验 schema 版本，并依赖 `migrate` 成功后启动。
+- PostgreSQL / Redis 使用健康检查；Web 健康检查为 `/api/health/ready`；updater 通过可选
+  `updater` profile 启动并挂载只读部署目录与 Unix socket。
+- updater 当前只提供兼容 Go 客户端的 status/check 协议；update/rollback 明确返回 409，
+  不在 .NET 进程内执行主机 Docker 控制、备份或数据库恢复。
+
+验证：Tools 项目构建通过；全量 `dotnet build OpenAICanvas.sln --no-restore` 通过（0 错误）；
+SQLite `migrate-schema up/status/verify` 均返回 `current=15, expected=15, ready=true`；
+Compose `config` 通过（使用临时必填环境变量）；迁移/插件专项测试 22/22 通过。
+真实 PostgreSQL 双跑、Docker build/up 和生产部署尚未执行。
+
+---
+
+### 历史部署记录（2026-09-23）
+
+此前 .NET 后端已部署至 **192.168.0.211**（Docker，独立目录 `/opt/open-ai-canvas-dotnet`）：
 
 - 栈：postgres:17-alpine + redis:7.4-alpine + 自包含发布的 OpenAICanvas.Web
   （self-contained linux-x64，`mcr.microsoft.com/dotnet/aspnet:8.0` 基础镜像）
@@ -803,7 +822,8 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 - 数据库密码：`/opt/open-ai-canvas-dotnet/.env`（600 权限，openssl 随机生成）
 - 健康验证：`/api/health/live`、`/api/health/ready`（schema 15/15 ready、database ok）、
   注册接口实测写入成功（首账号自动 admin）
-- 数据库自动迁移：`CANVAS_AUTO_MIGRATE=true`（postgres schema 0→15）
+- 该历史部署使用 `CANVAS_AUTO_MIGRATE=true`；新受管 Compose 改用独立 `migrate` 服务和
+  `CANVAS_AUTO_MIGRATE=false`，避免 Web 进程在多实例启动时竞争迁移锁。
 
 ### 已知事项
 
