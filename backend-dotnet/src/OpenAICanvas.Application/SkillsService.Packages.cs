@@ -324,7 +324,7 @@ public sealed partial class SkillsService
             cleanedSegments.Add(segment);
         }
         string clean = string.Join('/', cleanedSegments);
-        if (clean == "." || clean == ".." || clean.StartsWith("../", StringComparison.Ordinal)
+        if (clean.Length == 0 || clean == "." || clean == ".." || clean.StartsWith("../", StringComparison.Ordinal)
             || clean.Contains("/../", StringComparison.Ordinal)
             || clean.StartsWith(".git/", StringComparison.Ordinal)
             || clean == ".git")

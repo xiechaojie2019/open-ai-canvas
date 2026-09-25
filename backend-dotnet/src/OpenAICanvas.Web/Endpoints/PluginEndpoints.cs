@@ -10,7 +10,7 @@ namespace OpenAICanvas.Web.Endpoints;
 /// <summary>
 /// 插件中心与协议目录路由。对应 Go: <c>handler/plugin.go</c> + <c>handler/plugin_admin.go</c>。
 /// </summary>
-public static class PluginEndpoints
+public static partial class PluginEndpoints
 {
     public static void MapPluginRoutes(this IEndpointRouteBuilder api, CanvasService service)
     {

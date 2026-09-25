@@ -145,6 +145,7 @@ builder.Services.AddSingleton(serviceProvider =>
         env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
 // 云 Agent 偏好档案（阶段 11.9 首批）。对应 Go 的 app/cloud_agent_profile.go。
 builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
+builder.Services.AddSingleton<OpenAICanvas.Application.EagleService>();
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.PlatformSettingsService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
     env.DataDir));
@@ -275,6 +276,7 @@ api.MapCreationRunRoutes(app.Services.GetRequiredService<OpenAICanvas.Applicatio
 api.MapSkillsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapSkillPackageRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapSkillWriteRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapSkillInstallRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapAdminLogMediaRoute(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>());
@@ -416,6 +418,9 @@ api.MapCanvasShareRoutes(
 
 // 插件协议目录路由。对应 Go 的 handler/plugin.go GET /plugins/catalog（插件中心 10.1 另行移植）。
     api.MapPluginRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapEagleRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.EagleService>());
     api.MapRunningHubRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
 // 根级 OAuth 回调兼容路由（传统登记地址）。对应 Go: <c>RegisterOAuthCallbackRoutes</c>。

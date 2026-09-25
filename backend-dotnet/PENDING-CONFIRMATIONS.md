@@ -185,13 +185,11 @@
   Go 侧还有 Range 分段请求（音视频拖动）与云 provider 307 重定向分支未移植。
 - 处置建议：音视频拖动成为需求时补 Range 解析；云 provider 随 #25 一并接入。
 
-### 27. `[待移植]` 创建项目不生成默认工作流
-- 位置：`ProjectService.CreateProjectAsync`
-- 现状：Go 创建项目后调用 `createProjectWorkflow(project.ID, "", "project")` 生成默认工作流，
-  失败则回滚项目记录。C# 因工作流引擎（阶段 6.7）未移植，创建时不生成；revision 仍 +1 保持递增语义。
-- 影响：`/projects/:id` 的 workflows 数组在两版间不同（C# 恒为空），详情聚合接口暂未开放，
-  影响面暂不可见；但阶段 6 工作台读视图接入前必须补齐。
-- 处置建议：阶段 6.7（工作流模板与实例）移植时补默认工作流生成与回滚逻辑。
+### 27. `[已解决]` 创建项目默认工作流
+- 位置：`ProjectService.CreateProjectAsync` 与 `ProjectWorkflowService`。
+- 现状：**已落地** Go 的默认项目级工作流模板初始化、实例+步骤事务写入、项目
+  revision 递增与失败回滚；项目详情现在可返回项目级与单元级 workflows。
+- 任务产物补偿使用部署数据目录解密任务输入，避免读取错误的默认路径。
 
 ### 28. `[待移植]` 公告配图上传与 OSS/响应拦截设置
 - 位置：`MapAnnouncementRoutes` 的 `/admin/announcement-images`（POST）、
@@ -329,15 +327,16 @@
   canvas_image 任务类型、幂等绑定），与「任务与创作」节点同批接入。
 - 阻塞：任务创建/SSE/worker 链路（阶段 8）。
 
-### 51. `[待移植]` ProjectDetail 全量聚合与三视图 reconcile
+### 51. `[已解决]` ProjectDetail 全量聚合与工作流读视图
 - 位置：`app/project.go` 的 `ProjectDetail`（GET /projects/:id）与
-  `project_character.go` 的 `reconcileCharacterTurnaroundTasks`
-- 现状：`GET /projects/:id/core`、`/overview` 已移植（含 14 项指标子查询）；
-  ProjectDetail 聚合了工作流详情（ProjectWorkflows，工作流 v2 未移植）、
-  任务摘要（TasksWithOptions，任务域未移植）与工作流产物补偿
-  （RegisterTaskOutputFromTask），故路由未挂。
-- 处置建议：随阶段 8（任务与创作）+ 6.7（工作流模板与实例）一并接入，
-  并在该路由打开后补 reconcileCharacterTurnaroundTasks（待确认 #50 的读侧入口）。
+  `project_workbench_read.go` 的 workspace/画布分页读视图。
+- 现状：**已落地** `GET /projects/{id}`、`GET /projects/{id}/canvases`、
+  `GET /projects/{id}/units/{unitId}/workspace`，并补齐工作流详情、任务摘要、
+  镜头/版本/产物/素材引用、候选与项目素材摘要聚合。项目详情读取会对成功任务
+  执行工作流产物补偿（资源、项目素材版本、镜头产物与任务关联），单个历史任务
+  补偿失败不阻断项目展示。
+- 备注：角色三视图专用 `reconcileCharacterTurnaroundTasks` 仍由角色任务域后续
+  接入；本批已完成 `RegisterTaskOutputFromTask` 对工作流任务的读侧补偿。
 
 ### 52. `[取舍]` 分页查询参数解析错误文案
 - 位置：`handler/project.go` 的 `parsePositiveQueryInt`（asset-candidates 等）
@@ -362,20 +361,19 @@
   重新合成，输出 `no-store, private`。指令集合与语义一致，仅顺序不同。
 - 处置建议：保持现状；除非发现前端/代理对顺序敏感，不值得绕过框架管道。
 
-### 55. `[待移植]` 剩余大节点（任务执行 / 创作运行 / 云 Agent / 工作流 v2 / 技能写入）
+### 55. `[待移植]` 剩余大节点（任务执行 / 创作运行 / 云 Agent / 技能写入）
 - 位置：`app/task_creation.go`（POST /tasks 前置校验 + 计费预留）、
   `task_execution.go`/`task_worker.go`/`task_route_executor.go`（worker 执行引擎）、
   `provider_task_recovery.go`（query-task/retry/cancel 的供应线路查询）、
   `creation.go`（creation-runs 15 条，908 行）+ `creation_canvas.go`（571 行）、
   `handler/agent.go` + `app/agent*`（云 Agent 10 条）、
-  `app/project_workflow_v2*`（ProjectDetail 聚合、workflows、workflow-steps、
-  canvases 分页、units workspace）、`skills/skill_packages.go` 写入与安装（5 条 + 文件 5 条）、
+  `skills/skill_packages.go` 写入与安装（5 条 + 文件 5 条）、
   `ai/models` 系统中转、`model-catalog` 3 条、`diagnostics` 2 条、`runninghub` 2 条、
   settings 余量（runtime-policy/oss/drawing-engine/libtv/response-interception/
   ark-private-assets/prompt-templates/system-performance/system-update）
 - 现状：以上路由未挂；依赖任务创建-计费-Worker 执行链与供应线路协议引擎，
   建议按「任务创建 → Worker 执行 → SSE → retry/cancel/query-provider →
-  timeline → creation-runs → agent → workflow v2」顺序分批移植。
+  timeline → creation-runs → agent → 技能/其余零散」顺序分批移植。
 - 处置建议：每批落地后在 CHECKLIST 记录路由数与测试，并回填本清单。
 
 ### 56. `[已解决]` 管理端分析总览与模型价格
@@ -386,16 +384,14 @@
   分析投影按 schema-dump 的真实列清单。
 
 ### 57. `[待移植]` 剩余路由盘点（任务引擎及其下游，截至本批后余 ~70 条）
-- 已知分布：任务引擎 7（POST /tasks、retry、cancel、query-provider、
-  text-events SSE、timeline 2）；creation-runs 13；云 Agent 7；workflow v2 5
-  （ProjectDetail/canvases/workspace/workflows/workflow-steps）；技能 9
+- **已知分布**：任务引擎 7（POST /tasks、retry、cancel、query-provider、
+  text-events SSE、timeline 2）；creation-runs 13；云 Agent 7；技能 9
   （files 5 + 写入 4）；OSS 设置 6（test 依赖云 SDK）；libtv 3 + canvas 导入 2；
   system-performance 2；system-update 4（host-updater 进程，.NET 部署形态待定）；
   diagnostics 2；runninghub 2；POST /ai/models 系统中转 1；
   api-logs media/query-task 2；admin/channels/{id}/models/test 1
-- 移植顺序建议不变：任务引擎 → creation-runs → agent → workflow v2 →
-  技能 → 其余零散（oss/libtv/runninghub/ai/models 均依赖出站或云 SDK，
-  可与任务引擎解耦并行）。
+- 移植顺序建议不变：任务引擎 → creation-runs → agent → 技能 → 其余零散
+  （oss/libtv/runninghub/ai/models 均依赖出站或云 SDK，可与任务引擎解耦并行）。
 
 ### 58. `[待移植]` POST /tasks 队列路径 admission（模型路由 + 计费预留）
 - 位置：`app/task_creation.go` 的 `resolveTaskModelSelection`（前台模型/系统渠道/
@@ -556,29 +552,26 @@
   payments 旧前缀 11 条（/admin/payments/*）、openapi.yaml（Program.cs 内嵌
   backend openapi.yaml 原样输出）、/oauth/linuxdo/callback 根级别名
   （Program.cs:406）、creation-runs 循环注册伪影。
-- **本批已补**：POST /admin/api-logs/{id}/query-task（服务层
-  AdminQueryProviderAsync 此前已有，仅缺端点接线）。
-- **真实剩余（按建议顺序，共约 22 条）**：
-  1. 工作流 v2 6 条：GET /projects/{id}（ProjectDetail 全量聚合，含
-     RegisterTaskOutputFromTask 补偿）、GET canvases 分页、GET workspace、
-     POST workflows、PATCH workflow-steps/{stepId}、POST task-output
-     （Go: project_workflow.go 679 行 + project_workbench_read.go）。
-  2. ~~timeline renders 1 条~~ ✅ 2026-09-25 已补：CreateTimelineRenderAsync
+- **本批已补**：工作流 v2 6 条：GET /projects/{id}（ProjectDetail 全量聚合与成功任务产物补偿）、GET canvases 分页、GET workspace、POST workflows、PATCH workflow-steps/{stepId}、POST task-output。新增 `Repository.ProjectWorkflow.cs` 的 Dapper 查询/事务方法与 `ProjectWorkflowService`，覆盖模板初始化、工作流实例/步骤、状态门禁、项目/单元/镜头归属校验、产物幂等回填。
+- **真实剩余**：工作流 v2 六条已从清单移除；以下仍按建议顺序推进：
+  1. ~~timeline renders 1 条~~ ✅ 2026-09-25 已补：CreateTimelineRenderAsync
      （HasMedia 校验 + timeline_render 任务）+ POST /timeline/renders 端点。
-  3. ~~channels models/test 1 条~~ ✅ 2026-09-25 已补：
+  2. ~~channels models/test 1 条~~ ✅ 2026-09-25 已补：
      ChannelModelAdminService.TestAdminChannelModelAsync + TaskWorkerService.
      RunProviderProbeAsync + POST /admin/channels/{id}/models/test 端点。
-  4. Eagle 5 条：/plugins/eagle/*（Go plugin.go 内，服务 EagleLibrary/
-     EagleItems/OpenEagleItemFile 等出站 SSRF 到用户 Eagle 服务器）。
-  5. ~~system-update 4 条~~ ✅ 2026-09-25 已补（用户决策：.NET 走 Docker，
+  3. ~~Eagle 6 条 HTTP 路由~~ ✅ 2026-09-25 已补：EagleService + loopback/41595
+     禁代理客户端 + 六条 PluginEagleEndpoints 路由（library/items/file/thumbnail/
+     items POST/folders POST）。PENDING 原按“能力族”计 5 条，实际 HTTP 数为 6。
+  4. ~~system-update 4 条~~ ✅ 2026-09-25 已补（用户决策：.NET 走 Docker，
      不移植 hostupdate）：GET/check 返回固定 supported=false 状态，
      start/rollback 返回 409「请通过 docker compose build 完成升级」。
-  6. 画布导入 2 条：POST /canvas-projects/{id}/import/libtv|tapnow
+  5. 画布导入 2 条：POST /canvas-projects/{id}/import/libtv|tapnow
      （Go libtv.go 86 行 + tapnow.go 36 行，外部服务出站）。
-  7. skills 安装 3 条：POST /skills/install（zip multipart）、
-     /skills/install/github、/skills/{id}/sync（Go skills.go，GitHub 出站 +
-     zip/markdown 归一，见 #65 部分解决）。
-  8. ai 中转 3 条：ANY /ai/custom、ANY /ai/system/{channelId}/*path（流式）、
+  6. ~~skills 安装 3 条~~ ✅ 2026-09-25 已补：SkillsService.Install/GitHub
+     + SkillsInstallEndpoints（multipart Markdown/ZIP、GitHub URL/ref/subdir、
+     commit 固定、sync 状态更新与归档清理）。后台 6 小时自动同步 worker 仍属
+     可选后续增强，手动三条路由契约已通。
+  7. ai 中转 3 条：ANY /ai/custom、ANY /ai/system/{channelId}/*path（流式）、
      POST /ai/models（Go custom_proxy.go 308 行 + system_proxy_stream.go 70 行）。
      **依赖栈实测（2026-09-25，最难的部分）**：除 handler 外还需移植——
      ValidateCustomRelayURL（SSRF 出站校验）、DecodeRelayOutboundHeaders/
@@ -638,3 +631,11 @@
 - 部署：全部完成后统一发布 192.168.0.211（publish linux-x64 →
   /opt/open-ai-canvas-dotnet/linux → compose build backend → up -d；
   index.html 已带 no-cache，注意本地直推用 ssh.github.com:443）。
+
+
+### 70. `[部分解决]` 2026-09-25 清单切片完成状态
+- 工作流 v2 六条、Eagle 六路由、skills install/github/sync 三路由均已实现并接线。
+- 工作流 focused 17/17；Eagle/skills security focused 12/12；全量测试本轮 1516 通过，
+  3 个既有顺序污染用例单跑均通过。
+- 剩余真实能力族：画布导入 libtv/tapnow 2 条、/ai/system 流式中转（系统渠道授权/
+  渠道计费/API 日志联动）。skills 自动同步 worker 作为后续增强，不阻塞手动 sync 路由。

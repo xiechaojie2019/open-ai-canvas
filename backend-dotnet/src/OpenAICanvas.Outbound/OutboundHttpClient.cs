@@ -19,13 +19,20 @@ public static class OutboundHttpClient
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>创建受控出站客户端。调用方负责释放。</summary>
-    public static HttpClient Create(TimeSpan? timeout = null, bool allowAutoRedirect = true)
+    /// <param name="useProxy">是否使用进程配置的默认代理。</param>
+    /// <param name="allowLoopbackOnly">仅允许解析到 loopback 地址；供本机专用协议调用方使用。</param>
+    public static HttpClient Create(
+        TimeSpan? timeout = null,
+        bool allowAutoRedirect = true,
+        bool useProxy = true,
+        bool allowLoopbackOnly = false)
     {
         SocketsHttpHandler handler = new()
         {
-            Proxy = HttpClient.DefaultProxy,
+            Proxy = useProxy ? HttpClient.DefaultProxy : null,
             AllowAutoRedirect = allowAutoRedirect,
-            ConnectCallback = ConnectThroughSsrfGuardAsync,
+            ConnectCallback = (context, cancellationToken) =>
+                ConnectThroughSsrfGuardAsync(context, allowLoopbackOnly, useProxy, cancellationToken),
             ConnectTimeout = ConnectTimeout,
             AutomaticDecompression = System.Net.DecompressionMethods.None,
             MaxConnectionsPerServer = 20,
@@ -42,13 +49,15 @@ public static class OutboundHttpClient
 
     private static async ValueTask<Stream> ConnectThroughSsrfGuardAsync(
         SocketsHttpConnectionContext context,
+        bool allowLoopbackOnly,
+        bool useProxy,
         CancellationToken cancellationToken)
     {
         string host = context.DnsEndPoint.Host;
         int port = context.DnsEndPoint.Port;
 
         // 代理主机由部署者配置，跳过 SSRF 解析直连。
-        if (ConfiguredProxyHost(host))
+        if (useProxy && !allowLoopbackOnly && ConfiguredProxyHost(host))
         {
             // 代理地址不做 SSRF 解析，直接按主机名连接（由系统解析）。
             Socket socket = new(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
@@ -64,9 +73,32 @@ public static class OutboundHttpClient
             }
         }
 
-        // 解析与 SSRF 校验一次完成；按序尝试全部地址直到连通（与 Go net.Dialer 行为一致）。
-        IPAddress[] addresses = await OutboundGuard.ResolveOutboundHostAsync(host).ConfigureAwait(false);
+        // Eagle 等本机协议先在应用层严格校验 URL，再由这里确认 DNS 结果仍全部是回环地址。
+        IPAddress[] addresses = allowLoopbackOnly
+            ? await ResolveLoopbackHostAsync(host).ConfigureAwait(false)
+            // 解析与 SSRF 校验一次完成；按序尝试全部地址直到连通（与 Go net.Dialer 行为一致）。
+            : await OutboundGuard.ResolveOutboundHostAsync(host).ConfigureAwait(false);
         return await ConnectAsync(addresses, port, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IPAddress[]> ResolveLoopbackHostAsync(string host)
+    {
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await Dns.GetHostAddressesAsync(host).ConfigureAwait(false);
+        }
+        catch (SocketException error)
+        {
+            throw new HttpRequestException("loopback host resolution failed", error);
+        }
+
+        if (addresses.Length == 0 || addresses.Any(address => !IPAddress.IsLoopback(address)))
+        {
+            throw new HttpRequestException("loopback-only host resolved to a non-loopback address");
+        }
+
+        return addresses;
     }
 
     private static async Task<Stream> ConnectAsync(IPAddress[] addresses, int port, CancellationToken cancellationToken)

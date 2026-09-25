@@ -87,6 +87,53 @@ public static class UserDataEndpoints
             }
         });
 
+        api.MapGet("/projects/{id}", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectDetailDto detail = await service.ProjectWorkflows.ProjectDetailAsync(
+                    user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(detail);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/projects/{id}/canvases", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (int page, int pageSize, string? error) = ParsePagination(context, 40);
+                if (error is not null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException(error));
+                }
+                ProjectCanvasPageDto result = await service.ProjectWorkflows.ProjectCanvasesPageAsync(
+                    user.ID, id, page, pageSize, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapGet("/projects/{id}/core", async (
             HttpContext context, string id, CancellationToken cancellationToken) =>
         {
@@ -1565,6 +1612,27 @@ public static class UserDataEndpoints
             }
         });
 
+        api.MapGet("/projects/{id}/units/{unitId}/workspace", async (
+            HttpContext context, string id, string unitId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ProjectUnitWorkspaceDto workspace = await service.ProjectWorkflows.ProjectUnitWorkspaceAsync(
+                    user.ID, id, unitId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(workspace);
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapPost("/projects/{id}/units/import", async (HttpContext context, string id, CancellationToken cancellationToken) =>
         {
             try
@@ -1726,6 +1794,86 @@ public static class UserDataEndpoints
                 await service.UnlinkCanvasProjectAsync(user.ID, id, canvasId, cancellationToken)
                     .ConfigureAwait(false);
                 return ApiResults.Ok(new { canvasId });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+        api.MapPost("/projects/{id}/workflows", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateUnitWorkflowRequest? request = await ReadJsonAsync<CreateUnitWorkflowRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                ProjectWorkflowDetailDto workflow = await service.ProjectWorkflows.CreateUnitWorkflowAsync(
+                    user.ID, id, request.UnitID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { workflow });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/projects/{id}/workflow-steps/{stepId}", async (
+            HttpContext context, string id, string stepId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                UpdateWorkflowStepRequest? request = await ReadJsonAsync<UpdateWorkflowStepRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                WorkflowStepInstance step = await service.ProjectWorkflows.UpdateWorkflowStepAsync(
+                    user.ID, id, stepId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { step });
+            }
+            catch (InvalidOperationException)
+            {
+                return ApiResults.Fail(StatusCodes.Status404NotFound, new InvalidOperationException("record not found"));
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/projects/{id}/workflow-steps/{stepId}/task-output", async (
+            HttpContext context, string id, string stepId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                RegisterTaskOutputRequest? request = await ReadJsonAsync<RegisterTaskOutputRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                WorkflowStepInstance step = await service.ProjectWorkflows.RegisterTaskOutputAsync(
+                    user.ID, id, stepId, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { step });
             }
             catch (InvalidOperationException)
             {

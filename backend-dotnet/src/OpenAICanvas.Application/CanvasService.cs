@@ -64,7 +64,6 @@ public sealed class CanvasService
         UserData = new UserDataService(repository, RuntimePolicy);
         ResourceDelete = new ResourceDeleteService(repository, dataDir);
         CanvasShares = new CanvasShareService(repository);
-        Projects = new ProjectService(repository);
         ProjectUnits = new ProjectUnitService(repository);
         ProjectAssetFolders = new ProjectAssetFolderService(repository);
         ProjectAssets = new ProjectAssetService(repository);
@@ -78,6 +77,8 @@ public sealed class CanvasService
         AdminAnalytics = new AdminAnalyticsService(repository);
         AdminUsers = new AdminUserService(repository, Auth, CreditPolicy, RuntimePolicy);
         Tasks = new TaskService(repository);
+        ProjectWorkflows = new ProjectWorkflowService(repository, ProjectAssets, ProjectAssetFolders, Tasks, dataDir);
+        Projects = new ProjectService(repository, ProjectWorkflows);
         Finance = new FinanceService(repository, CreditPolicy, Features);
         Skills = new SkillsService(repository, dataDir);
         PromptTemplates = new Prompts.PromptTemplateService(repository);
@@ -617,6 +618,9 @@ public sealed class CanvasService
     public AdminUserService AdminUsers { get; }
 
     public TaskService Tasks { get; }
+
+    /// <summary>项目工作流 v2 与工作台聚合。对应 Go: <c>project_workflow.go</c>。</summary>
+    public ProjectWorkflowService ProjectWorkflows { get; }
 
     public FinanceService Finance { get; }
 

@@ -381,7 +381,9 @@ public sealed partial class Repository
             connection,
             """
             UPDATE skills SET
-              instruction = @Instruction,
+              name = @Name, description = @Description, instruction = @Instruction,
+              tag = @Tag, markdown_url = @MarkdownURL,
+              showcase_media_json = @ShowcaseMediaJSON, extra_info = @ExtraInfo,
               current_version_id = @CurrentVersionID, version_label = @VersionLabel,
               content_hash = @ContentHash, file_count = @FileCount, total_bytes = @TotalBytes,
               source_type = @SourceType, source_url = @SourceURL, source_ref = @SourceRef,
@@ -406,10 +408,15 @@ public sealed partial class Repository
             """
             UPDATE skills SET
               name = @Name, description = @Description, instruction = @Instruction,
-              tag = @Tag, is_private = @IsPrivate, markdown_url = @MarkdownURL,
+              tag = @Tag, markdown_url = @MarkdownURL,
               showcase_media_json = @ShowcaseMediaJSON, extra_info = @ExtraInfo,
               current_version_id = @CurrentVersionID, version_label = @VersionLabel,
               content_hash = @ContentHash, file_count = @FileCount, total_bytes = @TotalBytes,
+              source_type = @SourceType, source_url = @SourceURL, source_ref = @SourceRef,
+              source_subdir = @SourceSubdir, source_commit = @SourceCommit,
+              sync_status = @SyncStatus, sync_error = @SyncError, auto_update = @AutoUpdate,
+              last_checked_at = @LastCheckedAt, last_synced_at = @LastSyncedAt,
+              status = @Status, source = @Source, is_private = @IsPrivate,
               updated_at = @UpdatedAt
             WHERE id = @ID
             """,

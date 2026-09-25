@@ -121,17 +121,17 @@ public sealed class UpdateProjectRequest
 /// 对应 Go: <c>app/project.go</c> 的 ListProjects / CreateProject / UpdateProject / DeleteProject。
 /// </summary>
 /// <remarks>
-/// Go 的 ProjectDetail（工作台全量聚合）、内置工作流模板初始化
-/// （EnsureBuiltinProjectWorkflowTemplate / createProjectWorkflow）与 reconcile 修复链路
-/// 属阶段 6 后续节点；创建项目暂不生成默认工作流（差异记入待确认清单 #27）。
+/// 项目详情聚合与内置工作流模板/实例由 <see cref="ProjectWorkflowService"/> 提供。
 /// </remarks>
 public sealed class ProjectService
 {
     private readonly Repository _repository;
+    private readonly ProjectWorkflowService _workflows;
 
-    public ProjectService(Repository repository)
+    public ProjectService(Repository repository, ProjectWorkflowService workflows)
     {
         _repository = repository;
+        _workflows = workflows;
     }
 
     /// <summary>项目列表（摘要聚合）。对应 Go: <c>ListProjects</c>。</summary>
@@ -161,7 +161,7 @@ public sealed class ProjectService
         };
     }
 
-    /// <summary>创建项目。对应 Go: <c>CreateProject</c>（默认工作流初始化待接）。</summary>
+    /// <summary>创建项目。对应 Go: <c>CreateProject</c>（含默认项目工作流初始化）。</summary>
     public async Task<Project> CreateProjectAsync(
         string userId, CreateProjectRequest request, CancellationToken cancellationToken = default)
     {
@@ -211,7 +211,24 @@ public sealed class ProjectService
             UpdatedAt = now,
         };
         await _repository.CreateProjectAsync(project, cancellationToken).ConfigureAwait(false);
-        // Go 会创建默认工作流并递增 revision；工作流引擎属阶段 6 后续节点。
+        try
+        {
+            await _workflows.CreateProjectWorkflowAsync(project.ID, "", "project", cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            try
+            {
+                await _repository.DeleteProjectAsync(userId, project.ID, [], DateTime.UtcNow, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception rollbackError)
+            {
+                throw new AggregateException(error, rollbackError);
+            }
+            throw;
+        }
         project.Revision++;
         project.UpdatedAt = DateTime.UtcNow;
         return project;
