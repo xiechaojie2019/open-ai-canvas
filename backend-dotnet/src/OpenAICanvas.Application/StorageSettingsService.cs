@@ -92,6 +92,13 @@ public sealed class StorageSettingsService
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>平台存储的公网访问地址（provider-input 签名绝对 URL 用）。对应 Go: <c>readOSSSetting</c> 的 PublicBaseURL。</summary>
+    public async Task<string> PlatformPublicBaseUrlAsync(CancellationToken cancellationToken = default)
+    {
+        SystemSetting? record = await _repository.SystemSettingAsync(PlatformSettingKey, cancellationToken).ConfigureAwait(false);
+        return record is null || string.IsNullOrWhiteSpace(record.ValueJSON) ? "" : ReadStored(record.ValueJSON).PublicBaseUrl;
+    }
+
     public async Task<PublicOSSSetting> UpdateAdminOSSSettingAsync(
         User actor, OSSSettingRequest request, CancellationToken cancellationToken = default)
     {

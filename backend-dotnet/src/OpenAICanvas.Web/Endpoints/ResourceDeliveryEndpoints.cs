@@ -106,6 +106,7 @@ public static class ResourceDeliveryEndpoints
                     id,
                     context.Request.Query["expires"],
                     context.Request.Query["signature"],
+                    context.Request.Query["variant"],
                     context.Request.Headers["Range"].ToString()).GetAwaiter().GetResult();
 
                 return WritePublicResourceAsync(context, stream).GetAwaiter().GetResult();

@@ -61,6 +61,31 @@ public static class ResourceCrudEndpoints
             }
         });
 
+        // POST /api/resources/access —— 批量签发资源访问描述（1–100 项，逐项独立成败）。
+        // 对应 Go: handler/user_data.go 的 POST /resources/access + app/resource_access.go。
+        api.MapPost("/resources/access", async (
+            HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                List<ResourceAccessRequest>? requests = await ReadJsonAsync<List<ResourceAccessRequest>>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (requests is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                IReadOnlyList<ResourceAccessResult> items = await resources
+                    .ResourceAccessBatchAsync(user.ID, requests, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { items });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapGet("/resources/{id}", async (
             HttpContext context, string id, CancellationToken cancellationToken) =>
         {

@@ -72,6 +72,9 @@ public static class SettingsCrypto
         return System.Text.Encoding.UTF8.GetString(plaintext);
     }
 
+    /// <summary>读取或创建 32 字节设置密钥（匿名资源签名等场景使用）。对应 Go: <c>settingsEncryptionKey</c>。</summary>
+    public static byte[] SettingsKey(string dataDir) => ObtainKey(dataDir);
+
     /// <summary>读取或创建 32 字节密钥文件。对应 Go: <c>settingsEncryptionKey</c>。</summary>
     private static byte[] ObtainKey(string dataDir)
     {

@@ -147,7 +147,10 @@ builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
-        env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
+        env.DataDir,
+        settingsEncryptionKey: () => OpenAICanvas.Application.SettingsCrypto.SettingsKey(env.DataDir),
+        playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>(),
+        storageSettings: serviceProvider.GetRequiredService<OpenAICanvas.Application.StorageSettingsService>()));
 // 云 Agent 偏好档案（阶段 11.9 首批）。对应 Go 的 app/cloud_agent_profile.go。
 builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
 builder.Services.AddSingleton<OpenAICanvas.Application.EagleService>();

@@ -5,6 +5,14 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## net8 后端资源访问批量签发（POST /api/resources/access）
+
+- net8 后端（`backend-dotnet/`）已移植 `POST /api/resources/access`：1–100 项批量、逐项独立返回 `access` 或结构化 `error`；本地资源签发 `platform-local` 投递与带 `expires`/`signature`/`variant` 的平台公开签名地址，`playback` 请求在副本就绪时下发副本、未就绪回退原件并带 `fallbackReason=playback_not_ready`。公开签名 payload 与 Go 一致（`id\nvariant\nexpires`），密钥来自 `data/.settings-key`；此前 net8 公开路由签名不覆盖变体，现与 Go 后端签发的存量地址互相兼容（同一数据目录时）。
+- `provider-input` 用途按平台存储设置的 `publicBaseUrl` 或 `CANVAS_PUBLIC_BASE_URL` 签发绝对 HTTPS 地址，未配置时逐项报错；云 provider 资源逐项返回 501（云 SDK 待确认 #25），与既有云资源投递边界一致。
+- [x] 9 项端点契约测试通过（批量签发与匿名拉取、playback 回退与副本、逐项错误、他人/缺失资源 404、未就绪 409、空列表与超限 400、未登录 401、provider-input 两种分支），相邻资源下发与任务执行器测试通过。全量 net8 套件中 3 项插件 Bootstrap 失败为既有问题（pristine HEAD 复现，与本移植无关）。
+- [ ] 部署到测试站后浏览器验收：前端 `getResourceAccess`（browser-process/display/copy/download）取到签名地址并正常加载媒体；`getResourceInputURL` 在配置公网地址后返回模型可读绝对地址。
+- [ ] 公开签名地址匿名拉取与 playback 变体在真实部署（非 SQLite 测试工厂）下复核。
+
 ## 原任务 ID 媒体保存恢复
 
 - [x] 故障注入：下载 503 后服务实例重建继续原任务、OSS 上传失败保留暂存文件及资源 ID、素材登记异常使任务成功事务回滚，登记恢复无需再次下载。

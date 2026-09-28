@@ -1,6 +1,8 @@
 #nullable enable
+using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Domain.Serialization;
 using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Platform;
 
@@ -42,6 +44,55 @@ public sealed record AccountFileStorageUsage(
     [property: System.Text.Json.Serialization.JsonPropertyName("totalBytes")] long TotalBytes);
 
 /// <summary>
+/// 资源访问请求项。对应 Go: <c>assets.AccessRequest</c>（内嵌 AccessOptions）。
+/// </summary>
+public sealed class ResourceAccessRequest
+{
+    [JsonPropertyName("resourceId")] public string ResourceID { get; set; } = "";
+    [JsonPropertyName("purpose")] public string Purpose { get; set; } = "";
+    [JsonPropertyName("variant")] public string Variant { get; set; } = "";
+    [JsonPropertyName("downloadName")] public string DownloadName { get; set; } = "";
+}
+
+/// <summary>
+/// 资源访问意图。只承载用途，不含任何客户端可控的鉴权或传输覆盖。
+/// 对应 Go: <c>assets.AccessOptions</c>。
+/// </summary>
+public sealed record ResourceAccessOptions(
+    string Purpose = "",
+    string Variant = "",
+    string DownloadName = "")
+{
+    /// <summary>授权过期上限（公开签名下发路径使用）。对应 Go 的 <c>ExpiresAt</c> 内部字段。</summary>
+    public DateTime? ExpiresAt { get; init; }
+}
+
+/// <summary>资源访问描述。对应 Go: <c>assets.ResourceAccess</c>。</summary>
+public sealed record ResourceAccess(
+    [property: JsonPropertyName("resourceId")] string ResourceID,
+    [property: JsonPropertyName("requestedVariant")] string RequestedVariant,
+    [property: JsonPropertyName("actualVariant")] string ActualVariant,
+    [property: JsonPropertyName("url")] string Url,
+    [property: JsonPropertyName("delivery")] string Delivery,
+    [property: JsonPropertyName("issuedAt")] DateTime IssuedAt,
+    [property: JsonPropertyName("expiresAt")] DateTime? ExpiresAt,
+    [property: JsonPropertyName("refreshAt")] DateTime RefreshAt,
+    [property: JsonPropertyName("revision")] string Revision,
+    [property: JsonPropertyName("fallbackReason"), GoOmitEmpty] string FallbackReason = "");
+
+/// <summary>单项访问失败。对应 Go: <c>app.ResourceAccessFailure</c>。</summary>
+public sealed record ResourceAccessFailure(
+    [property: JsonPropertyName("code")] int Code,
+    [property: JsonPropertyName("reason")] string Reason,
+    [property: JsonPropertyName("msg")] string Message);
+
+/// <summary>批量访问的逐项结果。对应 Go: <c>app.ResourceAccessResult</c>。</summary>
+public sealed record ResourceAccessResult(
+    [property: JsonPropertyName("resourceId")] string ResourceID,
+    [property: JsonPropertyName("access"), GoOmitEmpty] ResourceAccess? Access,
+    [property: JsonPropertyName("error"), GoOmitEmpty] ResourceAccessFailure? Error);
+
+/// <summary>
 /// 资源域服务。对应 Go: <c>app/resource.go</c> 的 CRUD 与投递部分。
 /// </summary>
 /// <remarks>
@@ -53,19 +104,38 @@ public sealed class ResourceDomainService
 {
     private const long Gigabyte = 1L << 30;
 
+    // 资源访问合同常量。对应 Go: assets.AccessPurpose / ResourceVariant / DeliveryMode。
+    private const string PurposeDisplay = "display";
+    private const string PurposeCopy = "copy";
+    private const string PurposeDownload = "download";
+    private const string PurposeProcess = "browser-process";
+    private const string PurposeProvider = "provider-input";
+    private const string VariantOriginal = "original";
+    private const string VariantPlayback = "playback";
+    private const string DeliveryLocal = "platform-local";
+    private const string PlaybackStatusReady = "ready";
+
+    /// <summary>本地投递描述符版本。对应 Go: <c>storage.DeliveryRevision</c>（零值 Settings）——
+    /// net8 后端本地路径没有可配置的分发项，固化为常量摘要，仅供前端访问描述失效比较。</summary>
+    private static readonly string LocalDeliveryRevision = Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData("platform-local"u8))[..16].ToLowerInvariant();
+
     private readonly Repository _repository;
     private readonly IRuntimePolicyProvider _policyProvider;
     private readonly string _dataDir;
     private readonly VideoPlaybackService? _playback;
+    private readonly StorageSettingsService? _storageSettings;
 
     public ResourceDomainService(
         Repository repository, IRuntimePolicyProvider policyProvider, string? dataDir = null,
-        Func<byte[]?>? settingsEncryptionKey = null, VideoPlaybackService? playback = null)
+        Func<byte[]?>? settingsEncryptionKey = null, VideoPlaybackService? playback = null,
+        StorageSettingsService? storageSettings = null)
     {
         _repository = repository;
         _policyProvider = policyProvider;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
         _playback = playback;
+        _storageSettings = storageSettings;
         if (settingsEncryptionKey is not null)
         {
             SettingsEncryptionKey = settingsEncryptionKey;
@@ -150,13 +220,214 @@ public sealed class ResourceDomainService
             AcceptRanges: stream.AcceptRanges);
     }
 
+    // ------------------------------------------------------------ 资源访问合同（批量签发）
+
+    /// <summary>
+    /// 批量签发资源访问描述。对应 Go: <c>app.ResourceAccessBatch</c>。
+    /// 逐项独立成功/失败：单项错误写入 <see cref="ResourceAccessResult.Error"/>，
+    /// 只有未登录或请求项数超出 1–100 才抛出顶层错误。
+    /// </summary>
+    public async Task<IReadOnlyList<ResourceAccessResult>> ResourceAccessBatchAsync(
+        string userId, IReadOnlyList<ResourceAccessRequest> requests, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            throw AppError.Unauthorized("请先登录");
+        }
+        if (requests.Count == 0 || requests.Count > 100)
+        {
+            throw AppError.BadAuthRequest("每批资源访问请求须为 1–100 项");
+        }
+        List<ResourceAccessResult> results = new(requests.Count);
+        foreach (ResourceAccessRequest request in requests)
+        {
+            results.Add(await ResolveAccessItemAsync(userId, request, cancellationToken).ConfigureAwait(false));
+        }
+        return results;
+    }
+
+    private async Task<ResourceAccessResult> ResolveAccessItemAsync(
+        string userId, ResourceAccessRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 与 Go 相同：调用方已通过登录鉴权，逐项再经 ResourceForUser 归属校验，
+            // 因此 provider-input 可以在这里安全签发，浏览器侧模型适配器与其他
+            // 资源消费方共用同一访问合同。
+            ResourceAccessOptions options = NormalizeAccessOptions(
+                new ResourceAccessOptions(request.Purpose, request.Variant, request.DownloadName),
+                allowProvider: true);
+            Resource? resource = await _repository.ResourceForUserAsync(
+                userId, request.ResourceID, cancellationToken).ConfigureAwait(false);
+            if (resource is null)
+            {
+                throw AppError.NotFound("资源不存在或不可访问");
+            }
+            return new ResourceAccessResult(
+                request.ResourceID,
+                await ResolveAccessAsync(resource, options, DateTime.UtcNow, cancellationToken).ConfigureAwait(false),
+                Error: null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AppError appError)
+        {
+            return new ResourceAccessResult(
+                request.ResourceID, Access: null,
+                new ResourceAccessFailure(appError.Code, appError.Reason, appError.Message));
+        }
+        catch (Exception)
+        {
+            return new ResourceAccessResult(
+                request.ResourceID, Access: null,
+                new ResourceAccessFailure(500, "resource_access_failed", "资源访问失败"));
+        }
+    }
+
+    /// <summary>访问意图归一化。对应 Go: <c>assets.NormalizeAccessOptions</c>。</summary>
+    private static ResourceAccessOptions NormalizeAccessOptions(ResourceAccessOptions options, bool allowProvider)
+    {
+        string purpose = options.Purpose.Length == 0 ? PurposeDisplay : options.Purpose;
+        switch (purpose)
+        {
+            case PurposeDisplay or PurposeCopy or PurposeDownload or PurposeProcess:
+                break;
+            case PurposeProvider:
+                if (!allowProvider)
+                {
+                    throw AppError.Forbidden("不允许请求模型输入凭据");
+                }
+                break;
+            default:
+                throw AppError.BadAuthRequest("资源访问用途无效");
+        }
+        string variant = options.Variant.Length == 0 ? VariantOriginal : options.Variant;
+        if (variant is not (VariantOriginal or VariantPlayback))
+        {
+            throw AppError.BadAuthRequest("资源变体无效");
+        }
+        if (purpose is PurposeCopy or PurposeDownload or PurposeProvider)
+        {
+            variant = VariantOriginal;
+        }
+        if (purpose != PurposeDownload)
+        {
+            options = options with { DownloadName = "" };
+        }
+        return options with { Purpose = purpose, Variant = variant };
+    }
+
+    /// <summary>
+    /// 解析单项访问描述。对应 Go: <c>resolveResourceAccess</c> + <c>assets.ResolveAccess</c>
+    /// 的本地存储路径；云 provider 投递与 Go 侧的 OSS/CDN 策略一致地依赖云 SDK（待确认 #25）。
+    /// </summary>
+    private async Task<ResourceAccess> ResolveAccessAsync(
+        Resource resource, ResourceAccessOptions options, DateTime now, CancellationToken cancellationToken)
+    {
+        options = NormalizeAccessOptions(options, allowProvider: true);
+        if (resource.Status != ResourceStatus.ResourceStatusReady)
+        {
+            throw new AppError(409, "资源尚未上传完成", reason: "resource_not_ready");
+        }
+        if (!IsLocalProvider(resource.Provider))
+        {
+            throw AppError.New(501, "当前 .NET 后端尚未实现云对象存储资源投递，请使用本地存储（待确认 #25）");
+        }
+        TimeSpan ttl = options.Purpose == PurposeProvider ? TimeSpan.FromHours(4) : TimeSpan.FromMinutes(5);
+        DateTime expires = now + ttl;
+        if (options.ExpiresAt is DateTime capped && capped < expires)
+        {
+            expires = capped;
+        }
+        if (expires <= now)
+        {
+            throw AppError.Forbidden("资源授权已过期");
+        }
+        string actualVariant = VariantOriginal;
+        string fallbackReason = "";
+        if (options.Variant == VariantPlayback
+            && resource.PlaybackStatus == PlaybackStatusReady
+            && !string.IsNullOrEmpty(resource.PlaybackObjectKey))
+        {
+            actualVariant = VariantPlayback;
+        }
+        else if (options.Variant == VariantPlayback)
+        {
+            fallbackReason = "playback_not_ready";
+        }
+        string url = await SignedResourceAccessUrlAsync(
+            resource, actualVariant, expires, publicBaseUrl: options.Purpose == PurposeProvider,
+            cancellationToken).ConfigureAwait(false);
+        TimeSpan remaining = expires - now;
+        return new ResourceAccess(
+            resource.ID, options.Variant, actualVariant, url, DeliveryLocal, now, expires,
+            now + TimeSpan.FromTicks(remaining.Ticks * 4 / 5),
+            resource.ETag + ":" + resource.PlaybackStatus + ":" + LocalDeliveryRevision,
+            fallbackReason);
+    }
+
+    /// <summary>
+    /// 签发平台公开下发地址。对应 Go: <c>signedResourceAccessURL</c>；
+    /// provider-input 需要模型上游可读的绝对 HTTPS 地址，其余用途返回受控相对路径。
+    /// </summary>
+    private async Task<string> SignedResourceAccessUrlAsync(
+        Resource resource, string variant, DateTime expires, bool publicBaseUrl, CancellationToken cancellationToken)
+    {
+        string expiry = new DateTimeOffset(expires).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string signature = ComputePublicResourceSignature(resource.ID, variant, expiry);
+        string path = "/api/public/resources/" + Uri.EscapeDataString(resource.ID) + "/file";
+        string query = "expires=" + Uri.EscapeDataString(expiry)
+            + "&signature=" + Uri.EscapeDataString(signature)
+            + "&variant=" + Uri.EscapeDataString(variant);
+        if (!publicBaseUrl)
+        {
+            return path + "?" + query;
+        }
+        Uri baseUri = await PublicResourceBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(baseUri.Scheme, "https", StringComparison.Ordinal))
+        {
+            throw AppError.BadAuthRequest("模型读取平台资源需要配置 HTTPS 公网访问地址");
+        }
+        return new Uri(baseUri, path + "?" + query).ToString();
+    }
+
+    /// <summary>
+    /// 平台公网访问基地址。对应 Go: <c>publicResourceBaseURL</c> +
+    /// <c>validatePublicResourceBaseURL</c>（平台存储设置优先，其次 CANVAS_PUBLIC_BASE_URL）。
+    /// </summary>
+    private async Task<Uri> PublicResourceBaseUrlAsync(CancellationToken cancellationToken)
+    {
+        string platformBaseUrl = _storageSettings is null
+            ? ""
+            : await _storageSettings.PlatformPublicBaseUrlAsync(cancellationToken).ConfigureAwait(false);
+        string envBaseUrl = Environment.GetEnvironmentVariable("CANVAS_PUBLIC_BASE_URL") ?? "";
+        string raw = platformBaseUrl.Length > 0 ? platformBaseUrl : envBaseUrl;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw AppError.BadAuthRequest("服务器本地存储尚未配置服务器访问地址，请设置 CANVAS_PUBLIC_BASE_URL 或在存储设置中配置公网访问地址（或改用 OSS 存储）");
+        }
+        Uri parsed = await OpenAICanvas.Outbound.OutboundGuard.ValidateOutboundUrlAsync(raw).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(parsed.Query) || !string.IsNullOrEmpty(parsed.Fragment))
+        {
+            throw AppError.BadAuthRequest("服务器访问地址不能包含查询参数或片段");
+        }
+        if (parsed.AbsolutePath.TrimEnd('/').EndsWith("/api", StringComparison.Ordinal))
+        {
+            throw AppError.BadAuthRequest("服务器访问地址请填写根地址，不要包含 /api");
+        }
+        return parsed;
+    }
+
     
     /// <summary>
     /// 匿名签名下发：校验 expires/signature 后打开资源流。
-    /// 对应 Go: <c>OpenPublicResourceRange</c>。
+    /// 对应 Go: <c>OpenPublicResourceRange</c>。签名覆盖 <c>id\nvariant\nexpires</c>，
+    /// 变体归一化非法时 400；playback 请求在副本就绪时下发副本，否则回退原件。
     /// </summary>
     public async Task<ResourceStream> OpenPublicResourceRangeAsync(
-        string id, string? expires, string? signature, string? rangeHeader,
+        string id, string? expires, string? signature, string? variant, string? rangeHeader,
         CancellationToken cancellationToken = default)
     {
         Resource? resource = await _repository.ResourceAsync(id, cancellationToken).ConfigureAwait(false);
@@ -168,7 +439,26 @@ public sealed class ResourceDomainService
         {
             throw AppError.Forbidden("匿名下载链接无效");
         }
-        VerifyPublicResourceSignature(resource.ID, expires, signature);
+        string normalizedVariant = (variant ?? "").Trim();
+        if (normalizedVariant.Length == 0)
+        {
+            normalizedVariant = VariantOriginal;
+        }
+        if (normalizedVariant is not (VariantOriginal or VariantPlayback))
+        {
+            throw AppError.BadAuthRequest("资源变体无效");
+        }
+        VerifyPublicResourceSignature(resource.ID, normalizedVariant, expires, signature);
+        if (normalizedVariant == VariantPlayback
+            && resource.PlaybackStatus == PlaybackStatusReady
+            && !string.IsNullOrEmpty(resource.PlaybackObjectKey))
+        {
+            ResourceStream? playback = await OpenPlaybackAsync(resource, cancellationToken).ConfigureAwait(false);
+            if (playback is not null)
+            {
+                return playback;
+            }
+        }
         return await OpenResourceRangeAsync(resource, rangeHeader, cancellationToken).ConfigureAwait(false);
     }
 
@@ -313,9 +603,9 @@ public sealed class ResourceDomainService
 
     /// <summary>
     /// 校验匿名下发的 expires/signature。
-    /// 对应 Go: <c>verifyPublicResourceSignature</c>。
+    /// 对应 Go: <c>verifyPublicResourceSignature</c>；签名覆盖 <c>id\nvariant\nexpires</c>。
     /// </summary>
-    public void VerifyPublicResourceSignature(string resourceId, string? expires, string? signature)
+    public void VerifyPublicResourceSignature(string resourceId, string variant, string? expires, string? signature)
     {
         if (string.IsNullOrWhiteSpace(expires) || string.IsNullOrWhiteSpace(signature))
         {
@@ -330,7 +620,7 @@ public sealed class ResourceDomainService
             throw AppError.Forbidden("匿名下载链接已过期");
         }
         // 与 Go 的 hmac.Equal 一致：定长比较，避免时序侧信道。
-        byte[] expected = System.Text.Encoding.UTF8.GetBytes(ComputePublicResourceSignature(resourceId, expires));
+        byte[] expected = System.Text.Encoding.UTF8.GetBytes(ComputePublicResourceSignature(resourceId, variant, expires));
         byte[] actual = System.Text.Encoding.UTF8.GetBytes(signature);
         if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expected, actual))
         {
@@ -339,14 +629,14 @@ public sealed class ResourceDomainService
     }
 
     /// <summary>
-    /// 生成匿名下发签名：<c>HMAC-SHA256(settingsKey, id + "\n" + expires)</c> 的 base64 RawURL。
-    /// 对应 Go: <c>signPublicResource</c>。
+    /// 生成匿名下发签名：<c>HMAC-SHA256(settingsKey, id + "\n" + variant + "\n" + expires)</c>
+    /// 的 base64 RawURL。对应 Go: <c>signPublicResource</c>（payload 含资源变体）。
     /// </summary>
     /// <remarks>密钥为设置加密密钥（<c>data/.settings-key</c>，32 字节）；未配置时与 Go 的 nopHost 一致。</remarks>
-    public string ComputePublicResourceSignature(string resourceId, string expires)
+    public string ComputePublicResourceSignature(string resourceId, string variant, string expires)
     {
         byte[] key = SettingsEncryptionKey() ?? [];
-        byte[] data = System.Text.Encoding.UTF8.GetBytes(resourceId + "\n" + expires);
+        byte[] data = System.Text.Encoding.UTF8.GetBytes(resourceId + "\n" + variant + "\n" + expires);
         byte[] digest = System.Security.Cryptography.HMACSHA256.HashData(key, data);
         return Convert.ToBase64String(digest).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
