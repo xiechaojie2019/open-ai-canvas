@@ -10,6 +10,7 @@ using OpenAICanvas.Protocol;
 using OpenAICanvas.Providers;
 using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Providers;
+using OpenAICanvas.Platform;
 
 namespace OpenAICanvas.Application;
 
