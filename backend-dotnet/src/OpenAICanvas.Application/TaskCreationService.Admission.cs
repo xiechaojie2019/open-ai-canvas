@@ -406,6 +406,10 @@ public sealed partial class TaskCreationService
         {
             throw ModelSelectionError("指定的模型未配置请求协议");
         }
+        string protocol = ChannelModelProtocolNormalization.Normalize(
+            channel.APIFormat,
+            channelModel.Capability,
+            channelModel.Protocol);
 
         Dictionary<string, JsonElement> nextConfig = new(StringComparer.Ordinal);
         foreach (KeyValuePair<string, JsonElement> pair in config)
@@ -521,7 +525,7 @@ public sealed partial class TaskCreationService
         ChannelModelPriceTier? priceTier = ModelSku.ChannelModelPriceTierForIntent(channelModel, pricingIntent)
             ?? ModelSku.ChannelModelPriceTierForIntent(channelModel, intent);
         if (priceTier is null
-            || !ValidatePriceTierPrice(priceTier, channelModel.Capability, channelModel.Protocol))
+            || !ValidatePriceTierPrice(priceTier, channelModel.Capability, protocol))
         {
             throw new AppError(400, "指定的模型未配置当前规格的有效价格", reason: "model_price_not_configured");
         }
@@ -532,9 +536,9 @@ public sealed partial class TaskCreationService
         nextConfig["priceTierId"] = JsonSerializer.SerializeToElement(priceTier.ID);
         nextConfig["providerModelKey"] = JsonSerializer.SerializeToElement(
             LogicalModelService.FirstNonEmpty(priceTier.ProviderModelKey, channelModel.ProviderModelKey, channelModel.ModelKey));
-        nextConfig["interfaceType"] = JsonSerializer.SerializeToElement(channelModel.Protocol);
+        nextConfig["interfaceType"] = JsonSerializer.SerializeToElement(protocol);
         nextConfig["apiFormat"] = JsonSerializer.SerializeToElement(
-            ChannelAPIFormatForProtocol(channel.APIFormat, channelModel.Protocol));
+            ChannelAPIFormatForProtocol(channel.APIFormat, protocol));
         input["config"] = JsonSerializer.SerializeToElement(nextConfig);
         return input;
     }

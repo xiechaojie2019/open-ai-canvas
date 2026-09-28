@@ -536,11 +536,15 @@ public sealed class TaskWorkerService
             throw new InvalidOperationException("系统渠道模型标识不一致");
         }
 
+        string protocol = ChannelModelProtocolNormalization.Normalize(
+            channel.APIFormat,
+            channelModel.Capability,
+            channelModel.Protocol);
         config.ChannelID = channel.ID;
-        config.InterfaceType = channelModel.Protocol;
-        config.APIFormat = channelModel.Protocol is ChannelInterfaceType.ChannelInterfaceGeminiVeo
+        config.InterfaceType = protocol;
+        config.APIFormat = protocol is ChannelInterfaceType.ChannelInterfaceGeminiVeo
             or ChannelInterfaceType.ChannelInterfaceGeminiImage ? "gemini"
-            : channelModel.Protocol == ChannelInterfaceType.ChannelInterfaceClaudeAPI ? "claude"
+            : protocol == ChannelInterfaceType.ChannelInterfaceClaudeAPI ? "claude"
             : channel.APIFormat;
         config.BaseURL = channel.BaseURL;
         config.APIKey = channel.APIKey;

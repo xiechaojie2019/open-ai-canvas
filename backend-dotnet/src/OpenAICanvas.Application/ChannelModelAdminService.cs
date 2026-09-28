@@ -747,7 +747,10 @@ public sealed class ChannelModelAdminService
         {
             throw AppError.BadAuthRequest("请选择有效的模型请求协议");
         }
-        string protocol = metadata.Id;
+        string protocol = ChannelModelProtocolNormalization.Normalize(
+            channel.APIFormat,
+            capability,
+            metadata.Id);
         string expected = ProtocolRegistry.CapabilityOf(metadata);
         if (expected.Length > 0 && expected != capability)
         {
