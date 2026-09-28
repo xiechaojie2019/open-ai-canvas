@@ -1,0 +1,110 @@
+name: open-ai-canvas-dotnet
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-open_ai_canvas}
+      POSTGRES_USER: ${POSTGRES_USER:-open_ai_canvas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须配置 PostgreSQL 密码}
+    volumes:
+      - ${CANVAS_POSTGRES_DATA_PATH:-postgres-data}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - ${CANVAS_REDIS_DATA_PATH:-redis-data}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    image: open-ai-canvas-backend-dotnet:local
+    build:
+      context: ..
+      dockerfile: backend-dotnet/Dockerfile
+    command: ["/app/tools/OpenAICanvas.Tools", "migrate-schema", "up"]
+    environment:
+      CANVAS_BACKEND_DATA_DIR: /data
+      CANVAS_DATABASE_DRIVER: postgres
+      DATABASE_URL: ${DATABASE_URL:?必须配置 PostgreSQL 数据库连接}
+    volumes:
+      - dotnet-backend-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    image: open-ai-canvas-backend-dotnet:local
+    build:
+      context: ..
+      dockerfile: backend-dotnet/Dockerfile
+    environment:
+      CANVAS_BACKEND_ADDR: ":8080"
+      CANVAS_BACKEND_DATA_DIR: /data
+      CANVAS_AUTO_MIGRATE: "false"
+      CANVAS_SHUTDOWN_TIMEOUT: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
+      CANVAS_DATABASE_DRIVER: postgres
+      DATABASE_URL: ${DATABASE_URL:?必须配置 PostgreSQL 数据库连接}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CANVAS_WORKER_CONCURRENCY: ${CANVAS_WORKER_CONCURRENCY:-3}
+      CANVAS_CHANNEL_CONCURRENCY: ${CANVAS_CHANNEL_CONCURRENCY:-3}
+      CANVAS_REGISTRATION_ENABLED: ${CANVAS_REGISTRATION_ENABLED:-false}
+      CANVAS_ALLOW_PRIVATE_UPSTREAMS: ${CANVAS_ALLOW_PRIVATE_UPSTREAMS:-false}
+      CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS: ${CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS:-}
+      CANVAS_CORS_ORIGINS: ${CANVAS_CORS_ORIGINS:-}
+      CANVAS_UPDATER_SOCKET: /run/open-ai-canvas-updater/updater.sock
+      CANVAS_UPDATER_TOKEN: ${CANVAS_UPDATER_TOKEN:-}
+    volumes:
+      - dotnet-backend-data:/data
+      - updater-socket:/run/open-ai-canvas-updater:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${CANVAS_DOTNET_HOST_PORT:-8081}:8080"
+    restart: unless-stopped
+    stop_grace_period: ${CANVAS_SHUTDOWN_TIMEOUT:-10m}
+
+  # Optional protocol-compatible status/check service. It intentionally does not
+  # control the Docker host; update and rollback return an explicit conflict.
+  updater:
+    profiles: ["updater"]
+    image: open-ai-canvas-backend-dotnet:local
+    build:
+      context: ..
+      dockerfile: backend-dotnet/Dockerfile
+    command: ["/app/tools/OpenAICanvas.Tools", "host-updater"]
+    environment:
+      CANVAS_UPDATER_SOCKET: /run/open-ai-canvas-updater/updater.sock
+      CANVAS_UPDATER_TOKEN: ${CANVAS_UPDATER_TOKEN:?启用 updater profile 必须配置 Token}
+      CANVAS_UPDATER_STATE_DIR: /var/lib/open-ai-canvas-updater
+      CANVAS_UPDATER_INSTALL_DIR: /deployment
+      CANVAS_UPDATER_REPOSITORY: ${CANVAS_UPDATER_REPOSITORY:-ddcat-ai/open-ai-canvas}
+      CANVAS_UPDATER_ENV_FILE: ${CANVAS_UPDATER_ENV_FILE:-.env}
+    volumes:
+      - updater-socket:/run/open-ai-canvas-updater
+      - updater-state:/var/lib/open-ai-canvas-updater
+      - ${CANVAS_DOTNET_INSTALL_DIR:-.}:/deployment:ro
+    restart: unless-stopped
+
+volumes:
+  dotnet-backend-data:
+  postgres-data:
+  redis-data:
+  updater-socket:
+  updater-state:

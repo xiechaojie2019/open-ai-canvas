@@ -20,13 +20,12 @@ namespace OpenAICanvas.Application;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>职责边界</b>：宿主掌握订单、凭证存储、网络策略与入账事务；
-/// 适配器（<see cref="IPaymentProvider"/>）只翻译某一家渠道的协议。
+/// <b>适配器边界</b>：宿主掌握订单、凭证存储、网络策略与入账事务；
+/// 支付适配器通过 <c>yingce.payment/v1</c> RPC 插件进程翻译渠道协议。
 /// </para>
 /// <para>
-/// <b>适配器注册表当前为空</b>——内置的微信/支付宝适配器尚未移植（按用户指示暂缓）。
-/// 因此 <c>GET /payments/providers</c> 返回空数组、下单报「未知支付渠道」，
-/// 这与 Go 在「插件未启用」时的行为一致。测试通过注入测试适配器打通全流程。
+/// 官方支付宝/微信适配器由 <see cref="PluginRuntime"/> 从经过校验的官方包加载；
+/// 包缺失、摘要不匹配或运行时不兼容时，注册表保持不可用并拒绝支付写路径。
 /// </para>
 /// </remarks>
 public sealed partial class PaymentService
@@ -314,6 +313,18 @@ public sealed partial class PaymentService
             if (field.Required && (!values.TryGetValue(field.Name, out string? value) || value.Trim().Length == 0))
             {
                 throw AppError.BadAuthRequest($"{field.Label} 不能为空");
+            }
+        }
+
+        if (request.Enabled)
+        {
+            try
+            {
+                await provider.ValidateConfigAsync(values, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                throw AppError.BadAuthRequest(error.Message);
             }
         }
 

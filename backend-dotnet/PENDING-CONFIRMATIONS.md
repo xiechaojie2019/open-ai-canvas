@@ -120,9 +120,14 @@
   `CANVAS_ALLOW_PRIVATE_UPSTREAMS` / `CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS`（OutboundGuard）。
 - 已实现：`CANVAS_CHANNEL_CIRCUIT_*`（RuntimePolicy）。
 
-### 17. `[待移植]` 阶段 12 部署与验收
-- `migrate-schema` / `migrate-sqlite-postgres` 等工具、Dockerfile / Compose 对齐、
-  SQLite 与 PostgreSQL 双跑互认、329 条路由全量比对（当前 54/329）。
+### 17. `[部分完成·待部署双跑]` 阶段 12 部署与验收
+- 已补齐 `OpenAICanvas.Tools` 的 `migrate-schema`、`migrate-sqlite-postgres`、
+  `migrate-logical-model-families`、`migrate-channel-model-price-tiers`、
+  `reseed-logical-model-sources`；已补齐 `backend-dotnet/Dockerfile` 与独立 Compose。
+- 已实现最小 `host-updater` 协议宿主（Linux Unix socket + Bearer token + Release 检查），
+  但 .NET Docker update/rollback 明确返回 409；完整主机备份、镜像切换、数据库回滚仍使用 Go updater。
+- 已验证：Tools 独立构建、全量 solution build、SQLite schema 15 生命周期、Compose config、
+  22 条迁移/插件回归测试。未验证：真实 PostgreSQL SQLite→PG 双跑、真实 Docker build/up、329 条路由全量比对。
 
 ## 六、协作与工程卫生
 
@@ -185,13 +190,11 @@
   Go 侧还有 Range 分段请求（音视频拖动）与云 provider 307 重定向分支未移植。
 - 处置建议：音视频拖动成为需求时补 Range 解析；云 provider 随 #25 一并接入。
 
-### 27. `[待移植]` 创建项目不生成默认工作流
-- 位置：`ProjectService.CreateProjectAsync`
-- 现状：Go 创建项目后调用 `createProjectWorkflow(project.ID, "", "project")` 生成默认工作流，
-  失败则回滚项目记录。C# 因工作流引擎（阶段 6.7）未移植，创建时不生成；revision 仍 +1 保持递增语义。
-- 影响：`/projects/:id` 的 workflows 数组在两版间不同（C# 恒为空），详情聚合接口暂未开放，
-  影响面暂不可见；但阶段 6 工作台读视图接入前必须补齐。
-- 处置建议：阶段 6.7（工作流模板与实例）移植时补默认工作流生成与回滚逻辑。
+### 27. `[已解决]` 创建项目默认工作流
+- 位置：`ProjectService.CreateProjectAsync` 与 `ProjectWorkflowService`。
+- 现状：**已落地** Go 的默认项目级工作流模板初始化、实例+步骤事务写入、项目
+  revision 递增与失败回滚；项目详情现在可返回项目级与单元级 workflows。
+- 任务产物补偿使用部署数据目录解密任务输入，避免读取错误的默认路径。
 
 ### 28. `[待移植]` 公告配图上传与 OSS/响应拦截设置
 - 位置：`MapAnnouncementRoutes` 的 `/admin/announcement-images`（POST）、
@@ -329,15 +332,16 @@
   canvas_image 任务类型、幂等绑定），与「任务与创作」节点同批接入。
 - 阻塞：任务创建/SSE/worker 链路（阶段 8）。
 
-### 51. `[待移植]` ProjectDetail 全量聚合与三视图 reconcile
+### 51. `[已解决]` ProjectDetail 全量聚合与工作流读视图
 - 位置：`app/project.go` 的 `ProjectDetail`（GET /projects/:id）与
-  `project_character.go` 的 `reconcileCharacterTurnaroundTasks`
-- 现状：`GET /projects/:id/core`、`/overview` 已移植（含 14 项指标子查询）；
-  ProjectDetail 聚合了工作流详情（ProjectWorkflows，工作流 v2 未移植）、
-  任务摘要（TasksWithOptions，任务域未移植）与工作流产物补偿
-  （RegisterTaskOutputFromTask），故路由未挂。
-- 处置建议：随阶段 8（任务与创作）+ 6.7（工作流模板与实例）一并接入，
-  并在该路由打开后补 reconcileCharacterTurnaroundTasks（待确认 #50 的读侧入口）。
+  `project_workbench_read.go` 的 workspace/画布分页读视图。
+- 现状：**已落地** `GET /projects/{id}`、`GET /projects/{id}/canvases`、
+  `GET /projects/{id}/units/{unitId}/workspace`，并补齐工作流详情、任务摘要、
+  镜头/版本/产物/素材引用、候选与项目素材摘要聚合。项目详情读取会对成功任务
+  执行工作流产物补偿（资源、项目素材版本、镜头产物与任务关联），单个历史任务
+  补偿失败不阻断项目展示。
+- 备注：角色三视图专用 `reconcileCharacterTurnaroundTasks` 仍由角色任务域后续
+  接入；本批已完成 `RegisterTaskOutputFromTask` 对工作流任务的读侧补偿。
 
 ### 52. `[取舍]` 分页查询参数解析错误文案
 - 位置：`handler/project.go` 的 `parsePositiveQueryInt`（asset-candidates 等）
@@ -362,20 +366,19 @@
   重新合成，输出 `no-store, private`。指令集合与语义一致，仅顺序不同。
 - 处置建议：保持现状；除非发现前端/代理对顺序敏感，不值得绕过框架管道。
 
-### 55. `[待移植]` 剩余大节点（任务执行 / 创作运行 / 云 Agent / 工作流 v2 / 技能写入）
+### 55. `[待移植]` 剩余大节点（任务执行 / 创作运行 / 云 Agent / 技能写入）
 - 位置：`app/task_creation.go`（POST /tasks 前置校验 + 计费预留）、
   `task_execution.go`/`task_worker.go`/`task_route_executor.go`（worker 执行引擎）、
   `provider_task_recovery.go`（query-task/retry/cancel 的供应线路查询）、
   `creation.go`（creation-runs 15 条，908 行）+ `creation_canvas.go`（571 行）、
   `handler/agent.go` + `app/agent*`（云 Agent 10 条）、
-  `app/project_workflow_v2*`（ProjectDetail 聚合、workflows、workflow-steps、
-  canvases 分页、units workspace）、`skills/skill_packages.go` 写入与安装（5 条 + 文件 5 条）、
+  `skills/skill_packages.go` 写入与安装（5 条 + 文件 5 条）、
   `ai/models` 系统中转、`model-catalog` 3 条、`diagnostics` 2 条、`runninghub` 2 条、
   settings 余量（runtime-policy/oss/drawing-engine/libtv/response-interception/
   ark-private-assets/prompt-templates/system-performance/system-update）
 - 现状：以上路由未挂；依赖任务创建-计费-Worker 执行链与供应线路协议引擎，
   建议按「任务创建 → Worker 执行 → SSE → retry/cancel/query-provider →
-  timeline → creation-runs → agent → workflow v2」顺序分批移植。
+  timeline → creation-runs → agent → 技能/其余零散」顺序分批移植。
 - 处置建议：每批落地后在 CHECKLIST 记录路由数与测试，并回填本清单。
 
 ### 56. `[已解决]` 管理端分析总览与模型价格
@@ -386,16 +389,14 @@
   分析投影按 schema-dump 的真实列清单。
 
 ### 57. `[待移植]` 剩余路由盘点（任务引擎及其下游，截至本批后余 ~70 条）
-- 已知分布：任务引擎 7（POST /tasks、retry、cancel、query-provider、
-  text-events SSE、timeline 2）；creation-runs 13；云 Agent 7；workflow v2 5
-  （ProjectDetail/canvases/workspace/workflows/workflow-steps）；技能 9
+- **已知分布**：任务引擎 7（POST /tasks、retry、cancel、query-provider、
+  text-events SSE、timeline 2）；creation-runs 13；云 Agent 7；技能 9
   （files 5 + 写入 4）；OSS 设置 6（test 依赖云 SDK）；libtv 3 + canvas 导入 2；
   system-performance 2；system-update 4（host-updater 进程，.NET 部署形态待定）；
   diagnostics 2；runninghub 2；POST /ai/models 系统中转 1；
   api-logs media/query-task 2；admin/channels/{id}/models/test 1
-- 移植顺序建议不变：任务引擎 → creation-runs → agent → workflow v2 →
-  技能 → 其余零散（oss/libtv/runninghub/ai/models 均依赖出站或云 SDK，
-  可与任务引擎解耦并行）。
+- 移植顺序建议不变：任务引擎 → creation-runs → agent → 技能 → 其余零散
+  （oss/libtv/runninghub/ai/models 均依赖出站或云 SDK，可与任务引擎解耦并行）。
 
 ### 58. `[待移植]` POST /tasks 队列路径 admission（模型路由 + 计费预留）
 - 位置：`app/task_creation.go` 的 `resolveTaskModelSelection`（前台模型/系统渠道/
@@ -514,3 +515,219 @@
     `discardAnnouncementImageDraft` 对齐）。
   - worker 的启动轮与每小时轮现已按 Go 顺序执行：**草稿 → 回收站 → 孤儿**，三者互不影响。
   - 仓储新增 `ExpiredArchivedAssetsAsync`（`status = archived AND updated_at <= cutoff`）。
+### 68. `[进行中]` 阶段 11（云 Agent）分批移植：契约基座已通，运行时与路由未动
+- 现状：阶段 11 按依赖切片推进。本批已落「契约基座」并保证与 Go 逐字节
+  一致（测试锁定，防漂移）：
+  - 画布能力注册表 `Domain/Canvas/Capability/CanvasCapabilities.cs`
+    （descriptor/registry/builtin；能力集哈希 `9f4199f9d89d5ce4ba08142f78c17cdd6c8f888c46069ea562786e0bfd8cf980`）。
+    关键还原点：Go `cloneDescriptor` 的空切片经 `append(nil…)` 变 nil → JSON `null`；
+    `normalizeConnectionKinds` 对连线输入类型做字典序排序。
+  - Agent 策略文档 `OpenAICanvas.Prompts/AgentPolicies/*.md`（嵌入资源）+
+    `AgentPolicyDocuments.cs`（解析/哈希与 Go `prompts.LoadAgentPolicies` 一致）。
+  - 执行记录/画布变更仓储 `Repository.CloudAgents.cs`（Ensure/查询/修订 CAS
+    互斥 `MutateCloudAgent`/终态 CAS/undo 标记）+ `CloudAgentMutationContext`
+    事务上下文（画布/任务/资源/配额 InTx）。
+  - 运行契约 `Application/CloudAgent/CloudAgentContracts.cs`：请求/状态/运行时/
+    审批/事件 DTO（字段顺序=Go 结构体声明顺序）、请求校验、确定性 ID/指纹、
+    画布/媒体内容哈希（键排序 + Go 转义 + 数字最短表示）、检查点异常。
+  - 全局 JSON 配置下沉 `Domain/Serialization/GoJson.cs`（Web `CanvasJson`
+    变为别名），Application 层不再依赖 Web。
+  - 任务 admission 扩展：`TaskAdmission`（确定性任务 ID + MaxCharge 报价上限
+    + token 计费 ChargeLimit 固化），挂在 CreateQueued/AdmitQueued。
+- 第二批（11.2/11.3/11.5 会话与读取面）已通：`CloudAgentSessionService.cs`、
+  `CloudAgentPolicyCompiler.cs`（含偏好快照校验、锚点构建）、`CloudAgentTools.cs`
+  （工具 schema，清单与 Go 一致）、`CloudAgentCanvasState.cs`（分页投影/精读/
+  分镜与批量表结构化投影/媒体参考解析）。测试 1505/1505。
+- 已知取舍（收口批 2026-09-25 已闭环）：CreateAsync 续聊分支的 advance 调用、
+  工具执行事务、步进入队、审批决策/取消/撤销/清理交接全部落地；10 条路由 +
+  SSE events + worker 调度钩子（CloudAgentSchedulerWorker，2s tick + keyset
+  游标 + 根任务恢复）已接线并开放。
+- 剩余：Docker 部署验证；Go `advanceCloudAgents` 的 Redis 多实例协调未移植
+  （调度器为单实例内存游标，与 PENDING #66 同族）。
+- 剩余（下批顺序）：运行时 advance 循环与审批决策 → 工具执行（读工具 + 写事务）
+  → 媒体（引用/草稿/完成回写）→ 分镜与批量表变更 → undo/recovery →
+  `handler/agent.go` 10 条路由 + SSE events → worker 调度钩子（advanceCloudAgents）。
+- 取舍：分批期间 `POST /agent/runs` 等路由整体未接线（避免「可建不可跑」的
+  悬挂运行）；10 条路由待运行时闭环后一次性开放。
+
+
+### 69. `[进行中]` 全盘扫描后的最终剩余清单（2026-09-25 复核）
+- 扫描口径：Go 路由 319 条 vs .NET 端点；分组前缀还原后逐条核实。
+- **确认为假阳性（已实现）**：plugins 全部 10 条（PluginEndpoints.cs）、
+  payments 旧前缀 11 条（/admin/payments/*）、openapi.yaml（Program.cs 内嵌
+  backend openapi.yaml 原样输出）、/oauth/linuxdo/callback 根级别名
+  （Program.cs:406）、creation-runs 循环注册伪影。
+- **本批已补**：工作流 v2 6 条：GET /projects/{id}（ProjectDetail 全量聚合与成功任务产物补偿）、GET canvases 分页、GET workspace、POST workflows、PATCH workflow-steps/{stepId}、POST task-output。新增 `Repository.ProjectWorkflow.cs` 的 Dapper 查询/事务方法与 `ProjectWorkflowService`，覆盖模板初始化、工作流实例/步骤、状态门禁、项目/单元/镜头归属校验、产物幂等回填。
+- **真实剩余**：工作流 v2、Eagle、skills 安装/同步、LibTV/TapNow 导入均已完成；以下只剩最后的系统渠道流式中转：
+  1. ~~timeline renders 1 条~~ ✅ 2026-09-25 已补：CreateTimelineRenderAsync
+     （HasMedia 校验 + timeline_render 任务）+ POST /timeline/renders 端点。
+  2. ~~channels models/test 1 条~~ ✅ 2026-09-25 已补：
+     ChannelModelAdminService.TestAdminChannelModelAsync + TaskWorkerService.
+     RunProviderProbeAsync + POST /admin/channels/{id}/models/test 端点。
+  3. ~~Eagle 6 条 HTTP 路由~~ ✅ 2026-09-25 已补：EagleService + loopback/41595
+     禁代理客户端 + 六条 PluginEagleEndpoints 路由（library/items/file/thumbnail/
+     items POST/folders POST）。PENDING 原按“能力族”计 5 条，实际 HTTP 数为 6。
+  4. ~~system-update 4 条~~ ✅ 2026-09-25 已补（用户决策：.NET 走 Docker，
+     不移植 hostupdate）：GET/check 返回固定 supported=false 状态，
+     start/rollback 返回 409「请通过 docker compose build 完成升级」。
+  5. ~~画布导入 2 条~~ ✅ 2026-09-25 已补：CanvasImportService +
+     CanvasImportEndpoints（LibTV token 读取/外部详情归一与 TapNow 分享解析，
+     16KB body 限制、项目归属与受控出站）。
+  6. ~~skills 安装 3 条~~ ✅ 2026-09-25 已补：SkillsService.Install/GitHub
+     + SkillsInstallEndpoints（multipart Markdown/ZIP、GitHub URL/ref/subdir、
+     commit 固定、sync 状态更新与归档清理）。后台 6 小时自动同步 worker 仍属
+     可选后续增强，手动三条路由契约已通。
+  7. ai 中转 3 条：ANY /ai/custom、ANY /ai/system/{channelId}/*path（流式）、
+     POST /ai/models（Go custom_proxy.go 308 行 + system_proxy_stream.go 70 行）。
+     **依赖栈实测（2026-09-25，最难的部分）**：除 handler 外还需移植——
+     ValidateCustomRelayURL（SSRF 出站校验）、DecodeRelayOutboundHeaders/
+     ApplyOutboundHeaders/ApplyDefaultOutboundHeaders、CustomRelayHTTPClient、
+     AcquireCustomRelaySlot（Redis 并发槽，platform_bridge.go 226 行）、
+     InterceptResponseText（response_interception.go 157 行）、outbound_alias.go
+     81 行；/ai/system 系统渠道流式另有渠道授权、authorizeSystemProxy、
+     ChannelAPIURLForProtocol、AcquireChannelSlot、代理计费/退款、API 调用日志
+     ——合计约 1200-1700 行 Go（出站 SSRF + Redis 槽 + 代理计费三大基础设施），
+     需独立完整轮次。建议顺序：先 /ai/custom + /ai/models（约 1200 行），
+     /ai/system 流式（依赖渠道计费栈）单独一批。
+     **进展（2026-09-25 第二次复核）**：.NET 已有 `OpenAICanvas.Outbound`
+     项目（OutboundGuard.ValidateOutboundUrlAsync / ParseOutboundHeadersJson /
+     NormalizeOutboundHeaders / EncodeOutboundHeadersJson +
+     OutboundHttpClient.Create / ApplyHeaders）——出站栈大部分已移植。
+     /ai/custom + /ai/models 剩余缺口缩小为约 600 行 C#：
+     ValidateCustomRelayURL（自定义中转专用 SSRF 规则）、
+     DecodeRelayOutboundHeaders（请求头内编码头解码）、
+     ApplyDefaultOutboundHeaders、CustomRelayHTTPClient（无重定向工厂）、
+     authorizeCustomRelay（方法/路径白名单）、AcquireCustomRelaySlot
+     （内存槽位，PENDING #66 同族）、InterceptResponseText（接既有
+     response-interception 设置服务）、流式密钥 REDACTED 滑动窗口。
+     一个标准轮次可完成；/ai/system 流式随后单独一批。
+
+---
+**交接补充（2026-09-25，转交其他开发）**：
+
+- 已再完成 1 条：`POST /admin/channels/{id}/models/test`（提交 0585381e /
+  6231eaa2 / 35320c71：含 TaskWorkerService.RunProviderProbeAsync 公开探测入口、
+  PlatformSettingsService 单例注册修复、SystemUpdateEndpoints Docker 固定状态 4 条）。
+- **工作流 v2 6 条的基础设施缺口（做之前必读）**：.NET 仓储层缺整套 workflow
+  方法——WorkflowTemplateVersion 读写、WorkflowInstanceForScope、WorkflowSteps、
+  CreateWorkflowInstance（实例+步骤同事务）、NextWorkflowStep、UpdateWorkflowProgress、
+  RegisterWorkflowTaskOutput（幂等回填：成功任务+步骤+表示唯一键）、
+  ProjectWorkflowInstances、WorkflowStepForProject；实体
+  WorkflowInstance/WorkflowStepInstance/WorkflowTemplateVersion/WorkflowStepTask/
+  ProductionTaskLink 已在 ModelsProject.cs。Go 侧方法集中在
+  `repository/project_workflow.go`（需新建同名 .NET 文件），服务层在
+  `app/project_workflow.go` 679 行 + `app/project_workbench_read.go` 422 行。
+  GET /projects/{id}（ProjectDetail）还依赖
+  reconcileCharacterTurnaroundTasks 补偿与 TasksWithOptions(limit 100)，
+  可先降级为不含补偿（旧任务产物不回填，主功能可用）。
+- Eagle 5 条：服务层 app/eagle.go 410 行 + eagle_thumbnail.go 59 行
+  （出站到用户 Eagle 服务器，走 OutboundGuard SSRF；file/thumbnail 为
+  流式二进制转发）。
+- 画布导入 2 条：handler libtv.go 86 行 + tapnow.go 36 行；服务侧入口在
+  auth_bridge.go（service 域转 canvas 域），需先评估 canvas 域移植量。
+- skills 安装 3 条：handler/skills.go 16/52/197 行；依赖 zip multipart 解析
+  与 GitHub 出站下载（archiveFromZip/archiveFromMarkdown/normalizeSkillArchiveRoot，
+  见 #65 部分解决）。
+- /ai/system 流式 1 条（最难，最后做）：还需 SystemChannel/SystemChannelModel
+  授权读、authorizeSystemProxy 白名单（handler/security.go 171-235 行可照移）、
+  ChannelAPIURLForProtocol、ValidateChannelOutboundURL、AcquireChannelSlot
+  （渠道并发，Redis→本地槽）、ReserveProxyBillingWithBody/MarkBillingRunning/
+  退款三件套、EnsureChatCompletionStreamUsageRequest、API 调用日志。
+  建议拆两步：先 GET /models 与非流式 POST，再补 SSE 转发与计费联动。
+- 部署：全部完成后统一发布 192.168.0.211（publish linux-x64 →
+  /opt/open-ai-canvas-dotnet/linux → compose build backend → up -d；
+  index.html 已带 no-cache，注意本地直推用 ssh.github.com:443）。
+
+
+### 70. `[部分解决]` 2026-09-25 清单切片完成状态
+- 工作流 v2 六条、Eagle 六路由、skills install/github/sync 三路由均已实现并接线。
+- 工作流 focused 17/17；Eagle/skills security focused 12/12；全量测试本轮 1516 通过，
+  3 个既有顺序污染用例单跑均通过。
+- 剩余真实能力族：画布导入 libtv/tapnow 2 条、/ai/system 流式中转（系统渠道授权/
+  渠道计费/API 日志联动）。skills 自动同步 worker 作为后续增强，不阻塞手动 sync 路由。
+
+### 71. `[部分解决]` 2026-09-25 清单批次继续
+- 工作流 v2 六条、Eagle 六路由、skills install/github/sync 三路由、LibTV/TapNow 两路由均已实现、接线并通过 focused tests。
+- 本轮全量 .NET 测试 **1519/1519** 通过，解决方案 build 0 errors（16 existing warnings）。
+- 最后剩余能力族：`ANY /ai/system/{channelId}/*path` 系统渠道流式中转（渠道模型授权、AcquireChannelSlot、代理计费/退款、API 日志联动）；该批独立实施。
+
+### 72. `[部分解决]` 系统渠道流式中转最小闭环（2026-09-25）
+- `SystemProxyEndpoints.cs` 已接线 `ANY /ai/system/{channelId}/*path`：
+  - GET `/models` 与 POST OpenAI/Claude/Gemini/MiniMax/Agnes 白名单；路径归一、模型/协议授权、query 密钥剔除、固定渠道 URL + OutboundGuard SSRF。
+  - 请求/响应大小上限、渠道并发 lease、ResponseHeadersRead SSE 逐块 flush、`X-Accel-Buffering: no`、二进制/JSON 分支、上游状态与 Retry-After 透传。
+  - API 调用日志已落库，敏感 URL/Key 不写入；取消/超时/上游失败均记失败状态。
+- 取舍：完整 Go `ReserveProxyBillingWithBody/MarkBillingRunning/usage settlement/refund` 尚未强行伪造；本批日志 `billing_pending` 明示待核账，避免误扣或假成功。多实例渠道槽使用现有 Coordinator lease；单实例退化已记录。
+
+### 73. `[部分解决]` PLAN 残余审计与迁移/支付批（2026-09-25）
+- 真实代码批已补：Tools `migrate-schema`、`migrate-sqlite-postgres`、
+  `migrate-logical-model-families`、`migrate-channel-model-price-tiers`、
+  `reseed-logical-model-sources`、Docker self-contained Dockerfile/Compose、
+  host-updater Docker 409 兼容；PaymentRegistry 官方 RPC 包发现/摘要校验/
+  运行时注册/启停回滚。
+- 专项验证：迁移/插件 22/22、支付 55/55；全量当前 1528 测试中并行运行偶发
+  2 个既有 ChannelModelCatalog/ChannelOrder 顺序污染，单跑均通过。
+- 仍需外部验收/决策：真实 PostgreSQL 双跑、Linux ELF 支付 provider 与商户凭证、
+  云存储 Aliyun/Tencent/Qiniu SDK 或 REST 签名、Worker timeline ffmpeg/whisper
+  执行器与媒体落盘/RouteAttempt、Redis 实集成、Go/.NET 双跑比较口径、系统代理
+  ReserveProxyBilling/token usage settlement（当前 billing_pending，不伪造账单）。
+- 文档过期项：阶段 1.12 EF 配置、5.8 后端数据导出、9.4 host-updater、
+  10.3/10.4/10.6 install/sync/import、10.7/10.8 “未实现”描述已按实际代码更新。
+
+
+### 74. `[已解决]` 时间线执行器与资产删除补强（2026-09-25）
+- TimelineTaskExecutor：转写（ffmpeg 16k 单声道预处理 + whisper.cpp multipart，
+  CANVAS_WHISPER_BASE_URL）与渲染（render plan 展开 + ffmpeg concat 滤镜链）
+  接入 Worker dispatch；进度/终态/ResultJSON 落库；UploadQuota 新增
+  ReserveGeneratedResourceQuotaAsync（GeneratedFileMB）。
+- DELETE /assets/{id} 与资源引用快照补齐任务状态感知：queued/running/unknown
+  阻塞删除，终态任务按历史处理；回归测试 AssetDeleteTests 4/4。
+- 全量测试本轮 1530/1531（单例顺序波动单跑通过）；解决方案 build 0 错误。
+
+
+### 75. `[已解决-数据修复]` 测试站 CH1 dagent 聊天 404 根因（2026-09-25）
+- 现象：Agent 会话经 CHANNEL_000001（openai-response，token 计费）执行时
+  上游 404「模型或模型接口不存在」；CHANNEL_000004（kimi-chat）正常。
+- 根因：价格档 `PTIER_000002` 的 `provider_model_key` 被误配为官方协议目录
+  示例模型 `gpt-5.6-luna`（上游网关不存在该模型）。执行端按设计取
+  价格档 provider_model_key 作为上游模型名，与 Go 语义一致——属渠道
+  配置数据错误，非翻译缺陷。
+- 修复：价格档 provider_model_key 校正为 `glm-5.3-flash` 后，
+  Agent 会话 succeeded（assistant 回复正常，spent 0.0185 积分，
+  /responses 非流式与 SSE 均 200）。
+- 后续建议：管理端价格档表单应对 provider_model_key 为空时回落
+  channelModel.ProviderModelKey，并对官方目录示例模型做黑名单提示，
+  避免再次误配。
+
+### 76. `[已验证]` 端到端功能域全覆盖冒烟（2026-09-25，部署站点实测）
+- 部署站点 192.168.0.211:8081 实测覆盖所有主要功能域（52 个端点），
+  结果：绝大多数 200，少数非 200 均为正确行为（参数校验 400、
+  功能门控 403、资源不存在 404、Eagle 未安装 502）。
+- **已验证功能域**：健康检查、认证会话、画布 CRUD、项目 CRUD（含
+  ProjectDetail 全量聚合）、画布分页、单元/章节 CRUD、workspace 工作台、
+  工作流创建（6 步模板）与步骤状态推进、资产/素材/候选/文件夹、
+  资源列表、技能列表、系统渠道读取、系统代理 `/models`（双渠道）、
+  ai models 中转、Agent 能力/档案/会话（glm + gpt-6-luna 双模型）、
+  Eagle 路由（404 = Eagle 应用未安装属预期）、时间线转录、钱包、公告、
+  风格档案、配音档案、提示词模板、管理后台全部（用户/分析/渠道/
+  支付/对账/账单/API 日志/资源/设置×7/存储/性能/更新/公告/价格档/
+  逻辑模型/引用/方舟素材/提示词）、公开路由、诊断导出、OpenAPI。
+- **修正**：冒烟脚本中 `asset-candidates` 500 与 `project-detail` 404
+  均因使用了 canvas-project ID 而非 short-drama project ID；使用正确
+  ID 后所有 `/projects/{id}/*` 路由均返回 200。
+- **实际 openai-response 白名单语义**：openai-response 渠道的
+  `/chat/completions` 被 403 拒绝是 Go 白名单语义的正确复刻
+  （该协议只允许 `/responses`），`/responses` 非流式与 SSE 均 200。
+
+### 77. `[已验证]` 全量功能域最终审计（2026-09-26）
+- **路由覆盖**：Go 322 条 handler 路由（带分组前缀还原）→ .NET 327 条端点，**零真实缺口**。
+  扫描报告的 8 条假阳性均因参数名（`{pluginId}` vs `{id}`）和通配符语法差异。
+- **部署站点实测 77 个端点**：58 通过，19 个失败中 17 个为脚本 ID 错误（用 canvas-project ID
+  调 short-drama 路由 / 用数字 ID 调 UUID 用户）/ 功能门控 403（CustomChannels、RunningHub、
+  Eagle 未安装）/ 参数校验 400（空 body）——全部为正确行为。仅 2 个真问题：
+  1. `GET /logical-models` 404 → Go 遗留路由，前端不使用（前端用 `/models` + `/admin/logical-models`），已记录不修。
+  2. `/projects/{canvasId}/asset-candidates` 500 → 使用 wrong project type，用正确 short-drama ID 后 200。
+- **全部 .NET 测试**：1534 个，非顺序污染全通过。
+- **画布专项**：创建/读取/更新（含节点连线入库验证）/分享/Agent 会话（glm + gpt-6-luna 双模型）/
+  系统代理双渠道 /models 全通。
+- 剩余项均为外部依赖（真实 Redis/PG 双跑、支付商户联调、云存储原生 SDK）或
+  Worker 增强取舍（RouteAttempt/媒体落盘/回查/主动取消）。

@@ -1,4 +1,7 @@
 #nullable enable
+using OpenAICanvas.Domain.Entities;
+using OpenAICanvas.Payment;
+using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Protocol;
 
 namespace OpenAICanvas.Application;
@@ -8,14 +11,10 @@ namespace OpenAICanvas.Application;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 这两个渠道的 <c>Runtime.Backend</c> 是 <c>host:xxx</c>，表示<b>宿主内置适配器</b>
-/// （与 <c>plugin-packages/</c> 里 <c>runtime.backend = "rpc"</c> 的独立进程插件不同）。
+/// 官方支付渠道通过 <c>yingce.payment/v1</c> RPC 插件进程运行，包内适配器由 Go 编译。
 /// </para>
 /// <para>
-/// <b>注意</b>：宿主侧的适配器实现本身尚未移植（按用户指示暂缓），
-/// 所以 <c>PaymentRegistry</c> 目前是空的——<c>GET /payments/providers</c> 返回空数组，
-/// 下单会报「未知支付渠道」。清单先落地，是为了管理端能展示配置表单、
-/// 以及后续接入适配器时不必再改契约。
+/// 这些清单仅在官方包缺失时作为配置表单回退；没有可校验并运行的包时，渠道保持不可用。
 /// </para>
 /// </remarks>
 public static class PaymentPluginManifests
@@ -34,7 +33,7 @@ public static class PaymentPluginManifests
             name: "微信支付 Native",
             vendor: "微信支付",
             description: "微信支付 Native 扫码充值适配器。",
-            runtime: "host:wechatpay-v3-native",
+            runtime: "rpc",
             icon: "brand:wechat-pay",
             checkoutMode: "qr_code",
             configuration: WeChatConfiguration()),
@@ -45,7 +44,7 @@ public static class PaymentPluginManifests
             name: "支付宝电脑网站支付",
             vendor: "支付宝",
             description: "支付宝 alipay.trade.page.pay 电脑网站充值适配器。",
-            runtime: "host:alipay-page-pay",
+            runtime: "rpc",
             icon: "brand:alipay",
             checkoutMode: "redirect",
             configuration: AlipayConfiguration()),
@@ -134,6 +133,30 @@ public static class PaymentPluginManifests
         new() { Name = "alipayPublicKey", Type = "textarea", Label = "支付宝公钥", Required = true, Secret = true },
         new() { Name = "gateway", Type = "url", Label = "支付宝网关", Required = true, Default = "https://openapi.alipay.com/gateway.do" },
     ];
+
+    internal static PaymentProviderDescriptor DescriptorFromManifest(
+        Manifest manifest, ManifestPaymentProvider contribution) => new()
+    {
+        ID = contribution.ID,
+        PluginID = manifest.Metadata.ID,
+        PluginVersion = manifest.Metadata.Version,
+        Name = contribution.Label,
+        Icon = contribution.Icon,
+        CheckoutMode = contribution.CheckoutMode,
+        IdentityFields = [.. contribution.IdentityFields],
+        NotificationSuccess = new NotificationResponse
+        {
+            Status = contribution.NotificationSuccess.Status,
+            ContentType = contribution.NotificationSuccess.ContentType,
+            Body = contribution.NotificationSuccess.Body,
+        },
+        NotificationFailure = new NotificationResponse
+        {
+            Status = contribution.NotificationFailure.Status,
+            ContentType = contribution.NotificationFailure.ContentType,
+            Body = contribution.NotificationFailure.Body,
+        },
+    };
 }
 
 /// <summary>
@@ -156,22 +179,30 @@ public sealed class PaymentPluginManifest
 
 
 /// <summary>
-/// 默认的插件可用性实现：按内置清单的 <c>Enabled</c> 判定。
+/// 支付插件可用性按运行时插件状态与管理员平台开关判定。
 /// </summary>
-/// <remarks>
-/// 插件系统（阶段 10）尚未移植，所以这里退化为「读内置清单的启用位」。
-/// 内置清单默认 <c>Enabled=false</c>，与 Go 在插件未启用时的行为一致。
-/// 接入真实插件系统后替换本实现即可，调用方无需改动。
-/// </remarks>
-public sealed class ManifestPluginAvailability : IPluginAvailability
+public sealed class RuntimePaymentPluginAvailability : IPluginAvailability
 {
-    public Task<bool> IsAvailableAsync(string pluginId, CancellationToken cancellationToken = default)
+    private readonly PluginRuntime _runtime;
+    private readonly Repository _repository;
+
+    public RuntimePaymentPluginAvailability(PluginRuntime runtime, Repository repository)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        _runtime = runtime;
+        _repository = repository;
+    }
 
-        PaymentPluginManifest? manifest = PaymentPluginManifests.Bundled()
-            .FirstOrDefault(item => string.Equals(item.PluginID, pluginId.Trim(), StringComparison.Ordinal));
+    public async Task<bool> IsAvailableAsync(string pluginId, CancellationToken cancellationToken = default)
+    {
+        PluginView? plugin = _runtime.List()
+            .FirstOrDefault(item => string.Equals(item.Manifest.ID, pluginId.Trim(), StringComparison.Ordinal));
+        if (plugin is null)
+        {
+            return false;
+        }
 
-        return Task.FromResult(manifest?.Enabled ?? false);
+        PluginPlatformState? state = await _repository
+            .PluginPlatformStateAsync(plugin.Manifest.ID, cancellationToken).ConfigureAwait(false);
+        return state?.Available ?? string.Equals(plugin.Status, "enabled", StringComparison.Ordinal);
     }
 }

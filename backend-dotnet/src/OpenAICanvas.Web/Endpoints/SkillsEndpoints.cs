@@ -15,7 +15,7 @@ namespace OpenAICanvas.Web.Endpoints;
 /// 创建与更新（<c>POST /skills</c>、<c>PUT /skills/{id}</c>）依赖技能包文件写入，
 /// 安装 / 同步 / 文件读取同样另行实现。
 /// </remarks>
-public static class SkillsEndpoints
+public static partial class SkillsEndpoints
 {
     public static void MapSkillsRoutes(this IEndpointRouteBuilder api, CanvasService service)
     {

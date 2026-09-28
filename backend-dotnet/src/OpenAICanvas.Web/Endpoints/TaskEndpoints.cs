@@ -78,6 +78,39 @@ public static class TaskEndpoints
         api.MapPost("/timeline/transcriptions", async (HttpContext context, CancellationToken cancellationToken) =>
             await TimelineTranscriptionHandler(context, service, limiter, policyProvider, cancellationToken));
 
+        // 时间线渲染：本地 ffmpeg 合成，不经模型路由与计费。对应 Go: routes.go 的 timeline/renders。
+        api.MapPost("/timeline/renders", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                if (limiter is not null && policyProvider is not null)
+                {
+                    RuntimePolicySetting policy = policyProvider.Current();
+                    if (!await AuthEndpoints.EnforceRateLimitAsync(
+                            context, limiter, "timeline-render:" + user.ID,
+                            policy.Request.TaskCreatePerMinute, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                    {
+                        return Results.Empty;
+                    }
+                }
+                TimelineRenderRequestDto? request = await ReadJsonAsync<TimelineRenderRequestDto>(
+                    context, 64 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                TaskEntity task = await service.TaskCreations.CreateTimelineRenderAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(task);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         // ------------------------------------------------------------ 重试 / 取消 / 上游查询
 
         api.MapPost("/tasks/{id}/retry", async (

@@ -48,6 +48,7 @@ public interface IPaymentProvider
 /// </summary>
 public sealed class PaymentRegistry
 {
+    private readonly object _lock = new();
     private readonly Dictionary<string, IPaymentProvider> _providers;
 
     /// <summary>
@@ -56,7 +57,14 @@ public sealed class PaymentRegistry
     /// </summary>
     public PaymentRegistry(params IPaymentProvider[] providers)
     {
-        _providers = new Dictionary<string, IPaymentProvider>(providers.Length, StringComparer.Ordinal);
+        _providers = new Dictionary<string, IPaymentProvider>(StringComparer.Ordinal);
+        Replace(providers);
+    }
+
+    /// <summary>原子替换插件运行时快照。</summary>
+    public void Replace(params IPaymentProvider[] providers)
+    {
+        Dictionary<string, IPaymentProvider> next = new(providers.Length, StringComparer.Ordinal);
         foreach (IPaymentProvider provider in providers)
         {
             ArgumentNullException.ThrowIfNull(provider, "payment provider is nil");
@@ -67,24 +75,49 @@ public sealed class PaymentRegistry
                 throw new ArgumentException("payment provider id is empty");
             }
 
-            if (!_providers.TryAdd(id, provider))
+            if (!next.TryAdd(id, provider))
             {
                 throw new ArgumentException($"duplicate payment provider \"{id}\"");
+            }
+        }
+
+        lock (_lock)
+        {
+            _providers.Clear();
+            foreach ((string id, IPaymentProvider provider) in next)
+            {
+                _providers.Add(id, provider);
             }
         }
     }
 
     /// <summary>按 ID 取适配器。对应 Go: <c>Get</c>。</summary>
-    public IPaymentProvider? Get(string id) =>
-        _providers.TryGetValue(id.Trim(), out IPaymentProvider? provider) ? provider : null;
+    public IPaymentProvider? Get(string id)
+    {
+        lock (_lock)
+        {
+            return _providers.TryGetValue(id.Trim(), out IPaymentProvider? provider) ? provider : null;
+        }
+    }
 
     /// <summary>全部描述符（按 ID 升序）。对应 Go: <c>Descriptors</c>。</summary>
-    public List<PaymentProviderDescriptor> Descriptors() =>
-        _providers.Values
-            .Select(provider => provider.Descriptor)
-            .OrderBy(descriptor => descriptor.ID, StringComparer.Ordinal)
-            .ToList();
+    public List<PaymentProviderDescriptor> Descriptors()
+    {
+        lock (_lock)
+        {
+            return _providers.Values
+                .Select(provider => provider.Descriptor)
+                .OrderBy(descriptor => descriptor.ID, StringComparer.Ordinal)
+                .ToList();
+        }
+    }
 
     /// <summary>全部适配器。对应 Go: <c>Providers</c>。</summary>
-    public IReadOnlyCollection<IPaymentProvider> Providers() => _providers.Values;
+    public IReadOnlyCollection<IPaymentProvider> Providers()
+    {
+        lock (_lock)
+        {
+            return _providers.Values.ToArray();
+        }
+    }
 }

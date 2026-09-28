@@ -64,10 +64,9 @@ public sealed class CanvasService
             repository,
             LogicalModels,
             declarativeAdapters: () => Plugins.RegistrySnapshot());
-        UserData = new UserDataService(repository, RuntimePolicy);
         ResourceDelete = new ResourceDeleteService(repository, dataDir);
+        UserData = new UserDataService(repository, RuntimePolicy, ResourceDelete);
         CanvasShares = new CanvasShareService(repository);
-        Projects = new ProjectService(repository);
         ProjectUnits = new ProjectUnitService(repository);
         ProjectAssetFolders = new ProjectAssetFolderService(repository);
         ProjectAssets = new ProjectAssetService(repository);
@@ -81,6 +80,8 @@ public sealed class CanvasService
         AdminAnalytics = new AdminAnalyticsService(repository);
         AdminUsers = new AdminUserService(repository, Auth, CreditPolicy, RuntimePolicy);
         Tasks = new TaskService(repository);
+        ProjectWorkflows = new ProjectWorkflowService(repository, ProjectAssets, ProjectAssetFolders, Tasks, dataDir);
+        Projects = new ProjectService(repository, ProjectWorkflows);
         Finance = new FinanceService(repository, CreditPolicy, Features);
         Skills = new SkillsService(repository, dataDir);
         PromptTemplates = new Prompts.PromptTemplateService(repository);
@@ -98,11 +99,11 @@ public sealed class CanvasService
         CreationRuns.UserData = UserData;
         Diagnostics = new DiagnosticsService(repository, dataDir);
         SystemPerformance = new SystemPerformanceService(repository, dataDir);
-        // 支付适配器注册表默认是空的（内置适配器尚未移植）；测试可注入替身。
+        // 支付适配器注册表复用插件启动加载的官方 RPC provider；测试可注入替身。
         Payments = new PaymentService(
             repository,
-            paymentRegistry ?? new Payment.PaymentRegistry(),
-            pluginAvailability ?? new ManifestPluginAvailability(),
+            paymentRegistry ?? Plugins.PaymentRegistry,
+            pluginAvailability ?? new RuntimePaymentPluginAvailability(Plugins, repository),
             Features);
     }
 
@@ -474,7 +475,7 @@ public sealed class CanvasService
         string userId,
         string id,
         CancellationToken cancellationToken = default) =>
-        ResourceDelete.DeleteUserAssetWithResourcesAsync(userId, id, cancellationToken);
+        UserData.DeleteUserAssetAsync(userId, id, cancellationToken);
 
     /// <summary>对应 Go: <c>Service.UserAssetsByIDs</c>。</summary>
     public Task<List<JsonElement>> UserAssetsByIDsAsync(
@@ -620,6 +621,9 @@ public sealed class CanvasService
     public AdminUserService AdminUsers { get; }
 
     public TaskService Tasks { get; }
+
+    /// <summary>项目工作流 v2 与工作台聚合。对应 Go: <c>project_workflow.go</c>。</summary>
+    public ProjectWorkflowService ProjectWorkflows { get; }
 
     public FinanceService Finance { get; }
 
@@ -943,6 +947,15 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         ChannelAdmin.UpdateAdminChannelModelSortAsync(actor, channelId, modelId, sortOrder, cancellationToken);
 
+    /// <summary>对应 Go: <c>Service.TestAdminChannelModel</c>。</summary>
+    public Task<long> TestAdminChannelModelAsync(
+        User actor,
+        string channelId,
+        ChannelModelRequest request,
+        TaskWorkerService worker,
+        CancellationToken cancellationToken = default) =>
+        ChannelModels.TestAdminChannelModelAsync(actor, channelId, request, worker, cancellationToken);
+
     /// <summary>对应 Go: <c>Service.SaveAdminChannelModel</c>。</summary>
     public Task<Domain.Entities.ChannelModel> SaveAdminChannelModelAsync(
         User actor,
@@ -984,7 +997,30 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         ChannelAdmin.SaveAdminChannelOrderAsync(actor, channelId, ids, expectedIds, cancellationToken);
 
-    /// <summary>对应 Go: <c>Service.DeleteAdminChannelModels</c>。</summary>
+    /// <summary>系统代理读取启用渠道。凭证只供服务端代理使用。</summary>
+    public Task<ModelChannel?> SystemChannelAsync(
+        string channelId, CancellationToken cancellationToken = default) =>
+        Repository.SystemChannelForProxyAsync(channelId.Trim(), cancellationToken);
+
+    /// <summary>系统代理按启用模型键读取渠道模型。</summary>
+    public Task<ChannelModel?> SystemChannelModelAsync(
+        string channelId, string modelKey, CancellationToken cancellationToken = default) =>
+        Repository.ChannelModelByKeyAsync(
+            channelId.Trim(),
+            modelKey.Trim().StartsWith("models/", StringComparison.Ordinal)
+                ? modelKey.Trim()["models/".Length..]
+                : modelKey.Trim(),
+            cancellationToken);
+
+    /// <summary>系统代理轮询路径的协议存在性校验。</summary>
+    public async Task<bool> SystemChannelHasProtocolAsync(
+        string channelId, string protocol, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<ChannelModel> models = await Repository
+            .ChannelModelsAsync(channelId.Trim(), enabledOnly: true, cancellationToken).ConfigureAwait(false);
+        return models.Any(model => string.Equals(model.Protocol, protocol, StringComparison.Ordinal));
+    }
+
     public Task<long> DeleteAdminChannelModelsAsync(
         User actor,
         string channelId,

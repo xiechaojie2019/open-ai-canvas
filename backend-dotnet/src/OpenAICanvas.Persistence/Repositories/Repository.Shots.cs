@@ -42,6 +42,18 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>按镜头 + 版本查版本。对应 Go: <c>ShotRevisionForShot</c>。</summary>
+    public async Task<ShotRevision?> ShotRevisionForShotAsync(
+        string shotId, string revisionId, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await FirstOrDefaultAsync<ShotRevision>(
+            connection,
+            SqlBuilder.Select<ShotRevision>(
+                "id = @revisionId AND shot_id = @shotId", limitOffset: " LIMIT 1"),
+            new { shotId, revisionId }, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>按 ID 查项目资产候选。对应 Go: <c>ProjectAssetCandidate</c>。</summary>
     public async Task<ProjectAssetCandidate?> ProjectAssetCandidateAsync(
         string projectId, string candidateId, CancellationToken cancellationToken = default)

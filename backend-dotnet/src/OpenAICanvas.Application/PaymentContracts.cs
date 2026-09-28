@@ -338,9 +338,8 @@ public sealed class AdminPaymentOrderPage
 /// 插件启用状态查询。对应 Go 的 <c>pluginStateForUser</c>。
 /// </summary>
 /// <remarks>
-/// 插件系统（阶段 10）尚未移植，所以这里抽成接口：
-/// 默认实现按内嵌清单的 <c>Enabled</c> 判定（内置清单默认禁用），
-/// 测试可注入「全部可用」的实现来打通订单流程。
+/// 插件状态接口同时服务支付与其他系统插件；默认实现读取运行时插件状态和平台开关，
+/// 测试可注入替身验证订单流程。
 /// </remarks>
 public interface IPluginAvailability
 {

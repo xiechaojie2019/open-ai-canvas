@@ -32,15 +32,18 @@ public sealed class TaskWorkerService
     private readonly TaskTerminalService _terminal;
     private readonly IRuntimePolicyProvider _policy;
     private readonly Coordinator? _coordinator;
+    private readonly TimelineTaskExecutor? _timeline;
 
     public TaskWorkerService(
         Repository repository,
         IRuntimePolicyProvider policy,
-        Coordinator? coordinator = null)
+        Coordinator? coordinator = null,
+        TimelineTaskExecutor? timeline = null)
     {
         _repository = repository;
         _policy = policy;
         _coordinator = coordinator;
+        _timeline = timeline;
         // CanvasService 只为文本回放收尾服务；未注入时退化为基础任务服务（回放跳过）。
         _terminal = new TaskTerminalService(repository, CanvasService?.Tasks ?? new TaskService(repository));
     }
@@ -138,6 +141,50 @@ public sealed class TaskWorkerService
     }
 
     /// <summary>测试与运维入口：领取并同步处理一个任务。对应 Go: <c>processNextTask</c>。</summary>
+    /// <summary>
+    /// 管理端渠道模型连通性测试：复用真实生成协议与运行时策略，
+    /// 不创建用户任务或计费订单。对应 Go: <c>TestAdminChannelModel</c> 的执行分支。
+    /// </summary>
+    public async Task<long> RunProviderProbeAsync(
+        string capability, TextTaskInput input, CancellationToken cancellationToken = default)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMinutes(10));
+        ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();
+        ProviderRequestContext context = new(_policy, _coordinator, declarativeAdapter: declarativeAdapters);
+        long startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        try
+        {
+            switch (capability)
+            {
+                case "text":
+                    await new ProviderTextTask(context).RunTextTaskAsync(
+                        input, cancellationToken: timeout.Token).ConfigureAwait(false);
+                    break;
+                case "image":
+                    await new ProviderImageTask(context).RunAsync(input, timeout.Token).ConfigureAwait(false);
+                    break;
+                case "video":
+                    await new ProviderVideoTask(context).RunAsync(
+                        input, cancellationToken: timeout.Token).ConfigureAwait(false);
+                    break;
+                case "audio":
+                    await new ProviderAudioTask(context).RunAsync(input, timeout.Token).ConfigureAwait(false);
+                    break;
+                default:
+                    throw AppError.BadAuthRequest("不支持测试的模型能力");
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            bool timeoutHit = !cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested;
+            string message = error.Message;
+            throw AppError.Wrap(
+                timeoutHit ? 504 : 502, "模型测试失败：" + message, error);
+        }
+        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - startedAt;
+    }
+
     public async Task<bool> ProcessNextTaskAsync(CancellationToken cancellationToken = default)
     {
         if (_coordinator is null)
@@ -216,10 +263,33 @@ public sealed class TaskWorkerService
                 return null;
             }
 
-            // 时间线转写/渲染依赖本地 whisper.cpp 与 ffmpeg 执行器（阶段 4.14），到此处直接失败。
             if (claimed.Type is "timeline_transcription" or "timeline_render")
             {
-                throw new InvalidOperationException("任务类型没有可用的执行分支");
+                if (_timeline is null)
+                {
+                    throw new TimelineTaskException("时间线 Worker 未配置本地执行器");
+                }
+
+                await _repository.UpdateTaskProgressForLeaseAsync(
+                    claimed.ID, claimed.LeaseOwner, "准备本地媒体任务", 10, ct).ConfigureAwait(false);
+                Dictionary<string, object?> timelineResult = await _timeline
+                    .ExecuteAsync(claimed, ct).ConfigureAwait(false);
+                latest = await _repository.TaskAsync(claimed.ID, ct).ConfigureAwait(false);
+                if (latest is null)
+                {
+                    throw new InvalidOperationException("任务记录不存在");
+                }
+                if (latest.Status == TaskStatus.TaskStatusCancelled)
+                {
+                    await _terminal.HandleCancelledResultAsync(latest).ConfigureAwait(false);
+                    return null;
+                }
+
+                string timelineResultJSON = JsonSerializer.Serialize(
+                    timelineResult, ProjectCharacterService.GoPayloadOptions);
+                await SaveCompletionWithinQuotaAsync(latest, timelineResultJSON, ct).ConfigureAwait(false);
+                await _terminal.HandleSuccessAsync(latest).ConfigureAwait(false);
+                return null;
             }
 
             string stage = "调用生成模型";
@@ -602,6 +672,14 @@ public sealed class TaskWorkerService
         if (taskType.StartsWith("canvas_audio", StringComparison.Ordinal))
         {
             return TimeSpan.FromMinutes(task.AudioTimeoutMinutes);
+        }
+        if (taskType == "timeline_transcription")
+        {
+            return TimeSpan.FromMinutes(20);
+        }
+        if (taskType == "timeline_render")
+        {
+            return TimeSpan.FromMinutes(60);
         }
         if (taskType.StartsWith("canvas_text", StringComparison.Ordinal))
         {

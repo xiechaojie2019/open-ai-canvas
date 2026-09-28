@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Kernel;
@@ -45,6 +46,36 @@ public static class OutboundGuard
             throw AppError.BadAuthRequest("外部服务地址不允许包含认证信息");
         }
         await ValidateOutboundHostAsync(parsed.Host).ConfigureAwait(false);
+        return parsed;
+    }
+
+    /// <summary>
+    /// 校验本地协议地址只解析到 loopback，供 whisper.cpp 等本机服务使用。
+    /// </summary>
+    public static async Task<Uri> ValidateLoopbackUrlAsync(string rawUrl)
+    {
+        string trimmed = rawUrl.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? parsed)
+            || parsed.Scheme is not ("http" or "https")
+            || parsed.Host.Length == 0
+            || parsed.UserInfo.Length > 0)
+        {
+            throw AppError.BadAuthRequest("本地转写服务地址无效");
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await Dns.GetHostAddressesAsync(parsed.Host).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is SocketException or ArgumentException)
+        {
+            throw AppError.BadAuthRequest("本地转写服务地址解析失败");
+        }
+        if (addresses.Length == 0 || addresses.Any(address => !IPAddress.IsLoopback(address)))
+        {
+            throw AppError.BadAuthRequest("本地转写服务地址必须指向本机");
+        }
         return parsed;
     }
 

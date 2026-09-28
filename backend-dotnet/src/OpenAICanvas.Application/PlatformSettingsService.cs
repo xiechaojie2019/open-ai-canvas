@@ -621,6 +621,17 @@ public sealed class PlatformSettingsService
         await FetchLibTVDetailAsync(projectUUID.Trim(), value.Token, cancellationToken).ConfigureAwait(false);
     }
 
+    internal async Task<string> ReadEnabledLibTVTokenAsync(CancellationToken cancellationToken = default)
+    {
+        (SystemSetting? _, LibTVSettingValue value) = await ReadLibTVSettingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!value.Enabled || value.Token.Length == 0)
+        {
+            throw AppError.BadAuthRequest("LibTV 尚未启用或未配置 Token");
+        }
+        return value.Token;
+    }
+
     private async Task<(SystemSetting? Setting, LibTVSettingValue Value)> ReadLibTVSettingAsync(
         CancellationToken cancellationToken)
     {

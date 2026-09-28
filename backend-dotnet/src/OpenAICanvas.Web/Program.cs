@@ -102,6 +102,7 @@ builder.Services.AddSingleton<OpenAICanvas.Application.CanvasService>(servicePro
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         runtimePolicy: serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
         authHost: serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasAuthHost>(),
+        mailSender: new SmtpMailSender(),
         dataDir: env.DataDir));
 builder.Services.AddSingleton<OpenAICanvas.Web.Security.IRateLimiter, OpenAICanvas.Web.Security.InMemoryRateLimiter>();
 builder.Services.AddSingleton<OpenAICanvas.Platform.IRuntimePolicyProvider,
@@ -136,12 +137,57 @@ builder.Services.AddHostedService<OpenAICanvas.Web.Workers.BillingReviewWorker>(
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.TaskWorkerService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
     serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
-    platformCoordinator));
+    platformCoordinator,
+    new OpenAICanvas.Application.TimelineTaskExecutor(
+        serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>().Features)));
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
         env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
+// 云 Agent 偏好档案（阶段 11.9 首批）。对应 Go 的 app/cloud_agent_profile.go。
+builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
+builder.Services.AddSingleton<OpenAICanvas.Application.EagleService>();
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.PlatformSettingsService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+    env.DataDir));
+builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.CanvasImportService(
+    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+    serviceProvider.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>()));
+// 云 Agent 会话 / 媒体 / 运行时。对应 Go 的 app/cloud_agent*.go 组合根。
+builder.Services.AddSingleton(sp =>
+{
+    OpenAICanvas.Application.CanvasService canvas = sp.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.CloudAgent.CloudAgentSessionService(
+        canvas.Repository,
+        canvas.TaskCreations,
+        canvas.Skills,
+        sp.GetRequiredService<OpenAICanvas.Application.AgentProfileService>(),
+        sp.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+});
+builder.Services.AddSingleton(sp =>
+{
+    OpenAICanvas.Application.CanvasService canvas = sp.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.CloudAgent.CloudAgentMediaService(
+        canvas.Repository, canvas.ModelCatalog);
+});
+builder.Services.AddSingleton(sp =>
+{
+    OpenAICanvas.Application.CanvasService canvas = sp.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService(
+        canvas.Repository,
+        canvas.TaskCreations,
+        sp.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+        sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentMediaService>(),
+        sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
+        canvas.Skills,
+        canvas.TaskLifecycle);
+});
+// 云 Agent 调度器。对应 Go 的 worker 循环内 advanceCloudAgents。
+builder.Services.AddHostedService<OpenAICanvas.Web.Workers.CloudAgentSchedulerWorker>();
 // 外观配置（品牌标识 / 皮肤主题 / 登录页素材）。对应 Go 的 app/appearance*.go。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.Appearance.AppearanceService(
@@ -238,6 +284,7 @@ api.MapCreationRunRoutes(app.Services.GetRequiredService<OpenAICanvas.Applicatio
 api.MapSkillsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapSkillPackageRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapSkillWriteRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapSkillInstallRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapAdminLogMediaRoute(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>());
@@ -263,7 +310,8 @@ api.MapModelRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.Canv
 // 系统渠道管理路由。对应 Go 的 handler.RegisterAuthRoutes / RegisterFinanceRoutes 渠道部分。
 api.MapChannelRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
-    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>());
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.TaskWorkerService>());
 
 // 本地媒体分片上传路由。对应 Go 的 handler.RegisterChunkedUploadRoutes。
 api.MapChunkedUploadRoutes(
@@ -320,6 +368,34 @@ api.MapProjectAssetFolderRoutes(app.Services.GetRequiredService<OpenAICanvas.App
 // 项目单元与画布链接路由。对应 Go 的 handler.RegisterProjectRoutes 单元/链接部分。
 api.MapProjectUnitRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
+// 云 Agent 路由。对应 Go 的 handler.RegisterAgentRoutes。
+api.MapAgentRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.AgentProfileService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
+// 用户自定义渠道中转。对应 Go 的 RegisterCustomRelayRoutes 与 /ai/models。
+api.MapCustomRelayRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>().Features,
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
+
+// 系统渠道服务端代理。对应 Go: /api/ai/system/{channelId}/*path。
+api.MapSystemProxyRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+    app.Services.GetRequiredService<OpenAICanvas.Platform.Coordinator>());
+
+// 系统更新状态（Docker 部署：固定状态，用户决策 2026-09-25）。对应 Go 的 RegisterAdminUpdateRoutes。
+api.MapSystemUpdateRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+
 // 项目素材关联与角色路由。对应 Go 的 handler.RegisterProjectRoutes assets/characters 部分。
 api.MapProjectAssetLinkRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 api.MapProjectCharacterRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
@@ -354,9 +430,15 @@ api.MapCanvasShareRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     env.DataDir);
+api.MapCanvasImportRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasImportService>());
 
 // 插件协议目录路由。对应 Go 的 handler/plugin.go GET /plugins/catalog（插件中心 10.1 另行移植）。
     api.MapPluginRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
+api.MapEagleRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.EagleService>());
     api.MapRunningHubRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());
 
 // 根级 OAuth 回调兼容路由（传统登记地址）。对应 Go: <c>RegisterOAuthCallbackRoutes</c>。

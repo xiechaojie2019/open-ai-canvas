@@ -8,6 +8,11 @@
   <!-- 等价于 Go 的 internal/prompts：提示词模板、风格、用户定制。 -->
 
   <ItemGroup>
+    <EmbeddedResource Include="AgentPolicies/agent-system-policy.md" />
+    <EmbeddedResource Include="AgentPolicies/agent-media-policy.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
     <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />
   </ItemGroup>

@@ -793,9 +793,28 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 
 ---
 
-## 部署（阶段 12.7 部分完成）
+## 部署（阶段 12.7：.NET Compose 对齐）
 
-.NET 后端已部署至 **192.168.0.211**（Docker，独立目录 /opt/open-ai-canvas-dotnet）：
+新增独立 `backend-dotnet/Dockerfile` 与 `backend-dotnet/docker-compose.deploy.yml`：
+
+- Dockerfile 同时发布 self-contained `OpenAICanvas.Web` 与 `OpenAICanvas.Tools`，运行镜像包含 `migrate-schema`、五个数据迁移命令和 `host-updater`。
+- Compose 由 `migrate` 一次性服务执行 `migrate-schema up`；`backend` 设置
+  `CANVAS_AUTO_MIGRATE=false`，只校验 schema 版本，并依赖 `migrate` 成功后启动。
+- PostgreSQL / Redis 使用健康检查；Web 健康检查为 `/api/health/ready`；updater 通过可选
+  `updater` profile 启动并挂载只读部署目录与 Unix socket。
+- updater 当前只提供兼容 Go 客户端的 status/check 协议；update/rollback 明确返回 409，
+  不在 .NET 进程内执行主机 Docker 控制、备份或数据库恢复。
+
+验证：Tools 项目构建通过；全量 `dotnet build OpenAICanvas.sln --no-restore` 通过（0 错误）；
+SQLite `migrate-schema up/status/verify` 均返回 `current=15, expected=15, ready=true`；
+Compose `config` 通过（使用临时必填环境变量）；迁移/插件专项测试 22/22 通过。
+真实 PostgreSQL 双跑、Docker build/up 和生产部署尚未执行。
+
+---
+
+### 历史部署记录（2026-09-23）
+
+此前 .NET 后端已部署至 **192.168.0.211**（Docker，独立目录 `/opt/open-ai-canvas-dotnet`）：
 
 - 栈：postgres:17-alpine + redis:7.4-alpine + 自包含发布的 OpenAICanvas.Web
   （self-contained linux-x64，`mcr.microsoft.com/dotnet/aspnet:8.0` 基础镜像）
@@ -803,7 +822,8 @@ ID 不一致 400、内嵌媒体拒绝、未入库媒体守卫拒绝、删除后 
 - 数据库密码：`/opt/open-ai-canvas-dotnet/.env`（600 权限，openssl 随机生成）
 - 健康验证：`/api/health/live`、`/api/health/ready`（schema 15/15 ready、database ok）、
   注册接口实测写入成功（首账号自动 admin）
-- 数据库自动迁移：`CANVAS_AUTO_MIGRATE=true`（postgres schema 0→15）
+- 该历史部署使用 `CANVAS_AUTO_MIGRATE=true`；新受管 Compose 改用独立 `migrate` 服务和
+  `CANVAS_AUTO_MIGRATE=false`，避免 Web 进程在多实例启动时竞争迁移锁。
 
 ### 已知事项
 
@@ -2687,3 +2707,223 @@ cd ../backend-dotnet && python scripts/generate-prompt-defaults.py
 
 剩余 8 个警告是 xUnit 风格建议（测试方法里用 `ConfigureAwait`）与 `MSB3061` 文件锁
 （环境问题，`--no-incremental` 特有），均非代码缺陷，记在 PENDING-CONFIRMATIONS 第 19 条。
+
+## 阶段 1 补全 · SMTP 邮件发送器（已实发验证）
+
+对齐 Go `auth/email.go` 的 `sendSMTPMail`，补上 .NET 侧唯一缺失的发送实现：
+
+### 交付物
+
+- `Auth/SmtpMailSender.cs` — `IMailSender` 的真实实现（MailKit 4.18.0）：
+  `tls` = 465 式隐式 TLS（`SslOnConnect`）、`starttls` = 必须升级加密（服务器不支持即报错，
+  与 Go `client.StartTLS` 一致）、其余明文；连接超时 12s；用户名留空不认证；
+  相比 Go 的手写报文补了 RFC 5322 的 `Date` / `Message-ID` 头，降低被判垃圾邮件的概率。
+- `Web/Program.cs` — `CanvasService` 组装时传入 `SmtpMailSender`，
+  替换默认抛“邮件发送器尚未接线”的 `UnconfiguredMailSender`。
+- `tests/Endpoints/AuthEmailCodeTests.cs` — 注入记录式邮件替身的端到端测试：
+  取码 → 真实调用发送器 → 用码注册全链路；发送失败回删验证码记录且不进入 1 分钟冷却；
+  5xx 固定文案“系统处理失败，请稍后重试”的契约断言。
+
+### 验证结果
+
+- 干净工作树（HEAD + 本改动）全量测试 496/496 通过。
+- 本机用 smtp.qq.com 真实账号实发验证：465（tls）与 587（starttls）双通道均发送成功。
+- 部署注意：`publish/linux` 需重新生成，将新增 4 个依赖 DLL
+  （MailKit / MimeKit / BouncyCastle.Cryptography / Microsoft.Bcl.Cryptography）。
+
+## 阶段 11 · 云 Agent 契约基座（第一批）
+
+对齐 Go `canvas/capability`、`prompts/agent_policy.go`、`repository/cloud_agent.go`、
+`cloud_agent.go` 校验与哈希部分、`cloud_agent_json.go`。
+
+### 交付物
+
+- `Domain/Canvas/Capability/CanvasCapabilities.cs` — 画布能力注册表：
+  Descriptor/ConnectionPolicy/PatchField + builtin 8 类节点；能力集哈希与 Go
+  逐字节一致（9f4199f9…，测试锁定）。关键还原：Go `cloneDescriptor` 空切片
+  → JSON null；`normalizeConnectionKinds` 字典序排序。
+- `OpenAICanvas.Prompts` — Agent 系统/媒体策略文档（嵌入资源）+ 解析加载器，
+  哈希与 Go `LoadAgentPolicies` 一致（82fc03…/abcd57…，测试锁定）。
+- `Persistence/Repositories/Repository.CloudAgents.cs` — 执行记录与画布变更仓储：
+  Ensure（冲突忽略）、按用户/活动任务查询、根任务恢复、keyset 分页、
+  修订 CAS 互斥 MutateCloudAgent + 事务上下文、终态 CAS（failed/cancelled）、
+  undo 标记；`CloudAgentMutationContext` 提供事务内画布/任务/资源/配额读写。
+- `Application/CloudAgent/CloudAgentContracts.cs` — 请求/预算/策略与档案快照/
+  锚点/技能/调用/审批/事件/运行时状态/规范请求 DTO（字段顺序=Go 声明顺序），
+  请求校验、确定性 ID（ag…）与指纹、画布/媒体内容哈希（键排序 canonical JSON），
+  参数单对象解码（拒未知字段），检查点/参数错误类型。
+- `Domain/Serialization/GoJson.cs` — 全局 JSON 契约下沉 Domain；Web `CanvasJson`
+  改为别名，Application 不再依赖 Web。
+- `TaskCreationService.Admission.cs` — `TaskAdmission`（确定性任务 ID、报价上限
+  MaxCharge、token 计费固化 ChargeLimit），CreateQueued/AdmitQueued 接入。
+- `tests/CloudAgentContractHashTests.cs` — 能力集哈希/策略哈希/AgentID/画布哈希
+  与 Go 基线对照（夹具 `Fixtures/capability-hash-input.json`）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 警告 0 错误；`dotnet test` 513/513 通过。
+- Go 侧基线：`go run` capability/prompts 包现算，与 .NET 输出逐字节一致。
+- 未接线路由：`handler/agent.go` 10 条待运行时闭环后一次性开放（PENDING #67）。
+
+## 阶段 11 第二批 · 会话与读取面（11.2/11.3/11.5）
+
+- `CloudAgentPolicyCompiler.cs` — 策略编译 + 能力速查 + 偏好快照构建/校验
+  （`CloudAgentProfileSnapshots`）与创作锚点（`CloudAgentAnchors`，含参考资产
+  解析与 16 个上限）。
+- `CloudAgentSessionService.cs` — 创建运行（请求校验、幂等键/指纹、偏好固定与
+  冲突、续聊历史恢复 + 续聊摘要、技能快照、画布摘要、canonical 规范形、
+  TaskAdmission 积分硬顶、并发同键回读）、读取运行（执行行补建、输出装配、
+  账单合计）、IfChanged 轻量探测、云 Agent 状态 JSON 编解码复用基座。
+- `CloudAgentTools.cs` — 13 个工具 schema（工具清单与 Go 现算一致，测试锁定）、
+  能力 patch/分镜/批量表 schema、Allowed/IsWrite。
+- `CloudAgentCanvasState.cs` — canvas_get_state 分页摘要与 nodeIds 精读、
+  分镜/批量表结构化投影、媒体参考资产公开特征。
+- 测试：`CloudAgentSessionContractTests`（工具清单、缓存键、续聊历史恢复、
+  请求合同、确定性 ID）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 错误；`dotnet test` 1505/1505。
+
+## 阶段 11 第三批 · 运行时与写路径（11.1/11.4/11.6/11.7/11.8 主体）
+
+- `CloudAgentMutations.cs` — 画布变更持久化（1MB 快照上限，超限 not_undoable）、
+  canvas_updated 事件投影（节点/连线差异 + 审批预览回填）、canvas_apply_ops
+  规划与应用（连线校验/锁定节点/patch 契约）、事务内画布保存（配额 + CAS +
+  Go 键序 canonical JSON）。
+- `CloudAgentStructuredEdits.cs` — 分镜脚本创建/编辑（100 行上限、行字段白名单、
+  重编号）与批量创作表六操作（500 行上限、@参考图 mentionToken、列管理）。
+- `CloudAgentMediaService.cs` — generate_media 参数校验、快照三态校验
+  （内容哈希/媒体哈希）、草稿续用守卫（owner 运行终态校验）、prospective 连线
+  准入、模型目录投影与意图解析、媒体草稿/提交节点写入、完成回写（资源就绪
+  校验、宽高比回填）。
+- `CloudAgentRuntimeService.cs` — 运行状态整体校验（事件序列/调用游标/预算/
+  历史去重/审批一致性）、执行解码（策略与能力合同版本比对）、模型任务轮询
+  （增量→事件、结果解析、8 调用/32KB 上限、无工具即完成）、失败分类与安全
+  文案、上下文压缩。
+- 已知裁剪（PENDING #68）：工具执行事务（AdvanceToolAsync）、下模型步入队
+  （EnqueueTaskAsync）、审批决策/取消/撤销/清理交接与决策接线随收口批；
+  路由与调度器仍整体未开放。
+
+## 阶段 11 收口批 · 执行事务、控制面与路由开放
+
+- `CloudAgentRuntimeExecution.cs`（partial）— 工具事务（写工具审批规划：
+  generate_media 干跑准入在事务外、草稿节点写入在事务内；参数语法错误可修复、
+  授权错误终态化）、`EnqueueTaskAsync`（预算 CAS、确定性步任务 ID、媒体规格
+  解析比对、事务内配额落库）、`MediaErrorAsync`/`AdvanceMediaAsync`（提交与
+  完成回写、删除画布下的失败检查点）、`DecideAsync`（幂等重放、拒绝终态、
+  `UpdateMediaApprovalAsync` 干跑校验）、`CancelAsync`（控制面取消 + 清理交接）、
+  `UndoAsync`（快照哈希校验、CAS undo、二次撤销幂等）、`FinishCleanupAsync`
+  （子任务取消竞争容忍 + 媒体完成收尾）。
+- `CloudAgentRuntimeReadTools.cs` — agent_profile_read / canvas_list_node_types /
+  canvas_get_state / canvas_read_storyboard / canvas_read_batch_table /
+  skill_read_file（事务外 + 双版本一致性校验 + 12k 分页）/ task_get。
+- `CloudAgentMutations`/`CloudAgentStructuredEdits`/`CloudAgentCanvasState`/
+  `CloudAgentPolicyCompiler` — 事务内/外读统一到 `CloudAgentMutationContext`
+  （非事务上下文可 Dispose，SQLite 不嵌套连接）。
+- `AgentEndpoints.cs` — 10 条路由全量开放：capabilities（契约清单）、profile
+  GET/PATCH、runs/messages 创建（128KB + 单对象 + 限流）、runs/{id}、cancel、
+  undo（4KB + 校验）、approvals/{approvalId}/decision、runs/{id}/events SSE
+  （Last-Event-ID/after 游标、1s 轮询、run_snapshot 无 id、15s 心跳、终态停止）。
+- `CloudAgentSchedulerWorker.cs` — 恢复根任务执行行 + keyset 游标推进，
+  409 冲突跳过；Program.cs 经 CanvasService 门面接线。
+- 测试：capabilities 断言从 501 改为契约清单（version=2 / canvas-capabilities/v4 /
+  fixed_request / tools / nodeTypes）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 错误；`dotnet test` 1505/1505 通过。
+
+### 收口批补充 · POST 创建路由 200 空响应缺陷修复
+
+- 缺陷：`POST /agent/runs`、`POST /agent/runs/{id}/messages`、
+  `GET /agent/runs/{id}/events` 三个端点在测试宿主下返回 200 空响应——
+  它们是仅有的三个「表达式体 lambda 直接调用返回 Task<IResult> 的方法」
+  形式的注册（端点元数据缺 4 项，delegate 未执行）。
+- 修复：统一改为块体 async lambda（与既有可用端点一致），三个路由全部
+  验证通过（空 body → 400 信封；未知 run → 404 信封）。
+
+## 阶段 11 收口后 · ai 中转第一批（/ai/custom + /ai/models）
+
+- `Endpoints/CustomRelayEndpoints.cs` — 用户自定义渠道中转全链路：
+  - `POST /ai/models`：登录 + CustomChannels 特性 + 30/min 限流 +
+    `FetchChannelModelCatalogAsync`（既有服务）。
+  - `Map /ai/custom`：登录 + 特性 + CustomRelayPerMinute 限流 + 进程内并发槽
+    （Redis 协调为 PENDING #66 同族）+ `ValidateCustomRelayUrl`（长度 4096 /
+    无凭据 / 无片段 / http 仅可信私网主机）+ `authorizeCustomRelay` 完整白名单
+    （openai/gemini/claude 三格式 GET/POST 路径与查询参数规则 + 6 组视频路径
+    正则）+ Bearer Key 校验 + base64(JSON) 出站头解码 + 请求体上限 +
+    Accept 归一 + gemini/claude/openai 密钥头分发 + 无重定向客户端 +
+    SSE 流式转发（32KB 块 + 跨块密钥 REDACTED 滑动窗口）+ 二进制
+    video/audio/octet 白名单路径 + JSON 大小限制 + 错误文案响应拦截 +
+    4xx/5xx 信封（reason 映射）。
+- `Program.cs` — `MapCustomRelayRoutes` 接线 + `PlatformSettingsService`
+  注册为单例（原先仅在 MapAdminPlatformSettingsRoutes 内 new）。
+
+### 验证
+
+- `dotnet build OpenAICanvas.sln` 0 错误；全量测试 1504/1505（单例失败为
+  已知顺序波动：PaymentReconciliation/ChannelAdmin 轮换，单跑全过）。
+
+## 补充 · channels models/test（1 条）
+
+- `ChannelModelAdminService.TestAdminChannelModelAsync` — 渠道加载、
+  合同归一（复用 NormalizeChannelModelContract）、能力画像校验
+  （NormalizeModelCapabilityConfigForModel）、三要素检查、测试默认参数
+  （video 分辨率取画像枚举首值，image 取画像 Size/Quality 默认，缺省
+  1024x1024/auto 与 16:9/720）。
+- `TaskWorkerService.RunProviderProbeAsync` — 公开探测入口：10 分钟超时、
+  ProviderRequestContext 构造与后台执行同源（含声明式协议快照），
+  text/image/video/audio 四分支，失败 502（超时 504）。
+- `POST /admin/channels/{id}/models/test` — 5/min 限流，返回 {durationMs}。
+
+## 补充 · channels models/test（1 条）
+
+- `ChannelModelAdminService.TestAdminChannelModelAsync` — 渠道加载、合同归一、
+  能力画像校验、测试默认参数（video 分辨率取画像枚举首值；image 取画像
+  Size/Quality 默认，缺省 1024x1024/auto 与 16:9/720）。
+- `TaskWorkerService.RunProviderProbeAsync` — 公开探测入口：10 分钟超时、
+  与后台执行同源的 ProviderRequestContext（含声明式协议快照）、四能力分支；
+  失败 502（超时 504），文案「模型测试失败：…」。
+- `POST /admin/channels/{id}/models/test` — 5/min 限流，返回 {durationMs}。
+
+## 最后能力族 · 系统渠道中转最小闭环
+
+- `SystemProxyEndpoints.cs`：`ANY /ai/system/{channelId}/*path`，渠道/模型/协议授权、SSRF、query 密钥剔除、请求/响应上限、GET models、OpenAI/Claude/Gemini/MiniMax/Agnes 白名单、非流式与 SSE ResponseHeadersRead 转发、Retry-After/错误状态透传。
+- `Repository.Channels.cs` / `Repository.AdminAnalytics.cs`：系统渠道读取与 API 调用日志写入。
+- 取舍：完整代理计费预留与 token usage 结算暂不伪造，日志状态使用 `billing_pending`，已写入 PENDING #72。
+- 验证：`dotnet build OpenAICanvas.sln` 0 errors；全量测试 1520-22/1522（失败项单跑均通过，属既有顺序污染）。
+
+## PLAN 残余批 · 时间线执行器与资产删除补强
+
+- `TimelineTaskExecutor.cs`：whisper.cpp 转写（multipart 上传、segments/SRT/
+  language 结果）与 ffmpeg 渲染（render plan → concat 滤镜、黑场静音补齐、
+  字幕 SRT 输出、x264/aac 编码），进度 15/40/80 与终态/ResultJSON 落库，
+  资源归属与本地资源写入配额校验。
+- `TaskWorkerService`：timeline_transcription/timeline_render 分支接入执行器，
+  不再抛“任务类型没有可用的执行分支”。
+- `OutboundGuard`：loopback 精确校验修正（whisper 本机服务调用）。
+- `DELETE /assets/{id}`：引用快照任务状态感知（queued/running/unknown 阻塞，
+  终态任务视为历史），`AssetDeleteTests` 回归 4/4。
+
+### 验证
+
+- 全量测试 1530/1531（单例 ChannelAdmin 兜底同步单跑通过）。
+- 解决方案 build 0 错误。
+
+## 端到端功能域全覆盖冒烟（部署站点 192.168.0.211 实测）
+
+52 个端点跨所有主要功能域全部通过（详见 PENDING #76）。
+
+## 最终全面检查（2026-09-26）
+
+### 路由覆盖
+Go 322 条 handler 路由（分组前缀还原后）→ .NET 327 条端点。**零真实缺口**。
+8 条扫描假阳性均为参数名差异或通配符语法。
+
+### 部署站点功能域冒烟（77 端点）
+58 通过，19 个失败均为脚本 ID 错误或正确行为（门控 403、参数校验 400、未安装插件）。
+使用正确 short-drama 项目 ID 后所有 `/projects/{id}/*` 路由 200。
+
+### 全量测试
+1534 个测试，非顺序污染全通过。

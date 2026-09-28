@@ -5,6 +5,7 @@ using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence;
 using OpenAICanvas.Persistence.Repositories;
+using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
 
 namespace OpenAICanvas.Application;
 
@@ -93,8 +94,23 @@ public sealed class ResourceDeleteService
             }
             foreach (ResourceReferenceDocument document in snapshot.Documents)
             {
+                string secondaryJSON = document.SecondaryJSON;
+                if (document.TaskStatus is TaskStatus.TaskStatusSucceeded or
+                    TaskStatus.TaskStatusFailed or TaskStatus.TaskStatusCancelled)
+                {
+                    // 已结束任务的输出和日志属于生成历史，不应阻止用户删除素材；
+                    // 任务输入仍是业务引用，必须继续保留校验。
+                    if (document.Kind is "任务日志" or "任务结果")
+                    {
+                        continue;
+                    }
+                    if (document.Kind == "任务")
+                    {
+                        secondaryJSON = "";
+                    }
+                }
                 HashSet<string> referencedIDs = DocumentReferencedResourceIDs(document.PrimaryJSON, ownedIDSet);
-                foreach (string resourceID in DocumentReferencedResourceIDs(document.SecondaryJSON, ownedIDSet))
+                foreach (string resourceID in DocumentReferencedResourceIDs(secondaryJSON, ownedIDSet))
                 {
                     referencedIDs.Add(resourceID);
                 }

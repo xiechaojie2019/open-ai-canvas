@@ -271,7 +271,62 @@ public sealed class ResourceUploadService
     }
 
     /// <summary>
-    /// 创建资源记录并写入物理对象。
+    /// 写入由本地 Worker 生成的资源。使用 GeneratedFileMB 单文件上限，并固定落本地 provider。
+    /// </summary>
+    public async Task<Resource> UploadGeneratedResourceFromStreamAsync(
+        string userId,
+        string fileName,
+        long size,
+        string kind,
+        int width,
+        int height,
+        long durationMs,
+        Stream file,
+        string declaredMimeType,
+        CancellationToken cancellationToken = default)
+    {
+        if (file is null || size <= 0)
+        {
+            throw AppError.BadAuthRequest("生成资源不能为空");
+        }
+        string day = await _quota.ReserveGeneratedResourceQuotaAsync(userId, size, cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            (Resource? resource, bool stored) = await StoreResourceAsync(
+                userId,
+                kind,
+                fileName,
+                declaredMimeType,
+                size,
+                width,
+                height,
+                durationMs,
+                file,
+                uploadKey: null,
+                cancellationToken,
+                forceLocal: true).ConfigureAwait(false);
+            if (resource is null)
+            {
+                throw new InvalidOperationException("资源写入失败");
+            }
+            if (stored)
+            {
+                await _quota.CommitUserUploadQuotaAsync(userId, size, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _quota.ReleaseUserUploadQuotaAsync(userId, day, size, cancellationToken).ConfigureAwait(false);
+            }
+            return resource;
+        }
+        catch
+        {
+            await _quota.ReleaseUserUploadQuotaAsync(userId, day, size, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     /// 返回 <c>(resource, stored)</c>：<c>stored=false</c> 表示复用已有幂等记录（未新落盘）。
     /// 对应 Go: <c>storeResource</c>（对象存储降级路径等价）。
     /// </summary>

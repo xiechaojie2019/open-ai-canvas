@@ -61,8 +61,8 @@ public sealed class AssetFolderDto
 /// （AssetFromJSON / validateUserAssetDocument / ClientAssetPayload / UpsertUserAsset）。
 /// </summary>
 /// <remarks>
-/// DELETE /assets/:id 的资源级联清理（Go <c>resource_delete.go</c>）依赖资源删除判定链，
-/// 属独立节点，暂未接入（见 CHECKLIST 阶段 5 剩余）。
+/// DELETE /assets/:id 的资源级联清理由 <see cref="ResourceDeleteService"/> 负责，
+/// 入口复用用户归属、引用快照、Outbox 与本地物理资源安全校验。
 /// </remarks>
 public static class AssetLibraryDomain
 {
