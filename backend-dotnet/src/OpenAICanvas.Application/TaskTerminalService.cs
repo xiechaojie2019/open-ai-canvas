@@ -238,6 +238,53 @@ public sealed class TaskTerminalService
         return billingFailure is null ? error : new AggregateException(error, new Exception("任务计费收尾失败", billingFailure));
     }
 
+    /// <summary>
+    /// 后台执行链路发生未处理异常时的最后一道终态兜底。
+    /// 只允许仍由原租约持有且未过期的 running 任务写入 failed，避免覆盖接管任务。
+    /// </summary>
+    public async Task<bool> EnsureFailedTerminalStateAsync(TaskEntity claimed, Exception error)
+    {
+        try
+        {
+            TaskEntity? latest = await _repository.TaskAsync(claimed.ID, CancellationToken.None).ConfigureAwait(false);
+            if (latest is null
+                || latest.Status != TaskStatus.TaskStatusRunning
+                || !string.Equals(latest.LeaseOwner, claimed.LeaseOwner, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            string message = UserFacing(error);
+            bool updated = await _repository.UpdateTaskTerminalStateAsync(
+                latest.ID,
+                latest.LeaseOwner,
+                TaskStatus.TaskStatusRunning,
+                TaskStatus.TaskStatusFailed,
+                "任务失败",
+                message,
+                DateTime.UtcNow,
+                CancellationToken.None).ConfigureAwait(false);
+            if (!updated)
+            {
+                return false;
+            }
+
+            await LogAsync(
+                latest.UserID,
+                latest.ID,
+                "error",
+                "任务失败兜底收尾",
+                message,
+                CancellationToken.None).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            // 兜底路径不能再次阻塞 worker；租约过期后由后续 worker 接管。
+            return false;
+        }
+    }
+
     /// <summary>任务已取消，worker 停止执行。对应 Go: <c>handleAlreadyCancelled</c>。</summary>
     public async Task HandleAlreadyCancelledAsync(TaskEntity task, CancellationToken cancellationToken = default)
     {

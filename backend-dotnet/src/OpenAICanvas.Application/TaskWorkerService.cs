@@ -107,8 +107,16 @@ public sealed class TaskWorkerService
                     }
                     catch (Exception error)
                     {
-                        await _repository.CreateTaskLogAsync(
-                            task.UserID, taskID, "error", "后台任务处理失败", error.Message).ConfigureAwait(false);
+                        await _terminal.EnsureFailedTerminalStateAsync(task, error).ConfigureAwait(false);
+                        try
+                        {
+                            await _repository.CreateTaskLogAsync(
+                                task.UserID, taskID, "error", "后台任务处理失败", error.Message).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            // 任务终态和日志都失败时不能让后台 Task 未观察异常。
+                        }
                     }
                     finally
                     {
@@ -240,14 +248,24 @@ public sealed class TaskWorkerService
         TaskEntity claimed, SlotLease? slot, CancellationToken dispatcherToken = default)
     {
         // 执行不受 HTTP 请求生命周期影响：超时来自任务类型策略，取消只由续租失败或停机触发。
-        using CancellationTokenSource execution = new(TaskExecutionTimeout(claimed.Type));
+        using CancellationTokenSource timeoutCancellation = new();
+        timeoutCancellation.CancelAfter(TaskExecutionTimeout(claimed.Type));
+        using CancellationTokenSource execution = CancellationTokenSource.CreateLinkedTokenSource(
+            timeoutCancellation.Token);
+        int timeoutHit = 0;
+        int leaseLost = 0;
+        using CancellationTokenRegistration timeoutRegistration = timeoutCancellation.Token.Register(
+            () => Interlocked.Exchange(ref timeoutHit, 1));
         CancellationToken ct = execution.Token;
         CancellationTokenSource? renewLoop = null;
         Task renewTask = Task.CompletedTask;
         if (slot is not null)
         {
             renewLoop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            renewTask = Task.Run(() => RenewLeaseLoopAsync(claimed, slot, execution, renewLoop.Token), CancellationToken.None);
+            renewTask = Task.Run(
+                () => RenewLeaseLoopAsync(
+                    claimed, slot, execution, () => Interlocked.Exchange(ref leaseLost, 1), renewLoop.Token),
+                CancellationToken.None);
         }
 
         try
@@ -328,15 +346,26 @@ public sealed class TaskWorkerService
         {
             bool channelSlotFailedBeforeRequest = error is ProviderChannelSlotException;
             return await _terminal.HandleExecutionFailureAsync(
-                claimed, error, providerSucceeded: false, channelSlotFailedBeforeRequest).ConfigureAwait(false);
+                claimed, error, providerSucceeded: false, channelSlotFailedBeforeRequest,
+                CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            if (Volatile.Read(ref leaseLost) != 0 && Volatile.Read(ref timeoutHit) == 0)
+            {
+                // 租约已丢失，允许新 worker 接管，旧 worker 不能覆盖其状态。
+                return null;
+            }
+
+            Exception cancellationError = Volatile.Read(ref timeoutHit) != 0
+                ? new TimeoutException(TaskTimeoutMessage(claimed.Type))
+                : new OperationCanceledException("任务已取消");
             await _terminal.HandleExecutionFailureAsync(
                 claimed,
-                new OperationCanceledException("任务已取消"),
+                cancellationError,
                 providerSucceeded: false,
-                channelSlotFailedBeforeRequest: false).ConfigureAwait(false);
+                channelSlotFailedBeforeRequest: false,
+                CancellationToken.None).ConfigureAwait(false);
             return null;
         }
         finally
@@ -359,7 +388,11 @@ public sealed class TaskWorkerService
 
     /// <summary>15 秒周期续租；失败即取消执行，让任务可被其他 worker 接管。对应 Go: <c>leaseLost</c> goroutine。</summary>
     private async Task RenewLeaseLoopAsync(
-        TaskEntity task, SlotLease slot, CancellationTokenSource execution, CancellationToken stopToken)
+        TaskEntity task,
+        SlotLease slot,
+        CancellationTokenSource execution,
+        Action markLeaseLost,
+        CancellationToken stopToken)
     {
         PeriodicTimer timer = new(TimeSpan.FromSeconds(15));
         try
@@ -374,6 +407,7 @@ public sealed class TaskWorkerService
                 }
                 else
                 {
+                    markLeaseLost();
                     await execution.CancelAsync().ConfigureAwait(false);
                     return;
                 }
