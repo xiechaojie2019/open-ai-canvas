@@ -157,6 +157,36 @@ public class RepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task 手写查询也能映射下划线字段()
+    {
+        await MigrateAsync();
+
+        User user = NewUser("USR_OAUTH_001", "oauth-user");
+        UserIdentity identity = new()
+        {
+            ID = "IDN_000001",
+            UserID = user.ID,
+            Provider = "linuxdo",
+            Subject = "subject-1",
+            ProviderUsername = "oauth-user",
+            AvatarURL = "https://example.test/avatar.png",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+
+        await _repository.CreateOAuthUserAsync(user, identity);
+
+        UserIdentity? loaded = await _repository.UserIdentityAsync("linuxdo", "subject-1");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(user.ID, loaded!.UserID);
+        Assert.Equal("oauth-user", loaded.ProviderUsername);
+        Assert.Equal(identity.AvatarURL, loaded.AvatarURL);
+        Assert.NotEqual(default, loaded.CreatedAt);
+        Assert.NotEqual(default, loaded.UpdatedAt);
+    }
+
+    [Fact]
     public async Task 过期会话被清理_未过期保留()
     {
         await MigrateAsync();

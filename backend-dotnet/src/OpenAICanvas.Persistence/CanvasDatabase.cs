@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Dapper;
 
 namespace OpenAICanvas.Persistence;
 
@@ -86,6 +87,11 @@ public sealed class CanvasDatabase : IAsyncDisposable
 
     public CanvasDatabase(CanvasDatabaseOptions options)
     {
+        // PostgreSQL 既有表使用 snake_case 列名，而 .NET 实体使用 PascalCase。
+        // SqlBuilder 会显式生成列别名；这里为历史手写 Dapper 查询提供统一兜底，
+        // 避免 user_id、created_at 等字段被静默读成实体默认值。
+        DefaultTypeMap.MatchNamesWithUnderscores = true;
+
         _provider = options.ResolveProvider();
         _connectionString = options.ResolveConnectionString();
         (MaxOpenConnections, MaxIdleConnections) = options.PoolSize();
