@@ -2,6 +2,7 @@ import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import { normalizeAssetCategory } from "@/lib/asset-category";
 import { sameCanvasContent } from "@/lib/canvas/canvas-content";
+import { normalizeCanvasProjects } from "@/lib/canvas/canvas-project-normalize";
 
 export type CanvasStorageTombstones = {
     projects: Record<string, number>;
@@ -63,7 +64,7 @@ function normalizeTombstones(value: unknown): CanvasStorageTombstones {
 export function parseCanvasStorageDocument(value: string | null, fallback: CanvasProject[] = []): CanvasStorageDocument {
     if (!value) {
         return {
-            state: { projects: normalizeProjectAssetCategories(fallback) },
+            state: { projects: normalizeProjectAssetCategories(normalizeCanvasProjects(fallback)) },
             version: 0,
             storageRevision: 0,
             tombstones: emptyTombstones(),
@@ -77,7 +78,7 @@ export function parseCanvasStorageDocument(value: string | null, fallback: Canva
     };
     if (!Array.isArray(parsed.state?.projects)) throw new Error("画布持久状态无效");
     return {
-        state: { projects: normalizeProjectAssetCategories(parsed.state.projects as CanvasProject[]) },
+        state: { projects: normalizeProjectAssetCategories(normalizeCanvasProjects(parsed.state.projects)) },
         version: typeof parsed.version === "number" ? parsed.version : 0,
         storageRevision: typeof parsed.storageRevision === "number" && Number.isFinite(parsed.storageRevision) ? parsed.storageRevision : 0,
         tombstones: normalizeTombstones(parsed.tombstones),

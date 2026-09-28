@@ -7,6 +7,7 @@ import { canvasAppearanceBaseTheme, canvasAppearanceForTheme, DEFAULT_CANVAS_BAC
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
 import { normalizeCanvasNodeTimestamps } from "@/lib/canvas/canvas-node-timestamps";
+import { normalizeCanvasProject } from "@/lib/canvas/canvas-project-normalize";
 import { hydrateAssistantImages, resetInterruptedGeneration } from "@/lib/canvas/canvas-project-generation";
 import { listAddedSkills, type Skill } from "@/services/api/skills";
 import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync, forceOverwriteRemoteCanvasSync, loadCanvasProjectForEditing, saveRemoteUserDataNow, subscribeAgentCanvasRefresh } from "@/services/user-data-sync";
@@ -117,6 +118,7 @@ export function useCanvasProjectLifecycle({
         }
         const applyRestoredProject = (targetProject: CanvasProject) => {
             if (cancelled) return;
+            targetProject = normalizeCanvasProject(targetProject);
             const fallbackTheme = useCanvasThemeStore.getState().theme;
             const restoredAppearance = targetProject.appearance
                 ? normalizeCanvasAppearance(targetProject.appearance, fallbackTheme)

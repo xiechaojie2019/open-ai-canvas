@@ -21,6 +21,7 @@ import { repairMissingCanvasAssets, collectCanvasMediaAssetIds, rebindInconsiste
 import { canvasNodeToAsset } from "@/lib/canvas/canvas-node-asset";
 import { applyAgentCanvasPatch, type AgentCanvasPatch } from "@/lib/canvas/agent-canvas-patch";
 import { sha256Hex } from "@/lib/sha256";
+import { normalizeCanvasProject } from "@/lib/canvas/canvas-project-normalize";
 
 let activeRemoteUserId = "";
 type RemoteUserDataPhase = "inactive" | "hydrating" | "ready" | "failed";
@@ -91,7 +92,7 @@ export async function loadCanvasProjectForEditing(id: string, options: { latest?
         }
         let remote: CanvasProject;
         try {
-            remote = (await getRemoteCanvasProject(id)).project;
+            remote = normalizeCanvasProject((await getRemoteCanvasProject(id)).project);
         } catch (error) {
             if (epoch !== sessionEpoch) throw new Error("账号已切换，请重新打开画布");
             const local = useCanvasStore.getState().openProject(id);
@@ -160,7 +161,7 @@ export async function refreshCanvasAfterAgent(id: string) {
     const epoch = sessionEpoch;
     return withRemoteUserDataSyncExclusive(async () => {
         if (!activeRemoteUserId) throw new Error("请先登录再刷新 Agent 画布结果");
-        const { project } = await getRemoteCanvasProject(id);
+        const project = normalizeCanvasProject((await getRemoteCanvasProject(id)).project);
         if (epoch !== sessionEpoch) throw new Error("账号已切换");
         const current = useCanvasStore.getState().projects.find((candidate) => candidate.id === id);
         const baseline = acknowledgedProjects.get(id);
