@@ -712,9 +712,9 @@ export async function saveRemoteUserDataNow(input?: string | readonly string[] |
     const epoch = sessionEpoch;
     if (!activeRemoteUserId) throw new Error("尚未建立云端同步会话，本地内容尚未保存到云端");
     requireRemoteUserDataBaseline();
-    const assertNoConflict = () => {
-        const ids = projectId === undefined ? useCanvasStore.getState().projects.map((project) => project.id)
-            : typeof projectId === "string" ? [projectId] : projectId;
+    const assertNoConflict = (scope = projectId) => {
+        const ids = scope === undefined ? useCanvasStore.getState().projects.map((project) => project.id)
+            : typeof scope === "string" ? [scope] : scope;
         if (ids.some((id) => useSyncProgressStore.getState().syncingProjects[id]?.phase === "conflict")) {
             throw new ApiError("云端画布已有更新，请保留本地草稿并加载最新版本", { status: 409 });
         }
@@ -724,7 +724,9 @@ export async function saveRemoteUserDataNow(input?: string | readonly string[] |
     if (syncPromise) {
         syncQueued = true;
         await syncPromise;
-        assertNoConflict();
+        // Once the in-flight pass succeeds, a scoped caller (for example the
+        // canvas Agent) must not inherit a conflict from an unrelated canvas.
+        assertNoConflict(projectId);
         return;
     }
     syncPromise = withRemoteUserDataSyncExclusive(async () => {

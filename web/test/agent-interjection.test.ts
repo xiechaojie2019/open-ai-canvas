@@ -48,3 +48,11 @@ test("插话走独立接口，不碰轮次接口", async () => {
     expect(api).toContain("/interjections");
     expect(api).toContain("messageId: string");
 });
+
+test("Agent 提交和审批只校验当前画布的云端同步状态", async () => {
+    const panel = await Bun.file(new URL("../src/components/canvas/canvas-cloud-agent-panel.tsx", import.meta.url)).text();
+
+    expect(panel).toContain("await saveRemoteUserDataNow(canvasId);");
+    expect(panel).toContain('if (decision === "approve") await saveRemoteUserDataNow(canvasId);');
+    expect(panel).not.toContain("await saveRemoteUserDataNow();");
+});
