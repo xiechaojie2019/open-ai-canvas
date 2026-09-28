@@ -339,32 +339,6 @@ public static class ChannelEndpoints
             }
         });
 
-        api.MapPost("/admin/channels/{id}/models/test", async (
-            HttpContext context,
-            string id,
-            CancellationToken cancellationToken) =>
-        {
-            try
-            {
-                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
-                    .ConfigureAwait(false);
-                ChannelModelRequest? request = await ReadJsonAsync<ChannelModelRequest>(
-                    context, cancellationToken, maxBytes: 256 << 10).ConfigureAwait(false);
-                if (request is null)
-                {
-                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
-                }
-
-                long durationMs = await service.TestAdminChannelModelAsync(
-                    actor, id, request, cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { durationMs });
-            }
-            catch (Exception error)
-            {
-                return ApiResults.FailService(error, context);
-            }
-        });
-
         // 渠道/渠道模型排序。对应 Go 的 registerChannelOrderRoutes（两条路径循环注册）。
         foreach (string orderPath in new[] { "/admin/channels/order", "/admin/channels/{id}/models/order" })
         {
