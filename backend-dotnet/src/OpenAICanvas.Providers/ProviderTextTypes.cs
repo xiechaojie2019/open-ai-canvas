@@ -141,4 +141,11 @@ public sealed class CanvasTextOptions
 
     [JsonPropertyName("thinking")]
     public bool Thinking { get; set; }
+
+    /// <summary>
+    /// 本次调用的输出上限（思考 + 正文 + 工具参数）；0 表示不限制。
+    /// 对应 Go: <c>canvasTextOptions.MaxOutputTokens</c>。
+    /// </summary>
+    [JsonPropertyName("maxOutputTokens")]
+    public int MaxOutputTokens { get; set; }
 }

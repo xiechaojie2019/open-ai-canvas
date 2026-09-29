@@ -37,6 +37,12 @@ public sealed class TextTaskInput
     public List<ProviderTextMessage> TextHistory { get; set; } = [];
     public CanvasTextOptions TextOptions { get; set; } = new();
     public int MaxOutputTokens { get; set; }
+
+    /// <summary>
+    /// Agent 工具循环的协议中立请求；非空时文本任务走 Agent 分支。
+    /// 对应 Go: <c>canvasGenerationInput.AgentRequests</c>。
+    /// </summary>
+    public AgentToolRequestsInput? AgentRequests { get; set; }
 }
 
 /// <summary>

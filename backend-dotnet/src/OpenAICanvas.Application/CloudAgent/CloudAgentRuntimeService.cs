@@ -29,6 +29,9 @@ public sealed partial class CloudAgentRuntimeService
     private readonly SkillsService _skills;
     private readonly TaskLifecycleService _taskLifecycle;
 
+    /// <summary>逻辑模型目录（预算交集用）；测试可省略，此时逻辑模型走默认窗口。</summary>
+    private readonly LogicalModelService? _logicalModels;
+
     public CloudAgentRuntimeService(
         Repository repository,
         TaskCreationService taskCreation,
@@ -36,7 +39,8 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentMediaService media,
         CloudAgentSessionService sessions,
         SkillsService skills,
-        TaskLifecycleService taskLifecycle)
+        TaskLifecycleService taskLifecycle,
+        LogicalModelService? logicalModels = null)
     {
         _repository = repository;
         _taskCreation = taskCreation;
@@ -45,6 +49,7 @@ public sealed partial class CloudAgentRuntimeService
         _sessions = sessions;
         _skills = skills;
         _taskLifecycle = taskLifecycle;
+        _logicalModels = logicalModels;
     }
 
     // ------------------------------------------------------------ 校验与解码
@@ -648,7 +653,9 @@ public sealed partial class CloudAgentRuntimeService
             await AdvanceToolAsync(run, state, cancellationToken).ConfigureAwait(false);
             return;
         }
-        if (CompactContext(state.Canonical))
+        CloudAgentContextBudget contextBudget = await ContextBudgetForRequestAsync(
+            state.Request, cancellationToken).ConfigureAwait(false);
+        if (CompactContext(state.Canonical, contextBudget))
         {
             // 被移出的读取正文必须可以重新读取。
             state.SkillReads = null;
@@ -659,6 +666,9 @@ public sealed partial class CloudAgentRuntimeService
         await CloudAgentLessons.AttachAsync(
             state.Canonical, _repository, run.UserID, CloudAgentLessons.TaskText(state), cancellationToken)
             .ConfigureAwait(false);
+        // 新鲜事实帧：任务状态从仓库重读，脱离会话记忆；只淘汰旧轮次以适配输入预算。
+        CloudAgentCanonicalRequestDto canonical = await ModelContextAsync(
+            run, state, contextBudget, cancellationToken).ConfigureAwait(false);
         Dictionary<string, JsonElement> stepInput = new(StringComparer.Ordinal)
         {
             ["mode"] = JsonSerializer.SerializeToElement("text"),
@@ -666,7 +676,7 @@ public sealed partial class CloudAgentRuntimeService
             ["agentRequests"] = JsonSerializer.SerializeToElement(
                 new Dictionary<string, JsonElement>(StringComparer.Ordinal)
                 {
-                    ["canonical"] = JsonSerializer.SerializeToElement(state.Canonical, GoJson.WriteOptions),
+                    ["canonical"] = JsonSerializer.SerializeToElement(canonical, GoJson.WriteOptions),
                 }),
             ["config"] = JsonSerializer.SerializeToElement(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
             {
@@ -682,10 +692,10 @@ public sealed partial class CloudAgentRuntimeService
                     CloudAgentPolicyCompiler.ReasoningEnabled(state.Policy.ReasoningMode)),
             }),
         };
-        string canonicalRaw = JsonSerializer.Serialize(state.Canonical, GoJson.WriteOptions);
-        if (canonicalRaw.Length > 192 << 10)
+        if (CloudAgentContextBudgets.RequestEstimatedTokens(canonical) > contextBudget.InputBudgetTokens)
         {
-            await FailAsync(run, state, "模型上下文超过 192KB 上限").ConfigureAwait(false);
+            await FailAsync(run, state, CloudAgentContextBudgets.BudgetMessage(contextBudget))
+                .ConfigureAwait(false);
             return;
         }
         await EnqueueTaskAsync(run, state, "canvas_text", state.Request.Prompt,
@@ -729,10 +739,9 @@ public sealed partial class CloudAgentRuntimeService
     }
 
     /// <summary>历史读取正文移出上下文。对应 Go: <c>compactCloudAgentContext</c>。</summary>
-    private static bool CompactContext(CloudAgentCanonicalRequestDto request)
+    private static bool CompactContext(CloudAgentCanonicalRequestDto request, CloudAgentContextBudget budget)
     {
-        string raw = JsonSerializer.Serialize(request, GoJson.WriteOptions);
-        if (raw.Length < 96 << 10 && request.Messages.Count <= 24)
+        if (CloudAgentContextBudgets.RequestEstimatedTokens(request) < budget.CompactAtTokens)
         {
             return false;
         }
@@ -764,6 +773,38 @@ public sealed partial class CloudAgentRuntimeService
                 && compacted is JsonValue cv && cv.TryGetValue<bool>(out bool done) && done)
             {
                 continue;
+            }
+            // 只省略可重读正文；ID、错误、生成状态、审批等结构化事实逐字保留。
+            if (result.TryGetPropertyValue("nodes", out JsonNode? nodesRaw)
+                && nodesRaw is JsonArray nodes)
+            {
+                JsonArray facts = new();
+                foreach (JsonNode? nodeRaw in nodes)
+                {
+                    if (nodeRaw is JsonObject node)
+                    {
+                        JsonObject fact = new();
+                        if (node.TryGetPropertyValue("id", out JsonNode? idNode) && idNode is not null)
+                        {
+                            fact["nodeId"] = idNode.DeepClone();
+                        }
+                        foreach (string key in new[] { "generation", "generationDraft", "outputReference" })
+                        {
+                            if (node.TryGetPropertyValue(key, out JsonNode? valueNode) && valueNode is not null)
+                            {
+                                fact[key] = valueNode.DeepClone();
+                            }
+                        }
+                        if (fact.Count > 1)
+                        {
+                            facts.Add(fact);
+                        }
+                    }
+                }
+                if (facts.Count > 0)
+                {
+                    result["observedFacts"] = facts;
+                }
             }
             bool omitted = false;
             foreach (string key in new[] { "content", "nodes" })

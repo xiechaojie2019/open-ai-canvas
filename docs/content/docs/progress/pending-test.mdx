@@ -2875,6 +2875,16 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 - [ ] 测试站已部署并 healthy（schema 34/34）；请用前端重新提交一次带参考图的图片编辑任务验证修复生效。
 - [ ] 已知边界保持：云存储 provider 的媒体任务走 URL 路径需配置 HTTPS 公网地址（HTTP 测试站建议本地存储）；v28 任务事实列、skill-usage 聚合、v27 切线路成本重算仍待接入。
 
+## 水合接线补齐（2026-09-29 · 复现退款工单后定位）
+
+c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任务仍报『连接模型服务失败』并退款。任务诊断日志（task_logs『任务失败诊断』）显示真实异常仍是 `InvalidOperationException: 后端任务队列需要 data URL 形式的本地参考素材`——水合代码在，但没有被执行：
+
+- **根因**：`TaskWorkerService.CanvasService` 是可空注入属性（注释标注"测试可用注入"），水合入口的门是 `HasResourceReferences(input) && CanvasService is not null`，而组合根 `Program.cs` 构造 worker 时从未给该属性赋值。生产里 CanvasService 恒为 null，水合被静默跳过，resource: 引用原样进入 multipart 打包必然失败；专项测试全绿是因为测试手动注入了 CanvasService。
+- **修复**：组合根构造 worker 时显式注入 CanvasService（同时让声明式协议快照按设计生效）；水合入口改为有 resource: 引用但缺少 CanvasService 时显式抛错，不再静默降级成误导性的网络失败文案。
+- **排障记录**：『连接模型服务失败，请检查渠道地址和网络』在 .NET 侧是大兜底（`ProviderErrorMessages.UserFacing` default 分支），且 .NET 8 会把出站 ConnectCallback 里的 SSRF 守卫 AppError 包装成 HttpRequestException 同样落入该兜底——出现该文案时应优先查任务诊断日志，不要按字面排查网络。
+- [x] 全量回归 1610/1611（唯一失败 `ChannelAdminTests.更新渠道_完整路径与秘钥保留` 为偶发，单跑通过）；发布 linux-x64 产物并部署测试站，backend healthy（schema 34/34）。
+- [ ] 请用前端再次重新提交一次带参考图的图片编辑任务确认本单闭环；同单可到任务详情日志核对不再出现 data URL 诊断。
+
 ## v16–v34 移植收尾核对与最终缺口清单（2026-09-29）
 
 逐版本核对 Go migrations v1–v34 与 .NET 目录：34 版名称/序号/校验和全部一致（v6/v7 为两端一致的历史顺序兼容切换），功能面已全部落地。以下为核对后**仍未实现**的剩余项，全部是跨管线/跨功能依赖，按优先级排列：
@@ -2919,3 +2929,21 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 
 - **canvas_get_state generation 合并**：媒体能力节点的读取现在带 generation 对象（taskStatus not_submitted / submitBlocked 原因 / 有任务 ID 时以任务行诊断为准合并全部事实），对齐 Go canvas_state.go 的 generation 合并； 增加 canvasID 参数（调用点已同步）。
 - [x] CloudAgent + 任务端点回归 46/46。
+
+### B2 管理员财务汇总 + Agent 模型上下文装配对齐（2026-09-29 · 续三）
+
+**B2（v27 收口）**：
+- 管理员分析总览接入财务汇总（Go `analytics_finance.go` 全量对齐）：`analyticsFinancialRecords`（只统计已结算订单、order 与日志的 user/channel 归属校验、排除 poll/download/upload/workflow-schema/cancel-query/cancel、每订单取最早日志防止重试轮询重复计收入，收入=下单快照 ActualAmount，成本=`CreditCostOps.BillingCreditCost`）、KPI 与模型行合并（`*AnalyticsFinance.add` 语义：部分订单缺成本时 profit/margin 输出 null）、usage CSV 改为 Go v27 的 19 列（收入/成本/利润(微积分)，替换旧估算费用/币种列）并修复双 BOM。
+- 管理员 API 日志成本富化（`DecorateApiCallLogsAsync` 按实际结算渠道写 `creditCostConfigured`/`creditCostMicrocredits`）。
+- **顺带修复潜伏 NRE**：`BuildAnalyticsUsers` 的 `names.GetValueOrDefault(userID)` 对缺键返回 null（Go map 返回 ""），带 model/channelId 过滤的分析查询 500。已补显式空串默认值。
+- 新增 `AdminAnalyticsFinanceTests`（移植 Go `TestAdminAnalyticsFinanceUsesSettledSnapshotsAndDeduplicates`）：结算快照/订单去重/部分成本化 profit=null/CSV 汇总与 KPI 一致/模型与渠道过滤/非管理员 403。
+
+**Agent 模型上下文装配对齐（A 组前置，本轮核心）**：
+- **Providers**：`TextTaskInput.AgentRequests`（canonical + 四协议体）；`ProviderAgentProtocol` 展开（Go `provider_agent_protocol.go` 对齐：消息/工具/工具选择校验、系统提示前置、chat 体 function_call 分组与 type=function 物化、responses 体 function_call/function_call_output、claude 体 system 折叠 cache_control/tool_result/tool_use、gemini 体 functionCall/functionResponse/systemInstruction/toolConfig）；`ProviderTextTask.RunAgentToolAsync`（Go `runAgentToolTask` 对齐：执行时展开防协议污染、chat/claude/responses 分支、思考与输出上限注入、chat 的 tool_choice 兼容性两级降级重试、声明式 Agent 适配器分支）。
+- **Worker**：canvas_text 任务带 agentRequests 时进入 Agent 分支；执行侧 `resolveAgentResourcePlaceholders` 水合（canonical 中 resource: 占位替换/越权校验/Claude base64 封装/Gemini inlineData，创建侧 validateAgentResourcePlaceholders 同语义待接创建校验）；流式与 `MaxOutputTokens` 按文本能力合同判定（Go provider.go StreamText 语义）。
+- **Runtime**：`CloudAgentContextBudgets`（窗口/输出/开销预留/输入预算/压缩阈值，128K 默认）；步骤入队前 `ContextBudgetForRequestAsync`（逻辑模型路由安全交集 → 渠道模型能力合同 → 默认）；`CompactContext` 对齐 Go `compactCloudAgentContext`（按 CompactAtTokens 触发 + observedFacts 投影，替代旧 96KB/条数启发式）；**fresh context frame**（`【运行状态】`+agentContextSource=runtime，仓库重读最近 32 个任务事实 + olderTaskCount，画布归属校验，`CloudAgentTaskFacts.Diagnostic` 复用）；`FitCloudAgentModelContext`（只淘汰完整旧 assistant/tool 轮次，超预算报「请缩小本轮范围」）。
+- **能力合同**：`TextCapabilityConfig` 补 `contextWindowTokens`/`maxOutputTokens`（归一化默认 128000/16384 + Go 同款校验边界）；`CanvasTextOptions` 补 `maxOutputTokens`。
+- 测试：13 个新测试（预算数学/中文保守估算/收敛淘汰轮次/四协议展开/校验拒绝/Agent 执行请求体/tool_choice 降级）；移植过程中发现并修复 Go→C# 零值差异（gemini callNames 缺键）与泛型 List 协变误判。
+- [x] 全量回归 1623/1624（唯一失败 `ChannelOrderTests` 渠道创建为既有并行时序噪音，单跑 4/4 通过）；`TaskQueueAdmissionEndpointTests` 的旧参数声明式能力 JSON 夹具已按 Go 当前契约更新（Go 对该形态同样解码失败，非兼容层）。
+- [ ] 测试站部署后建议验证：管理员分析总览出现 finance 汇总且 CSV 含收入/成本/利润列；Agent 运行多步后任务中心可见 cloud_agent_step 任务（步骤真实带 canonical 出站）。
+- [ ] 仍缺（保持记录）：Agent 步骤的 TextDraft 流式回写（Go taskTextStreamPublisher 对应物，影响打字机效果而非功能）；Go `cloudAgentStepLimits`（策略级单步输出上限/墙钟，RuntimePolicy 无对应字段）；interjections/计划（plan）机制；`cloudAgentPruneInspectedImages`（A 组看图轮内裁剪）；创建侧 agentRequests 占位校验接线。

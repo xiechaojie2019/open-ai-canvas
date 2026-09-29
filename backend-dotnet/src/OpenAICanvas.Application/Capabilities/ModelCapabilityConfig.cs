@@ -24,9 +24,18 @@ public sealed class ModelCapabilityConfig
 
 public sealed class TextCapabilityConfig
 {
+    /// <summary>nil 视为 true（旧配置兼容）。对应 Go: <c>Streaming</c>。</summary>
     [JsonPropertyName("streaming")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Streaming { get; set; }
+
+    /// <summary>供应商总上下文窗口（输入+输出），是模型合同不是传输上限。</summary>
+    [JsonPropertyName("contextWindowTokens")]
+    public int ContextWindowTokens { get; set; }
+
+    /// <summary>供应商单次补全（含思考）输出上限。</summary>
+    [JsonPropertyName("maxOutputTokens")]
+    public int MaxOutputTokens { get; set; }
 
     [JsonPropertyName("references")]
     public TextReferenceConfig References { get; set; } = new();

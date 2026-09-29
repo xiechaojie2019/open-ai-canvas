@@ -56,6 +56,14 @@ public static class ModelCapabilityConfigOps
             }
             TextCapabilityConfig text = ShallowCopy(input.Text);
             text.Streaming ??= true;
+            if (text.ContextWindowTokens == 0)
+            {
+                text.ContextWindowTokens = 128000;
+            }
+            if (text.MaxOutputTokens == 0)
+            {
+                text.MaxOutputTokens = 16384;
+            }
             ModelCapabilityConfig value = new() { Version = 1, Text = text };
             ValidateTextCapabilityConfig(value.Text);
             return value;
@@ -92,6 +100,8 @@ public static class ModelCapabilityConfigOps
     private static TextCapabilityConfig ShallowCopy(TextCapabilityConfig source) => new()
     {
         Streaming = source.Streaming,
+        ContextWindowTokens = source.ContextWindowTokens,
+        MaxOutputTokens = source.MaxOutputTokens,
         References = source.References,
     };
 
@@ -350,6 +360,14 @@ public static class ModelCapabilityConfigOps
     /// <summary>对应 Go: <c>validateTextCapabilityConfig</c>。</summary>
     private static void ValidateTextCapabilityConfig(TextCapabilityConfig value)
     {
+        if (value.ContextWindowTokens is < 4096 or > 10000000)
+        {
+            throw AppError.BadAuthRequest("文本模型上下文窗口必须在 4096-10000000 Token 之间");
+        }
+        if (value.MaxOutputTokens is < 256 or > 1000000 || value.MaxOutputTokens >= value.ContextWindowTokens)
+        {
+            throw AppError.BadAuthRequest("文本模型最大输出 Token 必须小于上下文窗口且在 256-1000000 之间");
+        }
         if (value.References.PromptMaxChars is < 1 or > 1000000)
         {
             throw AppError.BadAuthRequest("提示词最大字符数必须在 1-1000000 之间");

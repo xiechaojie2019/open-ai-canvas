@@ -134,15 +134,25 @@ if (!string.Equals(Environment.GetEnvironmentVariable("CANVAS_DISABLE_BACKGROUND
 builder.Services.AddSingleton<OpenAICanvas.Application.TaskBillingReviewService>();
 builder.Services.AddHostedService<OpenAICanvas.Web.Workers.BillingReviewWorker>();
 // 任务 Worker：领取、租约维护与终态协调（对应 Go task_worker.go）。
-builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.TaskWorkerService(
-    serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
-    serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
-    platformCoordinator,
-    new OpenAICanvas.Application.TimelineTaskExecutor(
+builder.Services.AddSingleton(serviceProvider =>
+{
+    // CanvasService 必须注入：参考素材水合、声明式协议快照都挂在它上面，
+    // 缺失时 resource: 引用不会被解析，multipart 协议在打包阶段必然失败。
+    OpenAICanvas.Application.CanvasService canvas =
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    return new OpenAICanvas.Application.TaskWorkerService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
-        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
-        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
-        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>().Features)));
+        serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+        platformCoordinator,
+        new OpenAICanvas.Application.TimelineTaskExecutor(
+            serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+            serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
+            serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+            canvas.Features))
+    {
+        CanvasService = canvas,
+    };
+});
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
@@ -200,7 +210,8 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentMediaService>(),
         sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
         canvas.Skills,
-        canvas.TaskLifecycle);
+        canvas.TaskLifecycle,
+        canvas.LogicalModels);
 });
 // 云 Agent 调度器。对应 Go 的 worker 循环内 advanceCloudAgents。
 builder.Services.AddHostedService<OpenAICanvas.Web.Workers.CloudAgentSchedulerWorker>();

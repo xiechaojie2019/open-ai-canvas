@@ -106,8 +106,10 @@ public sealed class TaskQueueAdmissionEndpointTests : IDisposable
                 CreatedAt = now,
                 UpdatedAt = now,
             });
+            // 与 Go 契约一致：contextWindowTokens/maxOutputTokens 是整型模型合同；
+            // 旧参数声明式的对象形态在 Go 侧同样无法解码，不再兼容。
             const string textCapabilityJson = """
-                {"version":1,"text":{"references":{"promptMaxChars":1000},"systemPrompt":{"supported":true,"default":""},"maxOutputTokens":{"selection":"range","min":1,"max":8192,"default":2048},"temperature":{"supported":true,"min":0,"max":2,"step":0.1,"default":1}}}
+                {"version":1,"text":{"contextWindowTokens":128000,"maxOutputTokens":8192,"references":{"promptMaxChars":1000}}}
                 """;
             await repository.CreateAsync(new OpenAICanvas.Domain.Entities.ChannelModel
             {

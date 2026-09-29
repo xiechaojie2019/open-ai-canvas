@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text;
+using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Protocol;
 
 namespace OpenAICanvas.Providers;
@@ -355,6 +356,308 @@ public sealed class ProviderTextTask
         ProviderTextOrchestration.ClaudeProtocol => "/messages",
         _ => "/chat/completions",
     };
+
+    // ------------------------------------------------------------ Agent 工具循环
+
+    /// <summary>
+    /// 执行 Agent 工具任务：协议中立请求只在此刻展开为选中渠道的供应商请求体，
+    /// 防止供应商请求体反向污染任务记录，也避免切换模型时复用错误协议。
+    /// 对应 Go: <c>runAgentToolTask</c>。
+    /// </summary>
+    public async Task<Dictionary<string, object?>> RunAgentToolAsync(
+        TextTaskInput input,
+        bool stream,
+        Action<string>? onDelta = null,
+        Action<string>? onReasoningDelta = null,
+        CancellationToken cancellationToken = default)
+    {
+        string interfaceType = (input.Config.InterfaceType ?? "").Trim();
+        IAgentProtocolAdapter? agentAdapter = AgentDeclarativeAdapter(interfaceType, out IProtocolAdapter? adapter);
+        if (input.AgentRequests?.Canonical is { } canonical)
+        {
+            input.AgentRequests = ProviderAgentProtocol.ExpandCanonicalAgentRequest(
+                canonical, input.Config, agentAdapter is not null);
+        }
+        if (agentAdapter is not null)
+        {
+            return await RunDeclarativeAgentAsync(
+                input, stream, adapter!, agentAdapter, onDelta, onReasoningDelta,
+                cancellationToken).ConfigureAwait(false);
+        }
+        if (input.AgentRequests is null)
+        {
+            throw new InvalidOperationException("画布 Agent 工具请求缺少协议参数");
+        }
+        string protocol = ProviderTextOrchestration.ChatCompletionProtocol;
+        string path = "/chat/completions";
+        Dictionary<string, object?>? request = input.AgentRequests.ChatCompletion;
+        if (interfaceType == ChannelInterfaceType.ChannelInterfaceOpenAIResponse)
+        {
+            request = input.AgentRequests.Responses;
+            path = "/responses";
+            protocol = ProviderTextOrchestration.ResponsesProtocol;
+        }
+        else if (interfaceType == ChannelInterfaceType.ChannelInterfaceClaudeAPI)
+        {
+            request = input.AgentRequests.Claude ?? request;
+            path = "/messages";
+            protocol = ProviderTextOrchestration.ClaudeProtocol;
+        }
+        if (request is null)
+        {
+            throw new InvalidOperationException("画布 Agent 工具请求缺少协议参数");
+        }
+        Dictionary<string, object?> body = new(request, StringComparer.Ordinal);
+        if (protocol == ProviderTextOrchestration.ClaudeProtocol && input.AgentRequests.Claude is null)
+        {
+            // 渠道切换后只有 Chat 形态请求时的回落改写（与 Go 一致）。
+            body = ProviderAgentProtocol.ClaudeAgentBody(body);
+        }
+        body["model"] = input.Config.Model;
+        ProviderTextOrchestration.ApplyTextThinking(body, input.TextOptions, protocol);
+        ApplyAgentOutputLimit(body, AgentStepOutputLimit(input), protocol);
+        ProviderTextOrchestration.NormalizeAgentToolChoice(body, input.TextOptions, protocol);
+
+        Dictionary<string, object?>? result = null;
+        try
+        {
+            result = await PostAgentRequestAsync(
+                input, stream, path, body, protocol, onDelta, onReasoningDelta,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (
+            protocol == ProviderTextOrchestration.ChatCompletionProtocol
+            && ProviderTextOrchestration.IsAgentToolChoiceCompatibilityError(error))
+        {
+            if (!ProviderTextOrchestration.IsAutoAgentToolChoice(
+                    body.TryGetValue("tool_choice", out object? toolChoice) ? toolChoice : null))
+            {
+                Dictionary<string, object?> autoBody = new(body, StringComparer.Ordinal)
+                {
+                    ["tool_choice"] = "auto",
+                };
+                try
+                {
+                    return await PostAgentRequestAsync(
+                        input, stream, path, autoBody, protocol, onDelta, onReasoningDelta,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception autoError)
+                    when (ProviderTextOrchestration.IsAgentToolChoiceCompatibilityError(autoError))
+                {
+                    // 与 Go 一致：自动选择仍不兼容时去掉 tool_choice 再试。
+                }
+            }
+            Dictionary<string, object?> plainBody = new(body, StringComparer.Ordinal);
+            plainBody.Remove("tool_choice");
+            result = await PostAgentRequestAsync(
+                input, stream, path, plainBody, protocol, onDelta, onReasoningDelta,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return result!;
+    }
+
+    /// <summary>对应 Go: <c>postAgentRequest</c>：流式走 SSE 解析，非流式走 JSON + 工具载荷解析。</summary>
+    private async Task<Dictionary<string, object?>> PostAgentRequestAsync(
+        TextTaskInput input,
+        bool stream,
+        string path,
+        Dictionary<string, object?> body,
+        string protocol,
+        Action<string>? onDelta,
+        Action<string>? onReasoningDelta,
+        CancellationToken cancellationToken)
+    {
+        if (stream)
+        {
+            body["stream"] = true;
+            if (protocol == ProviderTextOrchestration.ChatCompletionProtocol)
+            {
+                ProviderTextOrchestration.EnsureChatCompletionStreamUsage(body);
+            }
+            StreamingAgentParser parser = new(protocol, onDelta) { EmitReasoning = onReasoningDelta };
+            using HttpRequestMessage request =
+                ProviderTransport.BuildJsonPost(input.Config, path, body, streaming: true);
+            ProviderTransport.OutboundResult outbound = await ProviderTransport.SendAsync(
+                request,
+                MaxResponseBytes,
+                (mimeType, chunk) => parser.Consume(mimeType, chunk),
+                cancellationToken,
+                _clientFactory).ConfigureAwait(false);
+            // 上游可能忽略 stream 参数直接回 JSON，此时按非流式解析（与 Go 一致）。
+            if (!outbound.MIMEType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                Dictionary<string, object?>? payload = ProviderTransport.ParseObject(outbound.Data)
+                    ?? throw new InvalidOperationException("Agent 接口返回格式无效：响应不是 JSON 对象");
+                return AgentToolPayload.Parse(payload, protocol);
+            }
+            parser.Flush();
+            return parser.Result();
+        }
+        body.Remove("stream");
+        using HttpRequestMessage jsonRequest = ProviderTransport.BuildJsonPost(input.Config, path, body);
+        Dictionary<string, object?> jsonPayload = await ProviderTransport
+            .SendJsonAsync(jsonRequest, MaxResponseBytes, cancellationToken, _clientFactory)
+            .ConfigureAwait(false);
+        return AgentToolPayload.Parse(jsonPayload, protocol);
+    }
+
+    /// <summary>
+    /// 声明式 Agent 渠道：清单负责请求体与响应解析，宿主负责鉴权、限流与思考/上限收尾。
+    /// 对应 Go: <c>runDeclarativeAgentTask</c>。
+    /// </summary>
+    private async Task<Dictionary<string, object?>> RunDeclarativeAgentAsync(
+        TextTaskInput input,
+        bool stream,
+        IProtocolAdapter adapter,
+        IAgentProtocolAdapter agentAdapter,
+        Action<string>? onDelta,
+        Action<string>? onReasoningDelta,
+        CancellationToken cancellationToken)
+    {
+        string wire = (input.Config.InterfaceType ?? "").Trim();
+        if (wire == ChannelInterfaceType.ChannelInterfaceOpenAIResponse)
+        {
+            wire = ProviderTextOrchestration.ResponsesProtocol;
+        }
+        bool knownWire = wire is ProviderTextOrchestration.ChatCompletionProtocol
+            or ProviderTextOrchestration.ResponsesProtocol
+            or ProviderTextOrchestration.ClaudeProtocol;
+        if (input.TextOptions.Thinking && !knownWire)
+        {
+            throw new InvalidOperationException("当前声明式 Agent 渠道尚不支持思考模式，请关闭思考模式或切换内置协议渠道");
+        }
+        AgentToolRequestsInput requests = input.AgentRequests
+            ?? throw new InvalidOperationException("画布 Agent 工具请求缺少协议参数");
+        Dictionary<string, object?> request = new(StringComparer.Ordinal)
+        {
+            ["chatCompletion"] = requests.ChatCompletion,
+            ["responses"] = requests.Responses,
+            ["claude"] = requests.Claude,
+            ["gemini"] = requests.Gemini,
+        };
+        RequestSpec spec = agentAdapter.BuildAgent(new AgentRequestContext
+        {
+            BaseURL = input.Config.BaseURL,
+            Model = input.Config.Model,
+            Request = request,
+        });
+        if (knownWire)
+        {
+            if (spec.Body is not Dictionary<string, object?> body)
+            {
+                throw new InvalidOperationException("声明式 Agent 请求体必须是 JSON 对象");
+            }
+            ProviderTextOrchestration.ApplyTextThinking(body, input.TextOptions, wire);
+            ApplyAgentOutputLimit(body, AgentStepOutputLimit(input), wire);
+            ProviderTextOrchestration.NormalizeAgentToolChoice(body, input.TextOptions, wire);
+            if (stream)
+            {
+                body["stream"] = true;
+                if (wire == ProviderTextOrchestration.ChatCompletionProtocol)
+                {
+                    ProviderTextOrchestration.EnsureChatCompletionStreamUsage(body);
+                }
+                StreamingAgentParser parser = new(wire, onDelta) { EmitReasoning = onReasoningDelta };
+                (byte[] data, string mimeType) = await ProviderProtocolExecutor.ExecuteWithMimeTypeAsync(
+                    input.Config, spec, (chunkType, chunk) => parser.Consume(chunkType, chunk),
+                    cancellationToken: cancellationToken, clientFactory: _clientFactory).ConfigureAwait(false);
+                if (!mimeType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    Dictionary<string, object?>? payload = ProviderTransport.ParseObject(data)
+                        ?? throw new InvalidOperationException("Agent 接口返回格式无效：响应不是 JSON 对象");
+                    return AgentToolPayload.Parse(payload, wire);
+                }
+                parser.Flush();
+                return parser.Result();
+            }
+        }
+        byte[] raw = await ProviderProtocolExecutor.ExecuteAsync(
+            input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory)
+            .ConfigureAwait(false);
+        AgentResult parsed = agentAdapter.ParseAgent(raw);
+        Dictionary<string, object?> result = new(StringComparer.Ordinal)
+        {
+            ["mode"] = "text",
+            ["text"] = parsed.Text,
+            ["toolCalls"] = new List<object?>(),
+        };
+        if (parsed.Reasoning.Length > 0)
+        {
+            result["reasoning"] = parsed.Reasoning;
+        }
+        List<object?> calls = [];
+        foreach (AgentToolCall call in parsed.ToolCalls)
+        {
+            Dictionary<string, object?> mapped = new(StringComparer.Ordinal)
+            {
+                ["id"] = call.ID,
+                ["type"] = "function",
+                ["function"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = call.Name,
+                    ["arguments"] = call.Arguments,
+                },
+            };
+            if (call.ThoughtSignature.Length > 0)
+            {
+                mapped["thoughtSignature"] = call.ThoughtSignature;
+            }
+            calls.Add(mapped);
+        }
+        result["toolCalls"] = calls;
+        if (parsed.Text.Trim().Length == 0 && calls.Count == 0)
+        {
+            throw new InvalidOperationException("声明式 Agent 接口没有返回内容");
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 按接口类型解析可用的声明式 Agent 适配器。
+    /// 对应 Go: <c>generation.AgentProtocolAdapterForContext</c>（Execution=declarative + AgentAvailable）。
+    /// </summary>
+    private IAgentProtocolAdapter? AgentDeclarativeAdapter(
+        string interfaceType, out IProtocolAdapter? adapter)
+    {
+        adapter = _context?.DeclarativeAdapter?.Resolve(interfaceType);
+        if (adapter is null
+            || adapter.Metadata().Execution != "declarative"
+            || adapter is not IAgentProtocolAdapter agentAdapter)
+        {
+            return null;
+        }
+        return adapter is not IAgentCapability capability || capability.AgentAvailable() ? agentAdapter : null;
+    }
+
+    /// <summary>对应 Go: <c>agentStepOutputLimit</c>：策略上限与模型声明上限取较小者。</summary>
+    private static int AgentStepOutputLimit(TextTaskInput input)
+    {
+        int limit = 0;
+        foreach (int candidate in new[] { input.TextOptions.MaxOutputTokens, input.MaxOutputTokens })
+        {
+            if (candidate <= 0)
+            {
+                continue;
+            }
+            if (limit == 0 || candidate < limit)
+            {
+                limit = candidate;
+            }
+        }
+        return limit;
+    }
+
+    /// <summary>按协议写入输出上限字段名：Claude 与 Chat 用 max_tokens，Responses 用 max_output_tokens。</summary>
+    private static void ApplyAgentOutputLimit(Dictionary<string, object?> body, int limit, string protocol)
+    {
+        if (limit <= 0)
+        {
+            return;
+        }
+        ProviderTextOrchestration.ApplyTextOutputLimit(
+            body, limit, protocol == ProviderTextOrchestration.ResponsesProtocol ? "max_output_tokens" : "max_tokens");
+    }
 }
 
 /// <summary>

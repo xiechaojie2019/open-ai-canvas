@@ -477,8 +477,15 @@ public sealed class TaskWorkerService
         input.Config = await ResolveProviderConfigAsync(input.Config, cancellationToken).ConfigureAwait(false);
         // 参考素材水合：resource: 引用解析为供应商可用的 URL/字节
         // （对应 Go: processCanvasGenerationTask 的 hydrateGenerationMedia；无引用时零开销直通）。
-        if (ProviderMediaHydrator.HasResourceReferences(input) && CanvasService is not null)
+        // 有引用时水合是必须步骤：跳过会让 multipart 协议在打包阶段报 data URL 错误，
+        // 且被归类成"连接模型服务失败"误导排障 —— 组合根漏注入必须在此显式失败。
+        if (ProviderMediaHydrator.HasResourceReferences(input))
         {
+            if (CanvasService is null)
+            {
+                throw new InvalidOperationException(
+                    "任务 Worker 未注入 CanvasService，无法解析 resource: 参考素材");
+            }
             await ProviderMediaHydrator.HydrateGenerationMediaAsync(
                 task.UserID, input, _repository, CanvasService.ResourceDomain,
                 _policy.Current(), cancellationToken).ConfigureAwait(false);
@@ -529,8 +536,12 @@ public sealed class TaskWorkerService
         ProviderExecutionResult execution = task.Type switch
         {
             _ when task.Type.StartsWith("canvas_text", StringComparison.Ordinal) || task.Type == "text" =>
-                new(await new ProviderTextTask(context).RunTextTaskAsync(input, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false), true),
+                input.AgentRequests is not null
+                    ? new(await RunAgentToolTaskAsync(input, context, cancellationToken)
+                        .ConfigureAwait(false), true)
+                    : new(await new ProviderTextTask(context)
+                        .RunTextTaskAsync(input, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false), true),
             _ when task.Type.StartsWith("canvas_image", StringComparison.Ordinal) =>
                 new(await new ProviderImageTask(context).RunAsync(input, cancellationToken).ConfigureAwait(false), true),
             _ when task.Type.StartsWith("canvas_video", StringComparison.Ordinal)
@@ -543,6 +554,60 @@ public sealed class TaskWorkerService
             _ => throw new InvalidOperationException("任务类型没有可用的执行分支"),
         };
         return execution;
+    }
+
+    /// <summary>
+    /// Agent 工具任务执行：水合规划图片占位，按能力合同决定流式与模型声明输出上限。
+    /// 对应 Go: <c>processCanvasGenerationTask</c> 的 text+agentRequests 分支
+    /// 与 <c>provider.go</c> 的 StreamText/MaxOutputTokens 判定。
+    /// </summary>
+    private async Task<Dictionary<string, object?>> RunAgentToolTaskAsync(
+        TextTaskInput input, IProviderRequestContext context, CancellationToken cancellationToken)
+    {
+        AgentResourceReferences.Hydrate(input);
+        // Agent 请求在此时才展开上游协议；流式与否由任务 textOptions 与模型能力合同共同决定。
+        ModelCapabilityConfig? capability = await ResolveTextCapabilityAsync(input.Config, cancellationToken)
+            .ConfigureAwait(false);
+        bool supportsStream = capability?.Text?.Streaming ?? true;
+        if (capability?.Text is not null)
+        {
+            // 与 Go 一致：模型声明了输出上限时不静默回退传输层固定值。
+            input.MaxOutputTokens = capability.Text.MaxOutputTokens;
+        }
+        bool requestedStream = input.TextOptions.Stream is null || input.TextOptions.Stream == true;
+        return await new ProviderTextTask(context).RunAgentToolAsync(
+            input, requestedStream && supportsStream, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>系统渠道文本能力合同（自定义渠道无合同，返回 null 走默认）。</summary>
+    private async Task<ModelCapabilityConfig?> ResolveTextCapabilityAsync(
+        ProviderConfig config, CancellationToken cancellationToken)
+    {
+        string channelID = config.ChannelID.Trim();
+        if (channelID.Length == 0)
+        {
+            return null;
+        }
+        ModelChannel? channel = await _repository.SystemChannelAsync(channelID, cancellationToken)
+            .ConfigureAwait(false);
+        if (channel is null)
+        {
+            return null;
+        }
+        string modelKey = config.ChannelModelKey.Trim();
+        if (modelKey.StartsWith("models/", StringComparison.Ordinal))
+        {
+            modelKey = modelKey["models/".Length..].Trim();
+        }
+        if (modelKey.Length == 0)
+        {
+            modelKey = config.Model.Trim();
+        }
+        ChannelModel? channelModel = await _repository
+            .ChannelModelByKeyIncludingDisabledAsync(channel.ID, modelKey, cancellationToken)
+            .ConfigureAwait(false);
+        return channelModel is null ? null : ChannelModelCapability.NormalizedChannelModelCapability(channelModel);
     }
 
     /// <summary>
