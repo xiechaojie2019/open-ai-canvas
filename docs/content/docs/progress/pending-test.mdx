@@ -2914,3 +2914,8 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 - **skill-usage**：`CloudAgentSkillUsageService` 聚合 journal 回执（skills_load/skill_search/skill_read_file → runsEnabled/searchHits/readCalls/failures/entry vs card/top5），GET /agent/skills/usage 路由。
 - [x] 回归 63/63（CloudAgent 全套 + 任务端点 + 技能端点）。
 - [ ] 待接线：Agent 模型上下文装配对齐（A 组前置）后，facts 投影接入 fresh context frame 与 generation 合并。
+
+### C 组收尾（2026-09-29 · 续二）
+
+- **canvas_get_state generation 合并**：媒体能力节点的读取现在带 generation 对象（taskStatus not_submitted / submitBlocked 原因 / 有任务 ID 时以任务行诊断为准合并全部事实），对齐 Go canvas_state.go 的 generation 合并； 增加 canvasID 参数（调用点已同步）。
+- [x] CloudAgent + 任务端点回归 46/46。

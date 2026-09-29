@@ -38,8 +38,8 @@ public sealed partial class CloudAgentRuntimeService
                         ?? throw AppError.NotFound("画布不存在");
                     JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
                     return (await CloudAgentCanvasState.ReadAsync(
-                        context, userID, doc, args.Offset, args.NodeIDs, args.StoryboardOffset,
-                        CancellationToken.None).ConfigureAwait(false), null);
+                        context, userID, state.Request.CanvasID, doc, args.Offset, args.NodeIDs,
+                        args.StoryboardOffset, CancellationToken.None).ConfigureAwait(false), null);
                 }
                 case "canvas_read_storyboard":
                 {
@@ -55,8 +55,8 @@ public sealed partial class CloudAgentRuntimeService
                     JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
                     CloudAgentStructuredEdits.StoryboardNode(doc, args.NodeID);
                     JsonObject view = await CloudAgentCanvasState.ReadAsync(
-                        context, userID, doc, 0, [args.NodeID], args.Offset, CancellationToken.None)
-                        .ConfigureAwait(false);
+                        context, userID, state.Request.CanvasID, doc, 0, [args.NodeID], args.Offset,
+                        CancellationToken.None).ConfigureAwait(false);
                     return (CloudAgentStructuredEdits.StoryboardReadResult(view, args.NodeID), null);
                 }
                 case "canvas_read_batch_table":
@@ -73,8 +73,8 @@ public sealed partial class CloudAgentRuntimeService
                     JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
                     CloudAgentStructuredEdits.BatchTableNode(doc, args.NodeID);
                     JsonObject view = await CloudAgentCanvasState.ReadAsync(
-                        context, userID, doc, 0, [args.NodeID], args.Offset, CancellationToken.None)
-                        .ConfigureAwait(false);
+                        context, userID, state.Request.CanvasID, doc, 0, [args.NodeID], args.Offset,
+                        CancellationToken.None).ConfigureAwait(false);
                     return (CloudAgentStructuredEdits.BatchTableReadResult(view, args.NodeID), null);
                 }
                 case "task_get":

@@ -7,6 +7,8 @@ using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Platform;
 
+using TaskEntity = OpenAICanvas.Domain.Entities.Task;
+
 namespace OpenAICanvas.Application.CloudAgent;
 
 /// <summary>
@@ -34,6 +36,7 @@ public static class CloudAgentCanvasState
     public static async Task<JsonObject> ReadAsync(
         CloudAgentMutationContext repository,
         string userID,
+        string canvasID,
         JsonObject doc,
         int offset,
         IReadOnlyList<string> ids,
@@ -126,6 +129,38 @@ public static class CloudAgentCanvasState
             {
                 item[key] = value?.DeepClone();
             }
+            if (capability.GenerationMode.Length > 0)
+            {
+                // 媒体节点的生成事实（Go v28）：不从过期画布元数据推断成败，
+                // 有任务 ID 时以任务行诊断为准（对应 Go: canvas_state 的 generation 合并）。
+                JsonObject generation = new() { ["taskStatus"] = "not_submitted" };
+                (string blockedReason, string blockedIssue) = MediaTargetIssue(node, meta, capability.Type);
+                if (blockedReason.Length > 0)
+                {
+                    generation["submitBlockedReason"] = blockedReason;
+                    generation["submitBlockedIssue"] = blockedIssue;
+                }
+                string taskID = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, "taskId"));
+                if (taskID.Length == 0)
+                {
+                    taskID = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, "generationTaskId"));
+                }
+                if (taskID.Length > 0)
+                {
+                    generation["taskStatus"] = "unavailable";
+                    TaskEntity? task = await repository.TaskForUserAsync(userID, taskID, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (task is not null && task.ProjectID == canvasID)
+                    {
+                        foreach ((string key, JsonNode? value) in CloudAgentTaskFacts.ToJson(repository.Repository, task)
+                                     .OrderBy(pair => pair.Key, StringComparer.Ordinal))
+                        {
+                            generation[key] = value?.DeepClone();
+                        }
+                    }
+                }
+                item["generation"] = generation;
+            }
             string draftRunID = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, "agentDraftRunId"));
             if (draftRunID.Length > 0
                 && CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, "taskId")).Length == 0)
@@ -215,6 +250,37 @@ public static class CloudAgentCanvasState
         JsonValue v when v.TryGetValue<long>(out long l) => l,
         _ => null,
     };
+
+    /// <summary>
+    /// 媒体目标节点的提交阻断原因。对应 Go: <c>cloudAgentMediaTargetIssue</c>。
+    /// </summary>
+    private static (string Reason, string Issue) MediaTargetIssue(
+        JsonObject node, JsonObject meta, string nodeType)
+    {
+        string Meta(string key) => CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, key));
+        string type = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "type"));
+        if (Meta("locked") is "true" || (Meta("locked").Length > 0 && bool.TryParse(Meta("locked"), out bool locked) && locked))
+        {
+            return ("target_locked", "目标节点已锁定，不能提交生成");
+        }
+        if (Meta("taskId").Length > 0 || Meta("generationTaskId").Length > 0)
+        {
+            return ("task_bound", "目标节点已关联任务，不能覆盖；可读取 generation 或 task_get 查询原任务状态和错误");
+        }
+        if (type != nodeType)
+        {
+            return ("target_type_mismatch", "目标节点类型与生成模式不匹配");
+        }
+        if (Meta("storageKey").Length > 0 || Meta("content").Length > 0)
+        {
+            return ("output_exists", "目标节点已有媒体产物，不能作为未提交草稿覆盖");
+        }
+        if (Meta("status").Length > 0 && Meta("status") != "idle")
+        {
+            return ("target_not_idle", "目标节点不是空闲的未提交草稿，请读取节点及任务状态");
+        }
+        return ("", "");
+    }
 
     /// <summary>分镜投影：摘要定位镜头，精读逐行返回。对应 Go: <c>cloudAgentStoryboardState</c>。</summary>
     public static JsonObject StoryboardState(JsonObject storyboard, int offset, bool precise)
