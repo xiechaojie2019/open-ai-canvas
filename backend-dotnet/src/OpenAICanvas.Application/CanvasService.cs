@@ -64,6 +64,7 @@ public sealed class CanvasService
             repository,
             LogicalModels,
             declarativeAdapters: () => Plugins.RegistrySnapshot());
+        ResourceDomain = new ResourceDomainService(repository, RuntimePolicy, dataDir);
         ResourceDelete = new ResourceDeleteService(repository, dataDir);
         UserData = new UserDataService(repository, RuntimePolicy, ResourceDelete);
         CanvasShares = new CanvasShareService(repository);
@@ -676,6 +677,9 @@ public sealed class CanvasService
 
     /// <summary>任务重试与取消。对应 Go: <c>app/task_lifecycle.go</c>。</summary>
     public TaskLifecycleService TaskLifecycle { get; }
+
+    /// <summary>资源域服务（读取/下发/签名）。供媒体水合等执行路径复用。</summary>
+    public ResourceDomainService ResourceDomain { get; }
 
     /// <summary>任务媒体恢复。对应 Go: <c>app/task_media_recovery.go</c>。</summary>
     public TaskMediaRecoveryService MediaRecovery { get; }

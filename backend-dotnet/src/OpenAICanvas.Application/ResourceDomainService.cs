@@ -372,6 +372,14 @@ public sealed class ResourceDomainService
     /// 签发平台公开下发地址。对应 Go: <c>signedResourceAccessURL</c>；
     /// provider-input 需要模型上游可读的绝对 HTTPS 地址，其余用途返回受控相对路径。
     /// </summary>
+    /// <summary>
+    /// 供模型上游读取的绝对资源地址（provider 参考素材 URL 路径）。
+    /// 对应 Go: <c>providerResourceURL</c>。要求配置 HTTPS 公网访问地址。
+    /// </summary>
+    public Task<string> ProviderResourceUrlAsync(
+        Resource resource, DateTime expires, CancellationToken cancellationToken = default) =>
+        SignedResourceAccessUrlAsync(resource, "original", expires, publicBaseUrl: true, cancellationToken);
+
     private async Task<string> SignedResourceAccessUrlAsync(
         Resource resource, string variant, DateTime expires, bool publicBaseUrl, CancellationToken cancellationToken)
     {

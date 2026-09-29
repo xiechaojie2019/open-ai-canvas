@@ -475,6 +475,14 @@ public sealed class TaskWorkerService
         }
 
         input.Config = await ResolveProviderConfigAsync(input.Config, cancellationToken).ConfigureAwait(false);
+        // 参考素材水合：resource: 引用解析为供应商可用的 URL/字节
+        // （对应 Go: processCanvasGenerationTask 的 hydrateGenerationMedia；无引用时零开销直通）。
+        if (ProviderMediaHydrator.HasResourceReferences(input) && CanvasService is not null)
+        {
+            await ProviderMediaHydrator.HydrateGenerationMediaAsync(
+                task.UserID, input, _repository, CanvasService.ResourceDomain,
+                _policy.Current(), cancellationToken).ConfigureAwait(false);
+        }
         // 注入插件运行时的声明式注册表快照（10.2）：图片/视频/音频声明式分支由此生效。
         ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();
         ProviderRequestContext context = new(_policy, _coordinator, declarativeAdapter: declarativeAdapters);
