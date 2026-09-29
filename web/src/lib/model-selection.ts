@@ -1,7 +1,7 @@
 import { defaultImageCapabilityConfig, modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, STANDARD_IMAGE_SIZE_VALUES, videoDurationAllowed, type ImageCapabilityConfig } from "@/lib/model-capabilities";
 import { videoResolutionComparisonKey } from "@/lib/video-generation-options";
 import { imageSizePresets } from "@/lib/image-size-presets";
-import { modelOptionName, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { configuredModelMatchesCapability, modelOptionName, PUBLIC_MODEL_CATALOG_ID, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 export type ModelInputSummary = {
     textCount: number;
@@ -226,6 +226,21 @@ export function resolveCompatibleModel(config: AiConfig, selected: string, requi
     const selectedGroup = groupModelsByDisplayName(config, options).find((group) => group.models.includes(selected));
     if (!selectedGroup) return selected;
     return compatibleModelInGroup(config, selectedGroup.models, requirements, selected);
+}
+
+// 媒体工具对话框（局部重绘/图片编辑/图层拆分）会继承节点或全局上的旧模型绑定；
+// 继承值可能是文本等非图片模型（如节点创建时画布默认模型是文本模型），直接透传
+// 会被后端准入拒绝（“所选模型与任务能力不匹配”）。这里先按图片能力校验继承值，
+// 失效时落到图片能力组内的兼容模型（组内路由规则：优先偏好，其次最低价）。
+export function resolveImageDialogModel(config: AiConfig, inherited: string | undefined): string {
+    const candidate = inherited?.trim() || "";
+    if (candidate && configuredModelMatchesCapability(config, candidate, "image")) return candidate;
+    return compatibleModelInGroup(
+        config,
+        selectableModelsByCapability(config, "image"),
+        { capability: "image" },
+        config.imageModel || candidate,
+    );
 }
 
 // 同显示名分组的模型族：尺寸/比例/分辨率选项取组内全部模型配置的并集，
