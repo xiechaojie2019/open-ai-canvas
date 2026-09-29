@@ -2906,3 +2906,11 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 移植 canvas_inspect_image 前的架构核对发现：测试站库里有 17 个 succeeded 的 operation=cloud_agent 任务，但 **0 个 operation=cloud_agent_step** 任务——.NET 的 Agent 执行架构与 Go 不同（Go 每个模型步入队 cloud_agent_step，.NET 走 runtime 内调度）。且 .NET Providers 文本任务**没有 agentRequests/canonical 分支**（TextTaskInput 无该字段），模型请求目前只含 prompt/TextHistory。
 
 因此 A 组（Agent 看图）不是纯增量移植：需要先梳理 .NET Agent 步骤的模型上下文装配路径（canonical 如何进入模型请求、工具 schema 如何注入请求体），再在同一位置挂看图工具与图片投递。建议单独开一轮做「Agent 模型上下文装配对齐」作为 A 组的前置。
+
+### C 组落地（2026-09-29 · 续）
+
+- **任务事实投影**：`CloudAgentTaskFacts.Diagnostic` 对齐 Go cloudAgentTaskFacts（提交回执/取消来源/计费事实回读/nodeId 客户端上下文）；agent task_get 工具输出改为 facts + status + text（Go 形状）；canvas_get_state 的 generation 合并与 fresh context frame 待后续接线（facts 构建器已可复用）。
+- **取消链事实**：取消成功后写 cancellation_source=user_request / actor / requested_at / 取消诊断 JSON（SQL 条件更新扩展）。
+- **skill-usage**：`CloudAgentSkillUsageService` 聚合 journal 回执（skills_load/skill_search/skill_read_file → runsEnabled/searchHits/readCalls/failures/entry vs card/top5），GET /agent/skills/usage 路由。
+- [x] 回归 63/63（CloudAgent 全套 + 任务端点 + 技能端点）。
+- [ ] 待接线：Agent 模型上下文装配对齐（A 组前置）后，facts 投影接入 fresh context frame 与 generation 合并。
