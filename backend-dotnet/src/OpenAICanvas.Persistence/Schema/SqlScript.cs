@@ -65,9 +65,10 @@ public sealed class SchemaScripts
     public static SchemaScripts Load()
     {
         Assembly assembly = typeof(SchemaScripts).Assembly;
+        // Windows 检出会把内嵌脚本转成 CRLF；语句拆分与段落标记均按 LF 匹配，这里统一归一化。
         return new SchemaScripts(
-            ReadResource(assembly, SqliteResource),
-            ReadResource(assembly, PostgresResource));
+            ReadResource(assembly, SqliteResource).Replace("\r\n", "\n"),
+            ReadResource(assembly, PostgresResource).Replace("\r\n", "\n"));
     }
 
     private static string ReadResource(Assembly assembly, string name)
