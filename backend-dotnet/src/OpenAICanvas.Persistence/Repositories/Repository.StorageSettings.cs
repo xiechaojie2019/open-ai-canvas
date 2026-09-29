@@ -24,6 +24,28 @@ public sealed partial class Repository
             cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+    /// <summary>按 ID 取存储位置（历史资源凭据恢复）。对应 Go: <c>storageLocation</c>。</summary>
+    public async Task<StorageLocation?> StorageLocationByIDAsync(
+        string id, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await FirstOrDefaultAsync<StorageLocation>(connection,
+            SqlBuilder.Select<StorageLocation>("id = @id", limitOffset: " LIMIT 1"),
+            new { id }, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>用户全部 OSS 设置版本（新→旧）。对应 Go: <c>UserOSSSettingsForUser</c>。</summary>
+    public async Task<IReadOnlyList<UserOSSSetting>> UserOSSSettingsForUserAsync(
+        string userId, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        List<UserOSSSetting> items = [];
+        items.AddRange(await QueryAsync<UserOSSSetting>(connection,
+            SqlBuilder.Select<UserOSSSetting>("user_id = @userId", "updated_at DESC, id DESC"),
+            new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false));
+        return items;
+    }
+
     public async Task<StorageLocation?> StorageLocationByDigestAsync(
         string scope, string ownerId, string provider, string digest,
         CancellationToken cancellationToken = default)

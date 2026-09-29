@@ -9,6 +9,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Domain.Serialization;
 using OpenAICanvas.Outbound;
 using OpenAICanvas.Persistence.Repositories;
 
@@ -284,6 +285,31 @@ public sealed class StorageSettingsService
         value.StorageLocationId = location.ID;
     }
 
+    // ------------------------------------------------------------ 对象存储通道（内部）
+
+    /// <summary>平台存储的通道设置（未做启用校验）。对应 Go: <c>readOSSSetting</c>。</summary>
+    internal async Task<StorageChannelSettings> PlatformChannelSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        SystemSetting? record = await _repository.SystemSettingAsync(PlatformSettingKey, cancellationToken).ConfigureAwait(false);
+        return (record is null ? Defaults() : ReadStored(record.ValueJSON)).ToChannelSettings();
+    }
+
+    /// <summary>用户最新存储的通道设置。对应 Go: <c>readUserOSSSetting</c>。</summary>
+    internal async Task<StorageChannelSettings?> LatestUserChannelSettingsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        UserOSSSetting? record = await _repository.LatestUserOSSSettingAsync(userId, cancellationToken).ConfigureAwait(false);
+        return record is null ? null : ReadStored(record.ValueJSON).ToChannelSettings();
+    }
+
+    /// <summary>用户全部存储版本的通道设置（新→旧）。对应 Go: <c>UserOSSSettingsForUser</c> 的值投影。</summary>
+    internal async Task<IReadOnlyList<StorageChannelSettings>> UserChannelSettingsHistoryAsync(
+        string userId, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<UserOSSSetting> records = await _repository.UserOSSSettingsForUserAsync(userId, cancellationToken)
+            .ConfigureAwait(false);
+        return records.Select(record => ReadStored(record.ValueJSON).ToChannelSettings()).ToList();
+    }
+
     private async Task<PublicOSSSetting> PublicAsync(StoredOSSSetting value, string scope, string ownerId,
         string? updatedBy, DateTime? createdAt, DateTime? updatedAt, CancellationToken cancellationToken,
         bool? allowUserS3 = null)
@@ -409,6 +435,8 @@ public sealed class StorageSettingsService
         [JsonPropertyName("pathStyle")] public bool PathStyle { get; set; }
         [JsonPropertyName("sessionToken")] public string SessionToken { get; set; } = "";
         [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; set; }
+        [JsonPropertyName("archivedCredentials")]
+        public Dictionary<string, StorageArchivedCredentials>? ArchivedCredentials { get; set; }
         [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; set; } = "";
         [JsonPropertyName("requireCDN")] public bool RequireCDN { get; set; }
         [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; set; }
@@ -418,6 +446,33 @@ public sealed class StorageSettingsService
             AccessKeySecret = AccessKeySecret, PublicBaseUrl = PublicBaseUrl, PathPrefix = PathPrefix,
             S3Preset = S3Preset, PathStyle = PathStyle, SessionToken = SessionToken, AllowUserS3 = AllowUserS3,
             CdnAuthMode = CdnAuthMode, RequireCDN = RequireCDN, AllowPrivateProxy = AllowPrivateProxy };
+        // Stored 是扁平结构（cdnAuthMode 等在顶层），通道设置是嵌套 delivery——必须显式映射，
+        // JSON 直接往返会把分发配置丢掉。
+        public StorageChannelSettings ToChannelSettings() => new()
+        {
+            Enabled = Enabled,
+            Provider = Provider,
+            Region = Region,
+            Endpoint = Endpoint,
+            CdnBaseUrl = CdnBaseUrl,
+            Bucket = Bucket,
+            AccessKeyId = AccessKeyId,
+            AccessKeySecret = AccessKeySecret,
+            PublicBaseUrl = PublicBaseUrl,
+            PathPrefix = PathPrefix,
+            S3Preset = S3Preset,
+            PathStyle = PathStyle,
+            SessionToken = SessionToken,
+            StorageLocationId = StorageLocationId ?? "",
+            AllowUserS3 = AllowUserS3,
+            ArchivedCredentials = ArchivedCredentials,
+            Delivery = new StorageDeliverySettings
+            {
+                CdnAuthMode = CdnAuthMode,
+                RequireCDN = RequireCDN,
+                AllowPrivateProxy = AllowPrivateProxy,
+            },
+        };
         public StoredOSSSetting Clone() => (StoredOSSSetting)MemberwiseClone();
     }
 }

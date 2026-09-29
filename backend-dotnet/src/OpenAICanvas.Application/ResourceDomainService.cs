@@ -113,6 +113,9 @@ public sealed class ResourceDomainService
     private const string VariantOriginal = "original";
     private const string VariantPlayback = "playback";
     private const string DeliveryLocal = "platform-local";
+    private const string DeliveryCdn = "cdn";
+    private const string DeliveryOrigin = "origin";
+    private const string DeliveryProxy = "platform-proxy";
     private const string PlaybackStatusReady = "ready";
 
     /// <summary>本地投递描述符版本。对应 Go: <c>storage.DeliveryRevision</c>（零值 Settings）——
@@ -201,7 +204,8 @@ public sealed class ResourceDomainService
     /// <summary>本地资源投递（含 Range 与 ETag）。对应 Go: <c>PrepareResourceDelivery</c>。</summary>
     public async Task<ResourceDelivery> PrepareResourceDeliveryAsync(
         string userId, string resourceId, ResourceDeliveryOptions options,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? rangeHeader = null)
     {
         Resource? resource = await _repository.ResourceForUserAsync(
             userId, resourceId, cancellationToken).ConfigureAwait(false);
@@ -213,7 +217,20 @@ public sealed class ResourceDomainService
         {
             throw AppError.BadAuthRequest("资源尚未上传完成");
         }
-        ResourceStream stream = await OpenResourceRangeAsync(resource, null, cancellationToken)
+        if (!IsLocalProvider(resource.Provider))
+        {
+            // 云 provider：CDN/公网源站签发 307 直链；私有源站仅在代理投递时走进程内流。
+            ResourceAccess access = await ResolveAccessAsync(
+                resource,
+                new ResourceAccessOptions(PurposeDisplay, VariantOriginal, DownloadName: ""),
+                DateTime.UtcNow, cancellationToken).ConfigureAwait(false);
+            if (access.Delivery is DeliveryCdn or DeliveryOrigin)
+            {
+                return new ResourceDelivery(
+                    resource, RedirectURL: access.Url, Stream: null, ContentRange: "", AcceptRanges: "bytes");
+            }
+        }
+        ResourceStream stream = await OpenResourceRangeAsync(resource, rangeHeader, cancellationToken)
             .ConfigureAwait(false);
         return new ResourceDelivery(
             resource, RedirectURL: "", Stream: stream.Body, ContentRange: stream.ContentRange,
@@ -333,7 +350,7 @@ public sealed class ResourceDomainService
         }
         if (!IsLocalProvider(resource.Provider))
         {
-            throw AppError.New(501, "当前 .NET 后端尚未实现云对象存储资源投递，请使用本地存储（待确认 #25）");
+            return await ResolveRemoteAccessAsync(resource, options, now, cancellationToken).ConfigureAwait(false);
         }
         TimeSpan ttl = options.Purpose == PurposeProvider ? TimeSpan.FromHours(4) : TimeSpan.FromMinutes(5);
         DateTime expires = now + ttl;
@@ -366,6 +383,88 @@ public sealed class ResourceDomainService
             now + TimeSpan.FromTicks(remaining.Ticks * 4 / 5),
             resource.ETag + ":" + resource.PlaybackStatus + ":" + LocalDeliveryRevision,
             fallbackReason);
+    }
+
+    /// <summary>
+    /// 云 provider 的投递策略。对应 Go: <c>assets.ResolveAccess</c> 的远程分支——
+    /// CDN 优先、RequireCDN 显式失败、公网源站直链、provider-input 允许私有源站代理。
+    /// </summary>
+    private async Task<ResourceAccess> ResolveRemoteAccessAsync(
+        Resource resource, ResourceAccessOptions options, DateTime now, CancellationToken cancellationToken)
+    {
+        if (_storageSettings is null)
+        {
+            throw new InvalidOperationException("对象存储通道未注入存储设置服务");
+        }
+        StorageChannelSettings setting;
+        try
+        {
+            setting = await ResourceObjectStorage
+                .ForResourceAsync(_repository, _storageSettings, resource.UserID, resource, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            throw new AppError(503, "无法解析资源实际存储位置：" + error.Message + " @ "
+                + string.Join(" | ", (error.StackTrace ?? "").Split(new[] { (char)10 }).Take(4).Select(f => f.Trim())),
+                reason: "resource_location_unresolved", cause: error);
+        }
+        TimeSpan ttl = options.Purpose == PurposeProvider ? TimeSpan.FromHours(4) : TimeSpan.FromMinutes(5);
+        DateTime expires = now + ttl;
+        if (options.ExpiresAt is DateTime capped && capped < expires)
+        {
+            expires = capped;
+        }
+        if (expires <= now)
+        {
+            throw AppError.Forbidden("资源授权已过期");
+        }
+        string revision = resource.ETag + ":" + resource.PlaybackStatus + ":"
+            + StorageObjectChannel.DeliveryRevision(setting);
+        if (options.Purpose == PurposeDownload)
+        {
+            if (!StorageObjectChannel.PublicOrigin(setting))
+            {
+                throw new AppError(503, "对象存储源站不可由浏览器直连，无法在不占用服务器带宽的前提下下载",
+                    reason: "resource_origin_private");
+            }
+            string downloadUrl = await StorageObjectChannel.SignedOriginObjectDownloadUrlAsync(
+                setting, resource.ObjectKey, expires, options.DownloadName).ConfigureAwait(false);
+            return new ResourceAccess(resource.ID, options.Variant, VariantOriginal, downloadUrl,
+                DeliveryOrigin, now, expires, now + TimeSpan.FromTicks((expires - now).Ticks * 4 / 5),
+                revision);
+        }
+        if (StorageObjectChannel.CdnEnabled(setting))
+        {
+            string cdnUrl = StorageObjectChannel.SignCdnUrl(setting, resource.ObjectKey, expires);
+            return new ResourceAccess(resource.ID, options.Variant, VariantOriginal, cdnUrl,
+                DeliveryCdn, now,
+                setting.Delivery.CdnAuthMode == "public" ? null : expires,
+                now + TimeSpan.FromTicks((expires - now).Ticks * 4 / 5), revision);
+        }
+        if (setting.Delivery.RequireCDN)
+        {
+            throw new AppError(503, "CDN 访问鉴权未配置，请检查存储分发设置", reason: "resource_cdn_unconfigured");
+        }
+        if (StorageObjectChannel.PublicOrigin(setting))
+        {
+            string originUrl = await StorageObjectChannel.SignedOriginObjectUrlAsync(
+                setting, resource.ObjectKey, expires).ConfigureAwait(false);
+            return new ResourceAccess(resource.ID, options.Variant, VariantOriginal, originUrl,
+                DeliveryOrigin, now, expires, now + TimeSpan.FromTicks((expires - now).Ticks * 4 / 5),
+                revision, setting.CdnBaseUrl.Length > 0 ? "cdn_auth_unconfigured" : "");
+        }
+        if (options.Purpose == PurposeProvider && setting.Delivery.AllowPrivateProxy)
+        {
+            // 只有服务端 provider-input 允许私有源站代理；浏览器侧流量绝不中转媒体字节。
+            string proxyUrl = await SignedResourceAccessUrlAsync(
+                resource, VariantOriginal, expires, publicBaseUrl: true, cancellationToken).ConfigureAwait(false);
+            return new ResourceAccess(resource.ID, options.Variant, VariantOriginal, proxyUrl,
+                DeliveryProxy, now, expires, now + TimeSpan.FromTicks((expires - now).Ticks * 4 / 5),
+                revision, "private_origin");
+        }
+        throw new AppError(503, "对象存储源站不可由浏览器直连，请配置公网 OSS 源站或 CDN",
+            reason: "resource_origin_private");
     }
 
     /// <summary>
@@ -666,8 +765,22 @@ public sealed class ResourceDomainService
         }
         if (!IsLocalProvider(resource.Provider))
         {
-            // 云 provider 留待 #25
-            throw new NotImplementedException("云资源投递依赖云 SDK（待确认 #25）");
+            // 远程源站按 Range 读取（服务端代理路径：私有源站代理与水合等进程内消费）。
+            if (_storageSettings is null)
+            {
+                throw new InvalidOperationException("对象存储通道未注入存储设置服务");
+            }
+            StorageChannelSettings setting = await ResourceObjectStorage
+                .ForResourceAsync(_repository, _storageSettings, resource.UserID, resource, cancellationToken)
+                .ConfigureAwait(false);
+            StorageObjectStream remote = await StorageObjectChannel.GetOriginObjectRangeAsync(
+                setting, resource.ObjectKey, StorageObjectChannel.NormalizeSingleByteRange(rangeHeader),
+                cancellationToken).ConfigureAwait(false);
+            return new ResourceStream(resource, remote.Body, remote.ContentRange, remote.AcceptRanges)
+            {
+                StatusCode = remote.StatusCode,
+                ContentLength = remote.ContentLength > 0 ? remote.ContentLength : resource.Size,
+            };
         }
         string root = Path.GetFullPath(Path.Combine(_dataDir, "resources"));
         string path = Path.GetFullPath(Path.Combine(root,

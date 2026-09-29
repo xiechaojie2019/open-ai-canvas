@@ -33,7 +33,8 @@ public static class ResourceDeliveryEndpoints
                     user.ID, id, new ResourceDeliveryOptions(
                         ForceDirect: context.Request.Query["direct"] == "1",
                         ForceProxy: context.Request.Query["proxy"] == "1"),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    rangeHeader: context.Request.Headers["Range"].ToString()).ConfigureAwait(false);
 
                 // CDN / 对象存储直连：允许安全短期缓存后 307。
                 if (delivery.RedirectURL.Length > 0)

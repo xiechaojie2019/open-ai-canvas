@@ -2992,3 +2992,19 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - **对象存储通道现状**：.NET `ResourceUploadService` 明确注释对象存储（OSS/COS/Kodo/S3）通道未移植——**即使管理端配好 OSS，资源物理对象目前仍始终以 local provider 落在服务器本地盘**（storage location 注册/连接测试可用，但 `storeResourceObject` 强制回退 local）。与 Go 的差异记录在 PENDING-CONFIRMATIONS.md；「生成图片是否上 OSS」取决于先落地两个前置：① 上游图片物化上传资源库（见第一条），② 后端对象存储写通道移植。
 - [x] StorageSettings 回归 4/4；全量回归 1630/1631（既有并行噪音）。
 - [ ] 部署后验收：管理后台「存储服务」页能正常读取配置不再报格式无效；保存含 CDN 鉴权方式的配置能回读一致。
+
+### 对象存储写入通道 + 切线路成本重算（2026-09-30）
+
+**对象存储写入通道**（此前 .NET 仅 local 落盘，本次全量移植）：
+- `StorageObjectChannel`：阿里云 OSS（V1 签名）、腾讯云 COS（q-sign-algorithm=sha1 头授权 + 预签名）、七牛云 Kodo（表单上传 + Kodo 管理 API 删除 + S3 兼容 AWS V4 预签名读取）、通用 S3（AWSSDK.S3）；Range 读取（416 容忍）、CDN 公开/七牛 V2 签名、强制下载 Content-Disposition、分发配置摘要。
+- 上传路由：创建任务前按用户/平台设置解析启用配置（对齐 Go `activeResourceOSSSetting`：个人 S3 需平台允许），源站拒绝时重置请求位降级 local 并改写绑定字段（Go `storeResourceObject` 的 io.NopCloser 语义在 .NET 以 NonDisposingStream 落实，避免传输层关闭调用方流导致降级重读失败）；任务资源删除按 provider 分派远程删除（404 容忍）。
+- 资源投递：`ResolveRemoteAccessAsync` 落地 Go `assets.ResolveAccess` 远程分支——CDN 优先（public 过期时间置空）、RequireCDN 显式 503、公网源站签名直链（无 CDN 鉴权时留 `cdn_auth_unconfigured` 回退原因）、私有源站仅 provider-input 允许平台代理；`/resources/:id/file` 对 CDN/origin 返回 307，代理路径按 Range 转读源站；下载强制走源站直链 + Content-Disposition。
+- **前端图片物化对齐**：`storedGenerationImage` 与视频/音频一致，本地副本后幂等上传资源库并改写节点引用——根治画布生成图片 `content` 停留 `blob:` 本地 URL、跨端/刷新加载异常的问题。
+- 测试 6 个（本地 SQLite + 形态断言，无真实云依赖）：上传路由与降级（真实请求到 aliyun 端点被 403 拒绝后降级 local）、未注入时保持本地、公开 CDN 直链与批量访问、RequireCDN 未配置鉴权 503、公网源站签名直链、私有源站 display 拒绝/provider 代理放行。
+
+**切线路成本重算**：
+- `Repository.SwitchTaskLogicalRouteAsync`：任务行 CAS（running+原 route）→ 订单成本快照改写（不反查当前价格）→ channel 计费时替换订单价格并按差额调整积分预留（新价格不得扩大原授权，charge limit 拦截；差额入账并留 ledger“备用供应线路价格调整”）。错误以 Reason 标记转译（task_state_conflict / insufficient_credits / billing_charge_limit / billing_state_conflict）。
+- `LogicalModelService.SwitchTaskToNextRouteAsync`：排除已尝试路由的备用线路选型（复用 Go `eligibleLogicalRoutes(tried)` 加权语义）→ 能力/价格校验 → 重放路由选型到任务输入 → channel 计费创建替换订单 → 调仓储事务；任务字段随切换更新。
+- 测试 4 个：无订单切换、渠道计费差额调整与留痕、超批准上限拒绝、任务/路由过期冲突。
+- [x] 存储通道 6 + 切线路 4 测试通过；全量回归 1634/1637（3 失败为已知并行噪音，单跑通过）；web vite 构建通过，web 测试基线一致（23 fail 为存量）。
+- [ ] 测试站部署后验收：管理端配好 OSS 后上传资源落 OSS（`resources.provider` 为云厂商）；画布生成图片刷新后仍可加载（`content` 为资源引用而非 blob:）；RouteAttempt 状态机与执行器循环（Go `taskRouteExecutor`）仍待移植——.NET worker 依旧直连执行，切线路编排当前供重试/恢复路径调用。

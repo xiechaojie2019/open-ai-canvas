@@ -116,7 +116,8 @@ builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceUploadService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
         serviceProvider.GetRequiredService<OpenAICanvas.Application.UploadQuota>(),
-        env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>()));
+        env.DataDir, playback: serviceProvider.GetRequiredService<OpenAICanvas.Application.VideoPlaybackService>(),
+        storageSettings: serviceProvider.GetRequiredService<OpenAICanvas.Application.StorageSettingsService>()));
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.VideoPlaybackService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(), env.DataDir,
     serviceProvider.GetService<ILogger<OpenAICanvas.Application.VideoPlaybackService>>()));

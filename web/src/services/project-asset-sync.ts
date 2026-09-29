@@ -227,18 +227,27 @@ async function storedGenerationImage(result: NonNullable<BackendGenerationResult
         },
     });
     throwIfAborted(signal);
-    const url = await resolveImageUrl(storageKey);
+    // 与视频/音频一致：生成结果不能只停留在 IndexedDB——对话恢复时 Object URL 已失效，
+    // 本地键也无法跨设备解析（这是画布生成图片跨端加载异常的根因）。先保留本地副本，
+    // 再用同一 effect key 幂等上传资源库，节点引用随上传结果改写为资源库存储键。
+    const uploaded = await uploadMediaFile(blob, "generation-image", undefined, {
+        idempotencyKey: storageKey,
+        fileName: "generated.png",
+    });
+    throwIfAborted(signal);
+    if (uploaded.storageKey !== storageKey) await deleteStoredMedia([storageKey]);
+    const url = await resolveMediaUrl(uploaded.storageKey, uploaded.url);
     throwIfAborted(signal);
     if (!url) throw new Error("图片结果资源不可用");
     const meta = result.width && result.height ? undefined : await readImageMeta(url, signal);
     throwIfAborted(signal);
     return {
         url,
-        storageKey,
-        width: result.width || meta?.width || 1024,
-        height: result.height || meta?.height || 1024,
-        bytes: result.bytes || blob.size,
-        mimeType: result.mimeType || blob.type || "image/png",
+        storageKey: uploaded.storageKey,
+        width: result.width || meta?.width || uploaded.width || 1024,
+        height: result.height || meta?.height || uploaded.height || 1024,
+        bytes: uploaded.bytes || blob.size,
+        mimeType: uploaded.mimeType || result.mimeType || blob.type || "image/png",
     };
 }
 
