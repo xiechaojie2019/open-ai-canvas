@@ -134,8 +134,10 @@ public sealed class TaskLifecycleService
         HydrateProviderRequestID(task);
         string originalStatus = task.Status;
         DateTime now = DateTime.UtcNow;
+        string cancellationDiagnostic = CloudAgent.CloudAgentTaskFacts.CancellationDiagnostic(task, task.Status);
         bool cancelled = await _repository
-            .CancelTaskIfStatusAsync(userId, taskId, task.Status, now, cancellationToken).ConfigureAwait(false);
+            .CancelTaskIfStatusAsync(userId, taskId, task.Status, "user_request", userId,
+                cancellationDiagnostic, now, cancellationToken).ConfigureAwait(false);
         if (!cancelled)
         {
             TaskEntity? latest = await _repository
@@ -151,6 +153,12 @@ public sealed class TaskLifecycleService
         task.Stage = "任务已取消";
         task.Error = "任务已取消";
         task.CompletedAt = now;
+        // 取消链事实（Go v28）：来源/操作者/时间与取消诊断随终态持久化。
+        task.CancellationSource = "user_request";
+        task.CancellationActorID = userId;
+        task.CancellationRequestedAt = now;
+        task.ExecutionDiagnosticJSON = CloudAgent.CloudAgentTaskFacts.CancellationDiagnostic(
+            task, originalStatus);
 
         try
         {

@@ -516,6 +516,9 @@ public sealed class CloudAgentMutationContext : IAsyncDisposable
     private readonly Repository _repository;
     private readonly bool _ownsConnection;
 
+    /// <summary>宿主仓储（事务外读取走这里；账单事实等旁路读取使用）。</summary>
+    public Repository Repository => _repository;
+
     internal CloudAgentMutationContext(
         DbConnection connection, DbTransaction? transaction, Repository repository,
         bool ownsConnection = false)

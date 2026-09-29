@@ -32,6 +32,7 @@ public static class AgentEndpoints
         CloudAgentRuntimeService runtime,
         AgentLessonService memories,
         AgentMemoryCompactService compact,
+        CloudAgentSkillUsageService skillUsage,
         IRateLimiter rateLimiter,
         IRuntimePolicyProvider policyProvider)
     {
@@ -264,6 +265,23 @@ public static class AgentEndpoints
                 {
                     ["accepted"] = true,
                 });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        // 技能采用遥测：只读调用者自己的 journal 回执。对应 Go: GET /agent/skills/usage。
+        api.MapGet("/agent/skills/usage", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CloudAgentSkillUsageDto view = await skillUsage.UsageAsync(user.ID, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(view);
             }
             catch (Exception error)
             {

@@ -86,12 +86,13 @@ public sealed partial class CloudAgentRuntimeService
                     {
                         throw AppError.BadAuthRequest("不能读取其他画布的任务");
                     }
-                    return (new JsonObject
-                    {
-                        ["taskId"] = task.ID,
-                        ["status"] = task.Status,
-                        ["text"] = CloudAgentContracts.TruncateRunes(TaskResultText(task.ResultJSON), 4000),
-                    }, null);
+                    // 任务事实投影（Go v28）：模型可见的持久化执行状态。
+                    JsonObject facts = CloudAgentTaskFacts.ToJson(
+                        context.Repository, task);
+                    facts["taskId"] = task.ID;
+                    facts["status"] = task.Status;
+                    facts["text"] = CloudAgentContracts.TruncateRunes(TaskResultText(task.ResultJSON), 4000);
+                    return (facts, null);
                 }
                 case "recall_lessons":
                 case "remember_lesson":

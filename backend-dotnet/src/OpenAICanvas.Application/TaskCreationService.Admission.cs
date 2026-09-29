@@ -15,7 +15,16 @@ namespace OpenAICanvas.Application;
 /// 内部 admission 约束，不是 JSON 字段。调用方不能借此选择任务 ID 或绕过报价上限。
 /// 对应 Go: <c>taskAdmission</c>。
 /// </summary>
-public sealed record TaskAdmission(string ID, long MaxCharge);
+/// <summary>
+/// 内部 admission 约束，不是 JSON 字段。调用方不能借此选择任务 ID 或绕过报价上限。
+/// Agent 事实列（Go v28）：AgentRunID/GenerationID/ApprovalID 随 admission 落到任务行。
+/// </summary>
+public sealed record TaskAdmission(
+    string ID,
+    long MaxCharge,
+    string AgentRunID = "",
+    string GenerationID = "",
+    string ApprovalID = "");
 
 /// <summary>
 /// 队列任务 admission：模型选路（前台/系统渠道/自定义渠道）、计费预留、项目守卫。
@@ -118,6 +127,9 @@ public sealed partial class TaskCreationService
             Operation = request.Operation,
             Provider = request.Provider,
             Model = request.Model,
+            AgentRunID = admission?.AgentRunID ?? "",
+            GenerationID = admission?.GenerationID ?? "",
+            ApprovalID = admission?.ApprovalID ?? "",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         };
@@ -146,12 +158,12 @@ public sealed partial class TaskCreationService
             {
                 case "fixed_request":
                 case "per_second":
-                    // 金额已经由服务端价格目录和请求规格确定。
-                    break;
                 case "token":
-                    // 普通 Token 任务可在 usage 超过预估时补扣；Agent 必须把服务端报价固化为
-                    // 最终扣费上限，使所有已准入任务的报价之和就是可验证的硬预算。
+                    // Go 对齐：Agent 任务的报价固化为最终扣费上限（所有计费方式），
+                    // 使所有已准入任务的报价之和就是可验证的硬预算。
+                    billingOrder.ChargeLimitSet = true;
                     billingOrder.ChargeLimitMicrocredits = billingOrder.AmountMicrocredits;
+                    task.AuthorizedChargeMicrocredits = billingOrder.AmountMicrocredits;
                     break;
                 default:
                     throw AppError.BadAuthRequest("Agent 暂不支持当前模型计费方式");

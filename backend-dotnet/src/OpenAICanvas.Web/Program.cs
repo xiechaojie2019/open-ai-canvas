@@ -155,6 +155,8 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
 // Agent 个人记忆。对应 Go 的 app/cloud_agent_lessons.go 服务层。
 builder.Services.AddSingleton<OpenAICanvas.Application.CloudAgent.AgentLessonService>();
+// 技能采用遥测。对应 Go 的 app/cloud_agent_skill_usage.go。
+builder.Services.AddSingleton<OpenAICanvas.Application.CloudAgent.CloudAgentSkillUsageService>();
 // 记忆压缩。对应 Go 的 app/cloud_agent_memory_compact.go。
 builder.Services.AddSingleton(sp => new OpenAICanvas.Application.CloudAgent.AgentMemoryCompactService(
     sp.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
@@ -394,6 +396,7 @@ api.MapAgentRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.AgentLessonService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.AgentMemoryCompactService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSkillUsageService>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 

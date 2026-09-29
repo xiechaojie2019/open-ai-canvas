@@ -118,8 +118,20 @@ public sealed partial class Repository
     }
 
     /// <summary>条件取消：仅当任务仍处于预期状态时落终态。对应 Go: <c>CancelTaskIfStatus</c>。</summary>
+    public Task<bool> CancelTaskIfStatusAsync(
+        string userId, string taskId, string expectedStatus, DateTime now, CancellationToken cancellationToken = default) =>
+        CancelTaskIfStatusAsync(userId, taskId, expectedStatus, null, null, null, now, cancellationToken);
+
+    /// <summary>带取消链事实的条件取消（Go v28）。对应 Go: <c>CancelTaskIfStatus</c> 的取消来源参数。</summary>
     public async Task<bool> CancelTaskIfStatusAsync(
-        string userId, string taskId, string expectedStatus, DateTime now, CancellationToken cancellationToken = default)
+        string userId,
+        string taskId,
+        string expectedStatus,
+        string? cancellationSource,
+        string? cancellationActorID,
+        string? cancellationDiagnosticJSON,
+        DateTime now,
+        CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
@@ -127,9 +139,21 @@ public sealed partial class Repository
             """
             UPDATE tasks SET status = 'cancelled', stage = '任务已取消', error = '任务已取消',
               completed_at = @now, updated_at = @now
+              {cancellationSet}
             WHERE id = @taskId AND user_id = @userId AND status = @expectedStatus
-            """,
-            new { taskId, userId, expectedStatus, now },
+            """.Replace("{cancellationSet}", cancellationSource is null
+                ? ""
+                : ", cancellation_source = @cancellationSource, cancellation_actor_id = @cancellationActorID, cancellation_requested_at = @now, execution_diagnostic_json = @diagnosticJSON"),
+            new
+            {
+                taskId,
+                userId,
+                expectedStatus,
+                now,
+                cancellationSource,
+                cancellationActorID,
+                diagnosticJSON = cancellationDiagnosticJSON ?? (object?)DBNull.Value,
+            },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated == 1;
     }
