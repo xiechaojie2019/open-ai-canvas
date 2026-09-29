@@ -125,6 +125,26 @@ def cs_ref(struct_name: str) -> str:
     return ALIASED_STRUCTS.get(struct_name, struct_name)
 
 
+def naive_snake(name: str) -> str:
+    """CamelCase → snake_case 的朴素实现，仅用于识别 embeddedPrefix 展开的列。"""
+    s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
+
+
+def column_property(column: dict) -> str:
+    """列对应的 C# 属性名。
+
+    gorm `embedded;embeddedPrefix:cost_` 展开的列在 dump 里只保留内层字段名
+    （如 CreditCostPricing.UnitPriceMicrocredits → cost_unit_price_microcredits），
+    直接用 goName 会与外层实体自己的同名字段冲突；此时按带前缀的列名反推属性名
+    （cost_unit_price_microcredits → CostUnitPriceMicrocredits）。
+    """
+    snake = naive_snake(column["goName"])
+    if column["name"] != snake and column["name"].endswith(snake):
+        return "".join(part.capitalize() for part in column["name"].split("_"))
+    return column["goName"]
+
+
 def literal(value: str, cs: str) -> str:
     """把 GORM 的默认值字符串转成 C# 字面量。"""
     if cs == "string":
@@ -197,14 +217,18 @@ def build_entity_block(table: dict, file_map: dict[str, str]) -> tuple[str, str,
             doc += "（" + "，".join(details) + "）"
 
         entity_lines.append(f"    /// <summary>{doc}</summary>")
-        if column["jsonIgnored"]:
+        property_name = column_property(column)
+        if property_name != column["goName"]:
+            # embeddedPrefix 展开的列：Go 外层字段为 json:"-"，整组不参与 JSON 序列化。
+            entity_lines.append("    [JsonIgnore]")
+        elif column["jsonIgnored"]:
             entity_lines.append("    [JsonIgnore]")
         else:
             entity_lines.append(f'    [JsonPropertyName("{column["jsonName"]}")]')
             if column["jsonOmitEmpty"]:
                 entity_lines.append("    [GoOmitEmpty]")
         initializer = default_initializer(cs, column["goType"])
-        entity_lines.append(f'    public {cs} {column["goName"]} {{ get; set; }}{initializer}')
+        entity_lines.append(f'    public {cs} {property_name} {{ get; set; }}{initializer}')
         entity_lines.append("")
 
         # EF 配置
@@ -314,8 +338,13 @@ def generate_entity_metadata(tables: list[dict]) -> int:
         keys = [c for c in columns if c["primaryKey"]]
         key = keys[0]["goName"] if len(keys) == 1 else None
 
-        rows = ",\n".join(
-            f'            new ColumnMap("{c["goName"]}", "{c["name"]}")' for c in columns)
+        def column_map_row(c: dict) -> str:
+            # Go gorm serializer:json 列的编解码由仓储手写 SQL 负责，
+            # 通用 INSERT/UPDATE/SELECT 构造必须跳过（CustomSql=true）。
+            flag = ", true" if "serializer:json" in (c.get("gormTag") or "") else ""
+            return f'            new ColumnMap("{column_property(c)}", "{c["name"]}"{flag})'
+
+        rows = ",\n".join(column_map_row(c) for c in columns)
         blocks.append(
             f'        [typeof({struct})] = new EntityMap(\n'
             f'            "{table["table"]}",\n'
@@ -334,7 +363,7 @@ using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 namespace OpenAICanvas.Persistence;
 
 /// <summary>属性名 → 数据库列名的映射。</summary>
-public sealed record ColumnMap(string Property, string Column);
+public sealed record ColumnMap(string Property, string Column, bool CustomSql = false);
 
 /// <summary>单个实体的持久化元数据。</summary>
 public sealed record EntityMap(string Table, string? KeyProperty, IReadOnlyList<ColumnMap> Columns)
@@ -492,6 +521,83 @@ def generate_schema_ddl(tables: list[dict], provider: str) -> str:
     return "\n".join(lines)
 
 
+def build_aux_block(name: str, body: str, source_file: str) -> str:
+    """从 Go 结构体代码块生成辅助 POCO（非数据表，仅 JSON 契约载体）。"""
+    field_pattern = re.compile(r"^\s*(\w+)\s+([\w\.\[\]\*]+)\s+`([^`]*)`", re.M)
+    lines: list[str] = []
+    for field_name, go_type, tag in field_pattern.findall(body):
+        json_match = re.search(r'json:"([^"]*)"', tag)
+        parts = json_match.group(1).split(",") if json_match else []
+        json_name = parts[0] if parts and parts[0] else field_name
+        omit_empty = "omitempty" in parts[1:]
+        cs = cs_type(go_type)
+        initializer = default_initializer(cs, go_type)
+        lines.append(f"    /// <summary>对应 Go <c>{name}.{field_name}</c>。</summary>")
+        if json_name == "-":
+            lines.append("    [JsonIgnore]")
+        else:
+            lines.append(f'    [JsonPropertyName("{json_name}")]')
+            if omit_empty:
+                lines.append("    [GoOmitEmpty]")
+        lines.append(f"    public {cs} {field_name} {{ get; set; }}{initializer}")
+        lines.append("")
+
+    fields = "\n".join(lines).rstrip()
+    return f"""/// <summary>
+/// 对应 Go <c>{name}</c>（辅助结构体，非独立数据表）。源文件：internal/model/{source_file}
+/// </summary>
+public class {name}
+{{
+{fields}
+}}
+
+"""
+
+
+def collect_aux_structs(
+    tables: list[dict],
+    file_map: dict[str, str],
+    entities_by_group: dict[str, list[str]],
+    order: list[str],
+) -> int:
+    """发射被实体属性引用、但自身不是数据表的 Go 辅助结构体。
+
+    dump 只含注册为模型的 struct；实体属性出现 List<X> 而 X 不是模型时
+    （如 serializer:json 的元素类型），从 Go 源码解析 X 的字段生成同组 POCO，
+    保证 C# 可编译且 JSON 契约一致。遇到无法映射的字段类型会直接抛错，
+    提醒扩展 SCALAR_MAP 而不是静默生成错误代码。
+    """
+    model_names = {cs_struct_name(t["goName"]) for t in tables}
+    scalars = set(SCALAR_MAP.values()) | set(ALIASED_STRUCTS.values()) | {
+        "string", "int", "long", "bool", "double", "float", "DateTime", "JsonElement", "object",
+    }
+
+    referenced: set[str] = set()
+    pattern = re.compile(r"(?:List|Dictionary)<([A-Za-z0-9_]+)")
+    for blocks in entities_by_group.values():
+        for block in blocks:
+            for name in pattern.findall(block):
+                if name not in model_names and name not in scalars:
+                    referenced.add(name)
+
+    emitted = 0
+    for name in sorted(referenced):
+        source = file_map.get(name)
+        if source is None:
+            raise ValueError(f"实体引用了未知辅助类型 {name}，且在 internal/model 下找不到定义")
+        text = (GO_MODEL_DIR / source).read_text(encoding="utf-8")
+        match = re.search(rf"^type {name} struct \{{(.*?)^\}}", text, re.S | re.M)
+        if match is None:
+            raise ValueError(f"无法从 {source} 解析辅助结构体 {name}")
+        group = group_name(name, file_map)
+        if group not in entities_by_group:
+            entities_by_group[group] = []
+            order.append(group)
+        entities_by_group[group].append(build_aux_block(name, match.group(1), source))
+        emitted += 1
+    return emitted
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("用法：generate-entities.py <schema-dump.json>", file=sys.stderr)
@@ -509,6 +615,10 @@ def main() -> int:
             entities_by_group[group] = []
             order.append(group)
         entities_by_group[group].append(entity)
+
+    aux_count = collect_aux_structs(tables, file_map, entities_by_group, order)
+    if aux_count:
+        print(f"  另生成 {aux_count} 个辅助结构体")
 
     DOMAIN_ENTITIES.mkdir(parents=True, exist_ok=True)
 

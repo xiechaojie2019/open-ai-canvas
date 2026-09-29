@@ -134,6 +134,45 @@ public class TaskTextDelta
 /// </summary>
 public class Task
 {
+    /// <summary>数据库列 <c>agent_run_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("agentRunId")]
+    [GoOmitEmpty]
+    public string AgentRunID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>generation_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("generationId")]
+    [GoOmitEmpty]
+    public string GenerationID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>approval_id</c>（maxLength=160）</summary>
+    [JsonPropertyName("approvalId")]
+    [GoOmitEmpty]
+    public string ApprovalID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>authorized_charge_microcredits</c>（maxLength=64）</summary>
+    [JsonPropertyName("authorizedChargeMicrocredits")]
+    [GoOmitEmpty]
+    public long AuthorizedChargeMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>execution_diagnostic_json</c></summary>
+    [JsonIgnore]
+    public string ExecutionDiagnosticJSON { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>cancellation_source</c>（maxLength=40）</summary>
+    [JsonPropertyName("cancellationSource")]
+    [GoOmitEmpty]
+    public string CancellationSource { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>cancellation_actor_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("cancellationActorId")]
+    [GoOmitEmpty]
+    public string CancellationActorID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>cancellation_requested_at</c></summary>
+    [JsonPropertyName("cancellationRequestedAt")]
+    [GoOmitEmpty]
+    public DateTime? CancellationRequestedAt { get; set; }
+
     /// <summary>数据库列 <c>creation_submission_id</c>（maxLength=36）</summary>
     [JsonPropertyName("creationSubmissionId")]
     [GoOmitEmpty]
@@ -281,6 +320,15 @@ public class Task
     [JsonPropertyName("resultJson")]
     public string ResultJSON { get; set; } = string.Empty;
 
+    /// <summary>数据库列 <c>media_recovery_json</c></summary>
+    [JsonIgnore]
+    public string MediaRecoveryJSON { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>media_stage</c>（maxLength=24）</summary>
+    [JsonPropertyName("mediaStage")]
+    [GoOmitEmpty]
+    public string MediaStage { get; set; } = string.Empty;
+
     /// <summary>数据库列 <c>text_draft</c></summary>
     [JsonPropertyName("textDraft")]
     [GoOmitEmpty]
@@ -309,4 +357,14 @@ public class Task
     /// <summary>数据库列 <c>updated_at</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonPropertyName("diagnostic")]
+    [GoOmitEmpty]
+    public string? Diagnostic { get; set; }
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonPropertyName("canRecoverMedia")]
+    [GoOmitEmpty]
+    public bool CanRecoverMedia { get; set; }
 }

@@ -72,6 +72,33 @@ public class CloudAgentCanvasMutation
 }
 
 /// <summary>
+/// 对应 Go <c>CloudAgentEventRecord</c>，数据库表 <c>cloud_agent_event_records</c>。
+/// 源文件：internal/model/cloud_agent.go
+/// </summary>
+public class CloudAgentEventRecord
+{
+    /// <summary>数据库列 <c>run_id</c>（maxLength=80，主键）</summary>
+    [JsonPropertyName("")]
+    public string RunID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>sequence</c>（maxLength=64，主键）</summary>
+    [JsonPropertyName("")]
+    public long Sequence { get; set; }
+
+    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("")]
+    public string UserID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>event_json</c>（not null）</summary>
+    [JsonPropertyName("")]
+    public string EventJSON { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>created_at</c></summary>
+    [JsonPropertyName("")]
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
 /// 对应 Go <c>CloudAgentExecution</c>，数据库表 <c>cloud_agent_executions</c>。
 /// 源文件：internal/model/cloud_agent.go
 /// </summary>
@@ -92,6 +119,30 @@ public class CloudAgentExecution
     /// <summary>数据库列 <c>revision</c>（maxLength=64）</summary>
     [JsonPropertyName("")]
     public long Revision { get; set; }
+
+    /// <summary>数据库列 <c>checkpoint_version</c>（maxLength=64，not null）</summary>
+    [JsonPropertyName("")]
+    public long CheckpointVersion { get; set; }
+
+    /// <summary>数据库列 <c>conversation_id</c>（maxLength=80）</summary>
+    [JsonPropertyName("")]
+    public string ConversationID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>parent_id</c>（maxLength=80）</summary>
+    [JsonPropertyName("")]
+    public string ParentID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>title</c>（maxLength=240）</summary>
+    [JsonPropertyName("")]
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>event_count</c>（maxLength=64）</summary>
+    [JsonPropertyName("")]
+    public long EventCount { get; set; }
+
+    /// <summary>数据库列 <c>message_count</c>（maxLength=64）</summary>
+    [JsonPropertyName("")]
+    public long MessageCount { get; set; }
 
     /// <summary>数据库列 <c>canvas_id</c>（maxLength=80）</summary>
     [JsonPropertyName("")]
@@ -124,4 +175,39 @@ public class CloudAgentExecution
     /// <summary>数据库列 <c>updated_at</c></summary>
     [JsonPropertyName("")]
     public DateTime UpdatedAt { get; set; }
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonIgnore]
+    public List<CloudAgentEventRecord> Journal { get; set; } = null!;
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonIgnore]
+    public List<CloudAgentMessageRecord> Transcript { get; set; } = null!;
+}
+
+/// <summary>
+/// 对应 Go <c>CloudAgentMessageRecord</c>，数据库表 <c>cloud_agent_message_records</c>。
+/// 源文件：internal/model/cloud_agent.go
+/// </summary>
+public class CloudAgentMessageRecord
+{
+    /// <summary>数据库列 <c>run_id</c>（maxLength=80，主键）</summary>
+    [JsonPropertyName("")]
+    public string RunID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>kind</c>（maxLength=24，主键）</summary>
+    [JsonPropertyName("")]
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>sequence</c>（maxLength=64，主键）</summary>
+    [JsonPropertyName("")]
+    public long Sequence { get; set; }
+
+    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("")]
+    public string UserID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>message_json</c>（not null）</summary>
+    [JsonPropertyName("")]
+    public string MessageJSON { get; set; } = string.Empty;
 }

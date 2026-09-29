@@ -133,7 +133,8 @@ public sealed partial class AuthService
     }
 
     /// <summary>对应 Go: <c>Service.BeginLinuxDOLogin</c>。返回授权 URL（需 302 重定向）。</summary>
-    public async Task<string> BeginLinuxDOLoginAsync(string nextPath, CancellationToken cancellationToken = default)
+    public async Task<string> BeginLinuxDOLoginAsync(
+        string nextPath, bool acceptedTerms, CancellationToken cancellationToken = default)
     {
         long count = await _repository.UserCountAsync(cancellationToken).ConfigureAwait(false);
         if (count == 0)
@@ -159,6 +160,7 @@ public sealed partial class AuthService
             StateHash = IdGenerator.HashToken(state),
             CodeVerifier = verifier,
             NextPath = SafeOAuthNext(nextPath),
+            AcceptedTerms = acceptedTerms,
             ExpiresAt = DateTime.UtcNow.AddMinutes(10),
             CreatedAt = DateTime.UtcNow,
         }, cancellationToken).ConfigureAwait(false);
@@ -235,6 +237,10 @@ public sealed partial class AuthService
             if (!registrationEnabled)
             {
                 throw AppError.Forbidden("管理员未开放新用户注册");
+            }
+            if (!state.AcceptedTerms)
+            {
+                throw AppError.BadAuthRequest("请先同意影策服务协议");
             }
 
             (user, identity) = await CreateLinuxDOUserAsync(

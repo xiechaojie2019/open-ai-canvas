@@ -153,6 +153,17 @@ builder.Services.AddSingleton(serviceProvider =>
         storageSettings: serviceProvider.GetRequiredService<OpenAICanvas.Application.StorageSettingsService>()));
 // 云 Agent 偏好档案（阶段 11.9 首批）。对应 Go 的 app/cloud_agent_profile.go。
 builder.Services.AddSingleton<OpenAICanvas.Application.AgentProfileService>();
+// Agent 个人记忆。对应 Go 的 app/cloud_agent_lessons.go 服务层。
+builder.Services.AddSingleton<OpenAICanvas.Application.CloudAgent.AgentLessonService>();
+// 记忆压缩。对应 Go 的 app/cloud_agent_memory_compact.go。
+builder.Services.AddSingleton(sp => new OpenAICanvas.Application.CloudAgent.AgentMemoryCompactService(
+    sp.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
+    sp.GetRequiredService<OpenAICanvas.Application.CanvasService>().TaskCreations));
+builder.Services.AddHostedService<OpenAICanvas.Web.Workers.AgentMemoryCompactWorker>();
+// 常驻滚动通知。对应 Go 的 app/announcement.go banner 部分。
+builder.Services.AddSingleton<OpenAICanvas.Application.BannerAnnouncementService>();
+// 画布工具库。对应 Go 的 internal/tools + app/tools_bridge.go。
+builder.Services.AddSingleton<OpenAICanvas.Application.ToolsService>();
 builder.Services.AddSingleton<OpenAICanvas.Application.EagleService>();
 builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.PlatformSettingsService(
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
@@ -232,6 +243,10 @@ await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
 // 幂等；失败即中断启动——否则后续生成会因为找不到模板而报错。
 await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
     .PromptTemplates.EnsureDefaultPromptTemplatesAsync().ConfigureAwait(false);
+
+// 启动种子：内置画布工具幂等落库（Go main.go:94 的 EnsureBuiltinTools）。
+await app.Services.GetRequiredService<OpenAICanvas.Application.ToolsService>()
+    .EnsureBuiltinToolsAsync().ConfigureAwait(false);
 
 // 插件运行时引导（10.1/10.2）：扫描官方包目录、合并 bundled 清单并加载注册表。
 // 与 Go 一致在监听前完成；坏包跳过不阻断启动。
@@ -377,6 +392,8 @@ api.MapAgentRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.AgentProfileService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentRuntimeService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.AgentLessonService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.CloudAgent.AgentMemoryCompactService>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());
 
@@ -423,7 +440,13 @@ api.MapAdminPlatformSettingsRoutes(
 // 公告路由。对应 Go 的 handler.RegisterAnnouncementRoutes。
 api.MapAnnouncementRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.BannerAnnouncementService>(),
     env.DataDir);
+
+// 画布工具路由。对应 Go 的 handler.RegisterToolRoutes。
+api.MapToolRoutes(
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
+    app.Services.GetRequiredService<OpenAICanvas.Application.ToolsService>());
 
 // 平台设置管理路由。对应 Go 的 handler 设置部分（registration/email/linuxdo/credits）。
 api.MapAdminSettingsRoutes(app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>());

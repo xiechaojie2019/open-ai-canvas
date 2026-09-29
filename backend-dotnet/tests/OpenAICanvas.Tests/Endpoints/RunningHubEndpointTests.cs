@@ -72,6 +72,7 @@ public sealed class RunningHubEndpointTests : IDisposable
         {
             username = "runninghubadmin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
 

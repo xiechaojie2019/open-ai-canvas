@@ -356,6 +356,7 @@ public sealed class SkillsEndpointTests : IDisposable
         {
             username,
             password = "password123",
+            acceptedTerms = true,
         });
 
         if (register.IsSuccessStatusCode)

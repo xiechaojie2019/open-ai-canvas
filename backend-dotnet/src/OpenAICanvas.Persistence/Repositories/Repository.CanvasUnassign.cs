@@ -10,7 +10,8 @@ namespace OpenAICanvas.Persistence.Repositories;
 public sealed partial class Repository
 {
     /// <summary>
-    /// 关系列、同步快照与项目版本号原子更新；命中 0 行视为画布不在该项目下。
+    /// 关系列、画布版本、同步快照与项目版本号原子更新；命中 0 行视为画布不在该项目下或版本已变化。
+    /// 对应 Go: <c>UnassignCanvasFromProject</c> 的 revision 守卫与递增。
     /// </summary>
     public async Task UnassignCanvasFromProjectAsync(
         string userId,
@@ -18,6 +19,7 @@ public sealed partial class Repository
         string canvasId,
         string payloadJson,
         DateTime updatedAt,
+        long revision,
         CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -33,10 +35,10 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE canvas_projects SET project_id = '', payload_json = @payloadJson, updated_at = @updatedAt
-            WHERE id = @canvasId AND user_id = @userId AND project_id = @projectId
+            UPDATE canvas_projects SET project_id = '', payload_json = @payloadJson, updated_at = @updatedAt, revision = @nextRevision
+            WHERE id = @canvasId AND user_id = @userId AND project_id = @projectId AND revision = @revision
             """,
-            new { canvasId, userId, projectId, payloadJson, updatedAt },
+            new { canvasId, userId, projectId, payloadJson, updatedAt, revision, nextRevision = revision + 1 },
             transaction,
             cancellationToken).ConfigureAwait(false);
         if (updated != 1)

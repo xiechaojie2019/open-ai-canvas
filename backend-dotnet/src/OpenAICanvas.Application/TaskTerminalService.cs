@@ -409,6 +409,13 @@ public sealed class TaskTerminalService
         {
             throw new TaskStateConflictException();
         }
+        if (task.ID.Length > 0)
+        {
+            // Agent 媒体任务提交后以 "task:{id}" 持有资源租约；终态即释放
+            // （对应 Go: markTerminalState 的 ReleaseCloudAgentResourceLeases）。
+            await _repository.ReleaseCloudAgentResourceLeasesAsync(
+                task.UserID, "task:" + task.ID, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task FinalizeReplayAsync(TaskEntity task, string status, string message, CancellationToken cancellationToken)

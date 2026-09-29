@@ -17,7 +17,7 @@ namespace OpenAICanvas.Persistence;
 public static class SchemaMigrationCatalog
 {
     /// <summary>对应 Go: <c>database.CurrentSchemaVersion</c>。</summary>
-    public const long CurrentSchemaVersion = 15;
+    public const long CurrentSchemaVersion = 34;
 
     /// <summary>PostgreSQL 迁移排他锁 ID。对应 Go: <c>postgresSchemaMigrationLockID</c>。</summary>
     public const long PostgresMigrationLockId = 73123910420260830;
@@ -38,6 +38,25 @@ public static class SchemaMigrationCatalog
     private const string CloudAgentCanvasMutationChecksum = "sha256:cloud-agent-canvas-mutation-v13-20260913";
     private const string CloudAgentRecoveryChecksum = "sha256:cloud-agent-recovery-control-v14";
     private const string AgentProfilesChecksum = "sha256:agent-profiles-v15-20260914";
+    private const string AgentLessonsChecksum = "sha256:agent-lessons-v16-20260917";
+    private const string AgentLessonsOwnerIndexChecksum = "sha256:agent-lessons-owner-index-v17-20260917";
+    private const string AgentMemorySettingsChecksum = "sha256:agent-memory-settings-v18-20260917";
+    private const string PaymentPluginVersionChecksum = "sha256:payment-plugin-version-v19-20260917";
+    private const string BannerAnnouncementsChecksum = "sha256:banner-announcements-v20-20260917";
+    private const string BannerTitleRunsChecksum = "sha256:banner-announcement-title-runs-v21-20260917";
+    private const string BannerNoticeTypeChecksum = "sha256:banner-announcement-notice-type-v22-20260917";
+    private const string CanvasRevisionHistoryChecksum = "sha256:canvas-revision-history-v23-20260918";
+    private const string ChannelModelLabelChecksum = "sha256:channel-model-label-v24";
+    private const string VideoTokenFormulaSnapshotChecksum = "sha256:video-token-formula-snapshot-v25";
+    private const string ChannelModelDescriptionChecksum = "sha256:channel-model-description-v26";
+    private const string ChannelCreditCostChecksum = "sha256:channel-credit-cost-v27";
+    private const string AgentExecutionJournalChecksum = "sha256:agent-execution-journal-v28";
+    private const string AgentResourceLeasesChecksum = "sha256:agent-resource-leases-v29-20260919";
+    private const string BuiltinToolsChecksum = "sha256:builtin-tools-v30";
+    private const string ToolFavoritesChecksum = "sha256:tool-favorites-v31";
+    private const string ChannelModelTagsChecksum = "sha256:channel-model-tags-v32";
+    private const string OAuthStateAcceptedTermsChecksum = "sha256:oauth-state-accepted-terms-v33";
+    private const string TaskMediaRecoveryChecksum = "sha256:task-media-recovery-v34";
 
     /// <summary>标准顺序的迁移计划。</summary>
     public static IReadOnlyList<SchemaMigration> Plan { get; } = BuildPlan();
@@ -202,6 +221,208 @@ public static class SchemaMigrationCatalog
             Checksum = AgentProfilesChecksum,
             Apply = Baseline.ApplyFullSchemaAsync,
         },
+        // —— v16–v34 对齐 Go 的 schemaMigrations（2026-09-28 移植）。
+        // 此前 .NET 曾把 v16 槽位用于自建的 canvas_project_revision 临时条目，
+        // 画布同步 CAS 的 revision 列现由 Go 同名版本 v23 canvas_revision_history 负责。
+        new SchemaMigration
+        {
+            Version = 16,
+            Name = "agent_lessons",
+            Checksum = AgentLessonsChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 17,
+            Name = "agent_lessons_owner_index",
+            Checksum = AgentLessonsOwnerIndexChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 18,
+            Name = "agent_memory_settings",
+            Checksum = AgentMemorySettingsChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 19,
+            Name = "payment_plugin_version",
+            Checksum = PaymentPluginVersionChecksum,
+            Apply = async ctx =>
+            {
+                foreach (string table in new[] { "payment_provider_configs", "payment_orders" })
+                {
+                    if (!await ctx.TableExistsAsync(table).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
+                    await ctx.AddColumnIfMissingAsync(
+                        table, "plugin_version", ctx.ColumnDefinition(table, "plugin_version")).ConfigureAwait(false);
+                }
+            },
+        },
+        new SchemaMigration
+        {
+            Version = 20,
+            Name = "banner_announcements",
+            Checksum = BannerAnnouncementsChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 21,
+            Name = "banner_announcement_title_runs",
+            Checksum = BannerTitleRunsChecksum,
+            Apply = async ctx =>
+                await ctx.AddColumnIfMissingAsync(
+                    "banner_announcements", "title_runs", ctx.ColumnDefinition("banner_announcements", "title_runs")).ConfigureAwait(false),
+        },
+        new SchemaMigration
+        {
+            Version = 22,
+            Name = "banner_announcement_notice_type",
+            Checksum = BannerNoticeTypeChecksum,
+            Apply = async ctx =>
+                await ctx.AddColumnIfMissingAsync(
+                    "banner_announcements", "notice_type", ctx.ColumnDefinition("banner_announcements", "notice_type")).ConfigureAwait(false),
+        },
+        new SchemaMigration
+        {
+            Version = 23,
+            Name = "canvas_revision_history",
+            Checksum = CanvasRevisionHistoryChecksum,
+            Apply = async ctx =>
+            {
+                await Baseline.ApplyFullSchemaAsync(ctx).ConfigureAwait(false);
+                await ctx.AddColumnIfMissingAsync(
+                    "canvas_projects", "revision", ctx.ColumnDefinition("canvas_projects", "revision")).ConfigureAwait(false);
+            },
+        },
+        new SchemaMigration
+        {
+            Version = 24,
+            Name = "channel_model_label",
+            Checksum = ChannelModelLabelChecksum,
+            Apply = async ctx =>
+                await ctx.AddColumnIfMissingAsync(
+                    "channel_models", "channel_label", ctx.ColumnDefinition("channel_models", "channel_label")).ConfigureAwait(false),
+        },
+        new SchemaMigration
+        {
+            Version = 25,
+            Name = "video_token_formula_snapshot",
+            Checksum = VideoTokenFormulaSnapshotChecksum,
+            Apply = async ctx =>
+            {
+                await ctx.AddColumnIfMissingAsync(
+                    "billing_orders", "video_formula_tokens", ctx.ColumnDefinition("billing_orders", "video_formula_tokens")).ConfigureAwait(false);
+                await ctx.AddColumnIfMissingAsync(
+                    "billing_orders", "usage_source", ctx.ColumnDefinition("billing_orders", "usage_source")).ConfigureAwait(false);
+            },
+        },
+        new SchemaMigration
+        {
+            Version = 26,
+            Name = "channel_model_description",
+            Checksum = ChannelModelDescriptionChecksum,
+            Apply = async ctx =>
+                await ctx.AddColumnIfMissingAsync(
+                    "channel_models", "description", ctx.ColumnDefinition("channel_models", "description")).ConfigureAwait(false),
+        },
+        new SchemaMigration
+        {
+            Version = 27,
+            Name = "channel_credit_cost",
+            Checksum = ChannelCreditCostChecksum,
+            Apply = async ctx =>
+            {
+                foreach (string table in new[] { "channel_model_price_tiers", "billing_orders" })
+                {
+                    await AddColumnsIfMissingAsync(
+                        ctx, table,
+                        "cost_configured",
+                        "cost_unit_price_microcredits",
+                        "cost_input_token_price_microcredits",
+                        "cost_output_token_price_microcredits",
+                        "cost_cached_token_price_microcredits").ConfigureAwait(false);
+                }
+
+                await AddColumnsIfMissingAsync(
+                    ctx, "billing_orders", "cost_billing_mode", "cost_quantity", "cost_video_formula_tokens").ConfigureAwait(false);
+            },
+        },
+        // v28 的 AutoMigrate(CloudAgentExecution/EventRecord/MessageRecord/Task/BillingOrder)：
+        // 新表由完整建表脚本创建，已有表的新列在此逐列补齐。
+        new SchemaMigration
+        {
+            Version = 28,
+            Name = "agent_execution_journal",
+            Checksum = AgentExecutionJournalChecksum,
+            Apply = async ctx =>
+            {
+                await Baseline.ApplyFullSchemaAsync(ctx).ConfigureAwait(false);
+                await AddColumnsIfMissingAsync(
+                    ctx, "cloud_agent_executions",
+                    "checkpoint_version", "conversation_id", "parent_id", "title", "event_count", "message_count").ConfigureAwait(false);
+                await AddColumnsIfMissingAsync(
+                    ctx, "tasks",
+                    "agent_run_id", "generation_id", "approval_id", "authorized_charge_microcredits",
+                    "execution_diagnostic_json", "cancellation_source", "cancellation_actor_id", "cancellation_requested_at").ConfigureAwait(false);
+                await AddColumnsIfMissingAsync(ctx, "billing_orders", "charge_limit_set").ConfigureAwait(false);
+            },
+        },
+        new SchemaMigration
+        {
+            Version = 29,
+            Name = "agent_resource_leases",
+            Checksum = AgentResourceLeasesChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 30,
+            Name = "builtin_tools",
+            Checksum = BuiltinToolsChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 31,
+            Name = "tool_favorites",
+            Checksum = ToolFavoritesChecksum,
+            Apply = Baseline.ApplyFullSchemaAsync,
+        },
+        new SchemaMigration
+        {
+            Version = 32,
+            Name = "channel_model_tags",
+            Checksum = ChannelModelTagsChecksum,
+            Apply = async ctx =>
+                await ctx.AddColumnIfMissingAsync(
+                    "channel_models", "tags", ctx.ColumnDefinition("channel_models", "tags")).ConfigureAwait(false),
+        },
+        new SchemaMigration
+        {
+            Version = 33,
+            Name = "oauth_state_accepted_terms",
+            Checksum = OAuthStateAcceptedTermsChecksum,
+            Apply = async ctx =>
+                await ctx.AddColumnIfMissingAsync(
+                    "o_auth_states", "accepted_terms", ctx.ColumnDefinition("o_auth_states", "accepted_terms")).ConfigureAwait(false),
+        },
+        new SchemaMigration
+        {
+            Version = 34,
+            Name = "task_media_recovery",
+            Checksum = TaskMediaRecoveryChecksum,
+            Apply = async ctx =>
+            {
+                await AddColumnsIfMissingAsync(ctx, "tasks", "media_recovery_json", "media_stage").ConfigureAwait(false);
+            },
+        },
     ];
 
     /// <summary>
@@ -248,5 +469,14 @@ public static class SchemaMigrationCatalog
         }
 
         return legacy;
+    }
+
+    /// <summary>按完整建表脚本里的定义逐列补齐。对应 Go 的 <c>Migrator().AddColumn()</c> 循环。</summary>
+    private static async Task AddColumnsIfMissingAsync(SchemaMigrationContext ctx, string table, params string[] columns)
+    {
+        foreach (string column in columns)
+        {
+            await ctx.AddColumnIfMissingAsync(table, column, ctx.ColumnDefinition(table, column)).ConfigureAwait(false);
+        }
     }
 }

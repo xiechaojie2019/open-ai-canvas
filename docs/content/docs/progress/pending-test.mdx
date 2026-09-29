@@ -5,6 +5,13 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## net8 后端画布同步版本号（revision）补齐
+
+- net8 后端（`backend-dotnet/`）此前画布保存不带版本号：`PUT /api/canvas-projects/:id` 响应缺 `revision`，仓储为无版本谓词的裸 UPDATE（最后写入者胜），导致前端每次保存都报「服务端未返回有效画布版本」并把画布打入冲突暂停，且多端同账号同时编辑会互相静默覆盖。本次按 Go 语义补齐：`canvas_projects` 新增 `revision`（非空默认 1，随迁移 v23 `canvas_revision_history` 落列），保存按原版本 CAS 校验并递增（缺失 428、不一致 409），GET/快照/摘要响应携带服务端权威版本，存储载荷剥离 `revision`/`remoteContentHash` 并保留服务端 viewport；画布关联项目/解绑/项目删除级联/创作与 Agent 写入路径同步递增版本。
+- [x] net8 全量套件 1551 项通过（含新增版本冲突 409、缺版本 428、保存递增断言）；4 项插件/支付/性能失败为既有问题（pristine HEAD 复现，与本次无关）。
+- [ ] 迁移在既有 net8 数据库上执行后，旧画布首次「加载云端最新版本」会把本地版本对齐为服务端列值（存量行回填为 1），保存恢复正常；该自愈路径待真实数据验收。
+- [ ] 浏览器验收：net8 后端下画布编辑自动保存成功（状态条「已保存」）、双开同账号编辑触发「云端画布已有更新」冲突保护且本地草稿可下载、Agent 改画布后浏览器保存不再静默覆盖。
+
 ## net8 后端资源访问批量签发（POST /api/resources/access）
 
 - net8 后端（`backend-dotnet/`）已移植 `POST /api/resources/access`：1–100 项批量、逐项独立返回 `access` 或结构化 `error`；本地资源签发 `platform-local` 投递与带 `expires`/`signature`/`variant` 的平台公开签名地址，`playback` 请求在副本就绪时下发副本、未就绪回退原件并带 `fallbackReason=playback_not_ready`。公开签名 payload 与 Go 一致（`id\nvariant\nexpires`），密钥来自 `data/.settings-key`；此前 net8 公开路由签名不覆盖变体，现与 Go 后端签发的存量地址互相兼容（同一数据目录时）。
@@ -2774,3 +2781,84 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 - [x] 新增端到端测试：取码 → 发送 → 用码注册全链路；发送失败回删验证码且不进入冷却；5xx 只回固定文案。
 - [ ] 服务器部署本改动后，在管理后台确认“开放注册”与“邮件设置（含发件人显示名）”均已启用，走一次真实注册：能收到验证码邮件、10 分钟内可用、同一邮箱 1 分钟内重复取码被限流。
 - [ ] 若收不到邮件，检查服务器出网到 SMTP 端口（465/587）是否被安全组拦截，以及 QQ 邮箱授权码是否仍然有效。
+
+## .NET 后端迁移目录对齐 Go v34（2026-09-28）
+
+`backend-dotnet` 的 `SchemaMigrationCatalog` 从 15 版对齐到 Go 当前 34 版，schema 基线刷新为当前 Go 导出（94 表 / 1136 列 / 472 索引）；此前临时占用的 v16 槽位已重排，画布 `revision` 列由 Go 同名版本 v23 承担。实体生成器修复内嵌列命名冲突、`channel_models.tags` JSON 列参数序列化、官方支付插件包解析（包上限对齐 Go 48MiB）与纯支付包启动预检。
+
+- [x] 全新 SQLite 库迁移写入 34 条记录，名称与校验和与 Go v1–v34 逐字一致；重复迁移幂等；`SqliteSchemaParityTests` 以新基线全过。
+- [x] 渠道模型写入（含 `tags` 标签列）、系统性能 schema 版本断言、插件运行时（官方支付包注册）专项全部通过。
+- [ ] 生产（211）部署本改动前需确认：现网 Go 库已在 v34；.NET 接管时 `health/ready` 应返回 `schema.current=34`。若现网库仍低于 v34，先用 Go 版 `migrate-schema up` 升级再切换。
+- [ ] 管理后台渠道模型编辑弹窗保存一次带彩色标签的模型，确认 `tags` 列写入与回读正常（新参数序列化路径）。
+- [ ] 支付宝/微信官方支付插件在管理端可见且可启用（此前包解析失败导致注册表为空，已修复）。
+
+## .NET 补移植第一轮：v16–v18 与 v20–v22 功能实现（2026-09-28）
+
+按版本顺序补移植 v14 之后的 Go 功能迭代，本轮完成四组，专项测试 53/53 通过（含既有任务/公告/系统性能端点回归）：
+
+- **v16/v17 Agent 经验教训**：`Repository.AgentLessons`（含检查点事务内变体）、`CloudAgentLessons`（脱敏/查重/索引块注入/检索）、`AgentLessonService` 与 `/agent/memories` CRUD/import/export/decide、`/admin/agent-lessons` 管理端；`remember_lesson`/`recall_lessons` 工具接入 Agent 运行时（检查点事务内执行，工具 schema 契约测试同步更新）。
+- **v18 记忆压缩**：`AgentMemoryCompactService`（设置读写、手动触发创建压缩任务、`agent_memory_compact` 任务终态回写）、5 分钟定时调度 worker（每跳最多 3 个）、计划解析与应用（rewrites/merges 事务批量落库）。
+- **v20–v22 滚动公告 Banner**：`Repository.Banners`（title_runs 显式编解码）+ `BannerAnnouncementService`（分段字号/字重/字体/颜色白名单校验与相邻合并、类型/状态白名单、生效窗口过滤）+ 公开 `GET /banner-announcements` 与管理端四条路由。
+
+已知边界（如实记录）：
+
+- [x] 全部新服务走真实 SQLite 迁移库验证；`cloud-agent` 工具清单契约测试已按 Go 顺序补入两个新工具。
+- [ ] 浏览器端到端未验证：设置页「Agent 记忆」UI、管理后台通知条配置、首页 Banner 展示需联调确认。
+- [ ] 压缩任务真实模型链路未验证（需配置渠道后手动触发 `POST /agent/memories/compact`）。
+- [ ] 后续版本（v23 画布快照、v24/26/32 渠道模型字段、v25/v27 计费成本、v28 执行日志、v29 资源租约、v30/31 工具库、v33 OAuth 协议、v34 媒体恢复）仍未移植，按版本顺序推进。
+
+## .NET 补移植第二轮：v24/26/32、v30/31、v33、v29（2026-09-29）
+
+按版本顺序继续补移植，本轮完成四组，专项与受影响回归 118/118 通过：
+
+- **v24/26/32 渠道模型展示名/描述/彩色标签**：`ChannelModelRequest` 补 channelLabel/tags/description 三字段（校验顺序与 Go 一致：标签→展示名→描述→渠道查询）；标签归一化（≤5 个、文字 1–12 字去重、六色白名单）；公开模型目录与管理端 modelCosts 投影同步输出三字段。
+- **v30/v31 工具库与收藏**：`ToolsService`（列表 public/favorites/custom 三范围、详情含提示词、收藏幂等、自定义 CRUD、内置保护）+ 87 个内置工具种子（`Seed/tools.json` 内嵌资源，启动幂等落库，PostgreSQL 序列同步）+ `/tools` 六条路由 + `@[tool:type:ID:label:icon]` mention 令牌解析（创建预检 + 执行期替换两处挂钩，与 Go task_creation.go/provider.go 对应）。
+- **v33 OAuth 协议同意**：修复 `Repository.OAuth` 手写 SQL 表名错误（`oauth_states` → `o_auth_states`，此前 LinuxDO 登录运行期必报错）并补 accepted_terms 列读写；`BeginLinuxDOLogin` 携带 acceptedTerms、回调新用户校验「请先同意影策服务协议」；注册请求补 acceptedTerms 必填校验。
+- **v29 Agent 资源租约**：`Repository.CloudAgentResourceLeases` 全六方法（钉住/替换/按所有者释放/按运行释放/转移到 task: 所有者/过期清理，upsert 冲突只更新 run 与到期时间）；接线五处锚点——审批创建时钉住参考资源（30 分钟报价窗）、决策拒绝时释放、参数修改时重写租约、审批提交时转移到 `task:{id}`、任务终态与运行清理时释放、决策入口过期清扫。
+
+已知边界（如实记录）：
+
+- [x] 全部新服务走真实 SQLite 迁移库验证；租约锚点所在审批/终态/清理路径的既有测试全过。
+- [ ] 剩余待移植：v34 任务媒体恢复（与 .NET 媒体落盘管线深度耦合，需先对齐下载/暂存/上传分阶段结构）、v25 视频 Token 报价结算、v27 管理员积分成本、v28 Agent 执行日志 journal 写入、v23 画布快照历史。
+- [ ] v29 租约的浏览器端到端验证：生成带参考图的媒体审批流程，确认审批/拒绝/提交后 `cloud_agent_resource_leases` 行为符合预期。
+- [ ] 注册接口现在要求 `acceptedTerms: true`，前端注册页若未传该字段会被 400 拒绝——联调时确认前端已同步。
+
+## .NET 补移植第三轮：v23 画布版本历史（2026-09-29）
+
+- **v23 画布快照历史**：`Repository.CanvasHistory`（快照查询、`SaveCanvasWithSnapshot` 单事务 CAS+捕获判定+引用存在性校验+保留上限修剪、历史引用守卫）+ `UserDataService` 历史三方法与 `SaveDocumentWithHistory` 钩子（upsert 改走历史保存，5 分钟节流、内容不变跳过、before_restore 强制捕获并刷新租约窗口）+ 恢复流程（当前版本 CAS、归属字段保留、强制快照留痕）+ 三条路由（列表/详情/恢复，恢复走 canvas-write 限流）+ 物理删除 drain 的历史引用守卫（仍被引用保持 pending 重试）。
+- [x] 专项 5/5（捕获节流/保留上限/恢复 CAS 与回滚/详情与 404/引用保护）；画布与删除回归 23/23。
+- [ ] 前端联调：历史列表/预览/恢复 UI 走真实画布，确认快照摘要不含 payload、恢复后 revision 递增与 before_restore 留痕。
+- [ ] 剩余：v25 视频 Token 报价结算（需先移植 Go 结算 usage_source 路径，.NET 结算当前为简化版）、v27 积分成本（依赖 v25）、v28 执行日志 journal、v34 媒体恢复（需对齐媒体管线）。
+- [ ] 并行任务说明：画布 revision CAS（工作区未提交改动）与本轮 `SaveCanvasWithSnapshot` 已整合为同一事务路径，`UpsertCanvasProjectAsync` 重构为事务核心 + 包装，行为不变。
+
+## .NET 补移植第四轮：v25 视频 Token 公式快照结算（2026-09-29）
+
+- **v25**：`BillingCalc` 重写方舟视频估算为 Go 官方公式（`(输入毫秒+参考毫秒)×W×H×FPS/1024000`，预留 = 公式×1.1 向上取整；参考视频走 15 秒上限披露），新增 `VideoTokenEstimate` 快照结构（公式量/预留量/尺寸/帧率/余量百分比），分辨率档位改为官方 Seedance 尺寸表并支持 `宽x高` 精确像素。下单两路径（价格档/前台统一价）落 `video_formula_tokens`。结算移植 `tokenSettlementUsage`：视频无供应商 usage 时按公式快照结算（`usage_source=video_formula`、`usage_available=false`、流水注明快照结算）；有 usage 时视频只按输出计价（输入/缓存清零）；无 usage 且无快照拒绝结算；结算回滚补偿分支保留 usage_source。
+- [x] 专项 5/5（公式与余量、快照回退结算、供应商优先并清零输入、无快照拒绝、非视频缺 usage 拒绝）；财务/账单/任务回归 56/56。
+- [ ] 真实渠道联调：Seedance 视频 `per_second`/`token` 两类价格档各跑一次成功任务，核对 `usage_source` 与实际扣费。
+- [ ] 剩余：v27 管理员积分成本（成本快照+切线重算+管理端投影）、v28 执行日志 journal、v34 媒体恢复。
+
+## .NET 补移植第五轮：v27 管理员积分成本（2026-09-29）
+
+- **v27**：新增 `CreditCostOps`/`CreditCostPricingDto`（成本价双层校验：0–100 万积分上限；配置后按 `validateTokenPrices` 约束视频输入/缓存必须为 0）；价格档请求携带 `costPricing`，归一化校验后落 `cost_*` 列；`BuildBillingOrderWithPriceTierAsync` 下单时打成本快照（成本计费方式/数量/video 公式量随实际执行线路）；`BillingCreditCost` 按已结算订单计算成本（固定/按秒=单价×数量；token=真实用量×成本价、视频无 usage 回退公式快照，不套销售倍率）；管理端模型投影（`AdminChannelModelNode`）在 `priceTiers` 内携带 `costPricing`，仅出现在管理员校验后的接口（列表/保存/更新）。
+- [x] 专项 4/4（校验/快照/成本金额/投影）；渠道与计费回归 35/35。
+- [ ] 剩余缺口（如实记录）：切线路成本重算（Go `model_router.go` 的 `SwitchTaskLogicalRoute`——.NET 尚未移植供应线路故障切换流程，快照已在下单路径就位）；管理员分析财务汇总（Go `analytics_finance.go` 用 `billingCreditCost` 汇总成本/利润——.NET 分析沿用旧估算机制，需单独一批对齐）；管理员 API 日志的 `creditCostConfigured/creditCostMicrocredits` 富化。
+- [ ] 管理后台联调：渠道模型编辑弹窗配置并保存成本价，确认 `costPricing` 回显与成本保存生效。
+- [ ] 剩余移植：v28 执行日志 journal、v34 媒体恢复。
+
+## .NET 补移植第六轮：v28 Agent 执行日志 journal（2026-09-29）
+
+- **v28 journal 主链路**：checkpoint 时把 Events/Canonical.Messages/TextHistory 从 StateJSON 剥离到 `cloud_agent_event_records`（append-only）/ `cloud_agent_message_records`（canonical+history 双序列），StateJSON 保留其余状态，`CheckpointVersion=2` + EventCount/MessageCount 记账；`Save` 落库前校验事件 seq 连续与身份（runID/EventID）。仓储 `SaveCloudAgentInTxAsync` 级联：EventCount 回退拒绝、已有事件体 JSON 语义相同才允许（big.Int 语义对齐为 JsonNode DeepEquals）、新事件增量插入、消息 upsert + canonical/history 截断；`Decode` 对 v2 运行从 journal/transcript 重建状态并逐条校验；`RecentCloudAgentEventsForUserAsync` 以运行为界读取最近事件。所有 run 加载路径（按 ID/事务内/活动任务/keyset 待推进）统一加载 journal。
+- [x] 专项 4/4（剥离与重建、追加允许/截断拒绝/改写拒绝、旧格式兼容、Recent 读取）；CloudAgent 全套 27/27；持久化/任务/契约/计费/画布回归 100/100。
+- [ ] tasks 审计列（AgentRunID/GenerationID/ApprovalID/AuthorizedChargeMicrocredits/ExecutionDiagnosticJSON/Cancellation*）与 `cloud_agent_task_facts` 输出投影仍待接入（本轮回避了任务创建/取消/诊断三条链路，避免与媒体/计费批冲突）。
+- [ ] skill-usage 聚合（Go `cloud_agent_skill_usage.go`，消费 Recent 事件）未移植；`RecentCloudAgentEventsForUserAsync` 已就绪。
+- [ ] Agent 真实会话回归：v2 checkpoint 的续聊/崩溃恢复/SSE 事件回放需在真实会话里过一遍（旧格式 CheckpointVersion=0 兼容路径已有测试）。
+- [ ] 剩余移植：v34 媒体恢复（需先对齐媒体落盘管线）。
+
+## .NET 补移植第七轮：v34 任务媒体恢复（2026-09-29）——v14+ 迭代移植收官
+
+- **v34**：`Repository.TaskMediaRecovery`（`SaveTaskMediaCheckpoint` 租约栅栏条件写、`RequeueTaskMediaRecovery` 乐观重排队——同任务/同订单/非退款/租约空闲）；`TaskMediaRecoveryService`（检查点加密编解码 + 形状校验 1–32 条目/image|video|audio、`RecoverAsync` 完整校验链：draining/归属/无检查点/状态机/项目归档/订单归属/已退款/手动次数 3 次/间隔 1 分钟，重排队后自动尝试预算仅 1 次；`HandleFailureAsync` 自动退避 15s→1m→3m→10m + 抖动，20 分钟新鲜期，预算耗尽仅保留检查点）；worker 挂钩（带检查点的重试任务在 provider 成功后物化检查点而非用原始结果，物化器未注册时行为与现状一致）；`POST /tasks/{id}/recover-media` 路由（错误统一 400，与 Go handler 一致）。
+- **与 Go 的差异（如实记录）**：结果物化（下载/暂存/OSS 上传/登记资源）依赖媒体落盘管线，.NET 侧尚未对齐——通过 `TaskMediaRecoveryService.Materializer` 委托接入；未注册时检查点不会被写入（媒体任务沿用现状直接返回上游 URL/dataURL），恢复 API 会正确返回「没有可恢复的作品」。管线就绪后注册委托即打通全链路。
+- [x] 专项 6/6（租约栅栏/解码校验/恢复链与间隔/次数与退款拒绝/退避与预算耗尽/物化委托）；任务/租约/Agent/计费回归 63/63。
+- [ ] 真实验收：媒体管线对齐后，端到端走「生成成功→保存失败→自动退避→手动恢复→成功落库」全流程。
+- **v14 之后的 Go 迭代移植至此全部落地**（v16–v34 共 19 个迁移 + 各功能面；差异与待接线项见各轮记录）。

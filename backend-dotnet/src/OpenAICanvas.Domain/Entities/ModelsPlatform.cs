@@ -367,6 +367,108 @@ public class SystemSetting
 }
 
 /// <summary>
+/// 对应 Go <c>ToolFavorite</c>，数据库表 <c>tool_favorites</c>。
+/// 源文件：internal/model/models_platform.go
+/// </summary>
+public class ToolFavorite
+{
+    /// <summary>数据库列 <c>id</c>（maxLength=64，主键）</summary>
+    [JsonPropertyName("id")]
+    public long ID { get; set; }
+
+    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("userId")]
+    public string UserID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>tool_id</c>（maxLength=64）</summary>
+    [JsonPropertyName("toolId")]
+    public long ToolID { get; set; }
+
+    /// <summary>数据库列 <c>created_at</c></summary>
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// 对应 Go <c>Tool</c>，数据库表 <c>tools</c>。
+/// 源文件：internal/model/models_platform.go
+/// </summary>
+public class Tool
+{
+    /// <summary>数据库列 <c>id</c>（maxLength=64，主键）</summary>
+    [JsonPropertyName("id")]
+    public long ID { get; set; }
+
+    /// <summary>数据库列 <c>type</c>（maxLength=24）</summary>
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>label_en</c>（maxLength=120）</summary>
+    [JsonPropertyName("labelEn")]
+    public string LabelEn { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>label</c>（maxLength=120）</summary>
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>desc</c>（maxLength=500）</summary>
+    [JsonPropertyName("desc")]
+    public string Desc { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>tag</c>（maxLength=64）</summary>
+    [JsonPropertyName("tag")]
+    public string Tag { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>cover</c>（maxLength=500）</summary>
+    [JsonPropertyName("cover")]
+    public string Cover { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>extra_info_json</c></summary>
+    [JsonIgnore]
+    public string ExtraInfoJSON { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>prompt</c></summary>
+    [JsonPropertyName("prompt")]
+    public string Prompt { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>ratio</c>（maxLength=32）</summary>
+    [JsonPropertyName("ratio")]
+    public string Ratio { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>media_url</c>（maxLength=500）</summary>
+    [JsonPropertyName("mediaUrl")]
+    public string MediaURL { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>owner_id</c>（maxLength=36）</summary>
+    [JsonPropertyName("ownerId")]
+    public string OwnerID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>source</c>（maxLength=16）</summary>
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>enabled</c></summary>
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
+
+    /// <summary>数据库列 <c>visibility</c>（maxLength=16）</summary>
+    [JsonPropertyName("visibility")]
+    public string Visibility { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>sort_weight</c>（maxLength=64）</summary>
+    [JsonPropertyName("sortWeight")]
+    public long SortWeight { get; set; }
+
+    /// <summary>数据库列 <c>created_at</c></summary>
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>数据库列 <c>updated_at</c></summary>
+    [JsonPropertyName("updatedAt")]
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
 /// 对应 Go <c>UserDailyActivity</c>，数据库表 <c>user_daily_activities</c>。
 /// 源文件：internal/model/models_platform.go
 /// </summary>

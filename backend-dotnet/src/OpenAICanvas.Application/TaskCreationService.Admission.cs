@@ -717,6 +717,7 @@ public sealed partial class TaskCreationService
             InputTokenPriceMicrocredits = logicalModel.InputPriceMicrocredits,
             OutputTokenPriceMicrocredits = logicalModel.OutputPriceMicrocredits,
             CachedTokenPriceMicrocredits = logicalModel.CachedPriceMicrocredits,
+            VideoFormulaTokens = tokenEstimate.Video?.FormulaTokens ?? 0,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Status = "reserved",

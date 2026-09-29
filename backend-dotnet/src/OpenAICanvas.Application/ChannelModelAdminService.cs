@@ -26,6 +26,15 @@ public sealed class ChannelModelRequest
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = "";
 
+    [JsonPropertyName("channelLabel")]
+    public string ChannelLabel { get; set; } = "";
+
+    [JsonPropertyName("tags")]
+    public List<ChannelModelTag>? Tags { get; set; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = "";
+
     [JsonPropertyName("icon")]
     public string Icon { get; set; } = "";
 
@@ -95,6 +104,9 @@ public sealed class ChannelModelPriceTierRequest
 
     [JsonPropertyName("priceConfigured")]
     public bool PriceConfigured { get; set; }
+
+    [JsonPropertyName("costPricing")]
+    public CreditCostPricingDto? CostPricing { get; set; }
 
     [JsonPropertyName("enabled")]
     public bool? Enabled { get; set; }
@@ -216,6 +228,19 @@ public sealed class ChannelModelAdminService
     {
         CanvasService.RequireAdmin(actor);
 
+        // 校验顺序与 Go 一致：标签/展示名/描述先于渠道查询。
+        List<ChannelModelTag> tags = NormalizeChannelModelTags(request.Tags);
+        string channelLabel = request.ChannelLabel.Trim();
+        string description = request.Description.Trim();
+        if (description.EnumerateRunes().Count() > 500)
+        {
+            throw AppError.BadAuthRequest("模型描述不能超过 500 字");
+        }
+        if (channelLabel.EnumerateRunes().Count() > 80)
+        {
+            throw AppError.BadAuthRequest("渠道展示名不能超过 80 字");
+        }
+
         ModelChannel? channel = await _repository.AdminSystemChannelAsync(channelId, cancellationToken)
             .ConfigureAwait(false);
         if (channel is null)
@@ -265,6 +290,9 @@ public sealed class ChannelModelAdminService
         item.ModelKey = modelKey;
         item.ProviderModelKey = providerModelKey;
         item.DisplayName = request.DisplayName.Trim();
+        item.ChannelLabel = channelLabel;
+        item.Tags = tags;
+        item.Description = description;
         if (item.DisplayName.Length == 0)
         {
             item.DisplayName = modelKey;
@@ -602,6 +630,47 @@ public sealed class ChannelModelAdminService
         return trimmed.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// 渠道模型彩色标签归一化。对应 Go: <c>normalizeChannelModelTags</c>。
+    /// 上限 5 个；文字 1–12 字且去重；颜色走固定白名单。
+    /// </summary>
+    internal static List<ChannelModelTag> NormalizeChannelModelTags(List<ChannelModelTag>? input)
+    {
+        if (input is not { Count: > 0 })
+        {
+            return [];
+        }
+        if (input.Count > 5)
+        {
+            throw AppError.BadAuthRequest("每个模型最多配置 5 个标签");
+        }
+        List<ChannelModelTag> tags = new(input.Count);
+        Dictionary<string, bool> seen = new(StringComparer.Ordinal);
+        foreach (ChannelModelTag tag in input)
+        {
+            string text = tag.Text.Trim();
+            int runes = text.EnumerateRunes().Count();
+            if (runes == 0 || runes > 12)
+            {
+                throw AppError.BadAuthRequest("标签文字须为 1–12 字");
+            }
+            if (seen.ContainsKey(text))
+            {
+                throw AppError.BadAuthRequest("标签文字不能重复");
+            }
+            switch (tag.Color)
+            {
+                case "purple" or "blue" or "green" or "gold" or "orange" or "pink":
+                    break;
+                default:
+                    throw AppError.BadAuthRequest("请选择有效的标签颜色");
+            }
+            seen[text] = true;
+            tags.Add(new ChannelModelTag { Text = text, Color = tag.Color });
+        }
+        return tags;
+    }
+
     // ------------------------------------------------------------ 合同与校验
 
     /// <summary>
@@ -809,6 +878,9 @@ public sealed class ChannelModelAdminService
                 billingMode = "fixed_request";
             }
             ValidateChannelModelTierPricing(capability, protocol, billingMode, input);
+            // 管理员积分成本校验。对应 Go: channel_models.go 的 validateCreditCostPricing。
+            CreditCostPricingDto cost = input.CostPricing ?? new CreditCostPricingDto();
+            CreditCostOps.ValidateCreditCostPricing(capability, billingMode, cost);
 
             string tierId = await _repository.NextPrefixedIdAsync("PTIER", cancellationToken).ConfigureAwait(false);
             string providerModelKey = LogicalModelService.FirstNonEmpty(
@@ -831,6 +903,11 @@ public sealed class ChannelModelAdminService
                 InputTokenPriceMicrocredits = input.InputTokenPriceMicrocredits,
                 OutputTokenPriceMicrocredits = input.OutputTokenPriceMicrocredits,
                 CachedTokenPriceMicrocredits = input.CachedTokenPriceMicrocredits,
+                CostConfigured = cost.Configured,
+                CostUnitPriceMicrocredits = cost.UnitPriceMicrocredits,
+                CostInputTokenPriceMicrocredits = cost.InputTokenPriceMicrocredits,
+                CostOutputTokenPriceMicrocredits = cost.OutputTokenPriceMicrocredits,
+                CostCachedTokenPriceMicrocredits = cost.CachedTokenPriceMicrocredits,
                 PriceConfigured = input.PriceConfigured,
                 Enabled = input.Enabled is null || input.Enabled.Value,
                 PriceVersion = 1,
@@ -839,6 +916,29 @@ public sealed class ChannelModelAdminService
             });
         }
         return result;
+    }
+
+    /// <summary>
+    /// 管理端模型投影：模型字段 + 价格档携带 costPricing。
+    /// 对应 Go: <c>handler.adminChannelModel</c>（成本仅出现在已通过管理员校验的接口）。
+    /// </summary>
+    public static System.Text.Json.Nodes.JsonObject AdminChannelModelNode(ChannelModel item)
+    {
+        System.Text.Json.Nodes.JsonObject node =
+            System.Text.Json.JsonSerializer.SerializeToNode(item, Domain.Serialization.GoJson.WriteOptions) as System.Text.Json.Nodes.JsonObject
+            ?? [];
+        var tiers = new System.Text.Json.Nodes.JsonArray();
+        foreach (ChannelModelPriceTier tier in item.PriceTiers)
+        {
+            System.Text.Json.Nodes.JsonObject tierNode =
+                System.Text.Json.JsonSerializer.SerializeToNode(tier, Domain.Serialization.GoJson.WriteOptions) as System.Text.Json.Nodes.JsonObject
+                ?? [];
+            tierNode["costPricing"] = System.Text.Json.JsonSerializer.SerializeToNode(
+                CreditCostPricingDto.Of(tier), Domain.Serialization.GoJson.WriteOptions);
+            tiers.Add(tierNode);
+        }
+        node["priceTiers"] = tiers;
+        return node;
     }
 
     /// <summary>对应 Go: <c>normalizeChannelModelTierSelector</c>。</summary>

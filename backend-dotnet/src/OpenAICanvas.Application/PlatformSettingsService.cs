@@ -237,7 +237,8 @@ public sealed class PlatformSettingsService
             .SystemSettingAsync(RuntimePolicySettingKey, cancellationToken).ConfigureAwait(false);
         if (setting is null)
         {
-            return (null, Platform.RuntimePolicySetting.Default);
+            // Go: 无设置行回落 DefaultRuntimePolicy()（含环境变量覆盖的基线），不是纯静态默认。
+            return (null, Platform.DefaultRuntimePolicyProvider.EnvBaseline());
         }
         Platform.RuntimePolicySetting value;
         try
@@ -935,4 +936,76 @@ public sealed class PlatformSettingsService
     {
         PropertyNameCaseInsensitive = true,
     };
+}
+
+/// <summary>
+/// 生效运行时策略提供者：持久化设置行优先，缺省回落环境变量基线。
+/// 对应 Go: <c>platform.Service.RuntimePolicy</c>（readRuntimePolicy 设置行优先，无行回落 DefaultRuntimePolicy）。
+/// </summary>
+/// <remarks>
+/// Go 在每次任务领取/准入时同步读库；.NET 的 <see cref="Platform.IRuntimePolicyProvider.Current"/> 是同步签名，
+/// 这里用短 TTL 缓存折中：管理员更新运行时策略后最迟一个 TTL 周期对任务执行生效。
+/// 读取失败（数据库抖动、设置行损坏）时回落默认基线且不缓存失败结果；Go 对损坏设置行让当次领取失败，
+/// .NET 的 Current 无错误通道，两者都不会用无效配置执行任务。
+/// </remarks>
+public sealed class SettingsRuntimePolicyProvider : Platform.IRuntimePolicyProvider
+{
+    public static readonly TimeSpan DefaultTtl = TimeSpan.FromSeconds(30);
+
+    private readonly PlatformSettingsService _settings;
+    private readonly Platform.DefaultRuntimePolicyProvider _fallback;
+    private readonly TimeSpan _ttl;
+    private readonly object _gate = new();
+    private Platform.RuntimePolicySetting? _cached;
+    private DateTimeOffset _loadedAt;
+
+    public SettingsRuntimePolicyProvider(PlatformSettingsService settings, TimeSpan? ttl = null)
+    {
+        _settings = settings;
+        _fallback = new Platform.DefaultRuntimePolicyProvider();
+        _ttl = ttl ?? DefaultTtl;
+    }
+
+    public Platform.RuntimePolicySetting Current()
+    {
+        lock (_gate)
+        {
+            if (_cached is not null && DateTimeOffset.UtcNow - _loadedAt < _ttl)
+            {
+                return _cached;
+            }
+        }
+        Platform.RuntimePolicySetting value = LoadEffective();
+        lock (_gate)
+        {
+            _cached = value;
+            _loadedAt = DateTimeOffset.UtcNow;
+        }
+        return value;
+    }
+
+    public Platform.PublicRuntimeLimits PublicLimits()
+    {
+        Platform.RuntimePolicySetting policy = Current();
+        return new Platform.PublicRuntimeLimits
+        {
+            ActiveTaskLimit = policy.Task.ActiveTaskLimit,
+            ResourceUploadMB = policy.Resource.ResourceUploadMB,
+            RecycleBinRetentionDays = policy.Resource.RecycleBinRetentionDays,
+        };
+    }
+
+    private Platform.RuntimePolicySetting LoadEffective()
+    {
+        try
+        {
+            return _settings
+                .EffectivePolicyAsync(CancellationToken.None)
+                .ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+        catch (Exception error) when (error is InvalidOperationException or TimeoutException or OperationCanceledException)
+        {
+            return _fallback.Current();
+        }
+    }
 }

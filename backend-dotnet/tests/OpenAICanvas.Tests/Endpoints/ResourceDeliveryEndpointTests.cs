@@ -76,6 +76,7 @@ public sealed class ResourceDeliveryEndpointTests : IDisposable
         {
             username = "downloader",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];

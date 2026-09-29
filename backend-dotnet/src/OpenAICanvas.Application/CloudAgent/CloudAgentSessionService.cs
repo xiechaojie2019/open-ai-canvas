@@ -246,6 +246,8 @@ public sealed class CloudAgentSessionService
             Policy = policy,
         };
         CloudAgentCanonicalRequestDto canonical = Canonical(system, history, request.Prompt, request.CanvasID);
+        await CloudAgentLessons.AttachAsync(canonical, _repository, userID, request.Prompt, cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<string, JsonElement> input = new(StringComparer.Ordinal)
         {
             ["mode"] = JsonSerializer.SerializeToElement("text"),

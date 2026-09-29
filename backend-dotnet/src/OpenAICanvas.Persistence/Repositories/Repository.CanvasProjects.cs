@@ -8,6 +8,18 @@ using OpenAICanvas.Domain.Kernel;
 namespace OpenAICanvas.Persistence.Repositories;
 
 /// <summary>
+/// 画布版本 CAS 未命中。对应 Go: <c>repository.ErrCanvasRevisionConflict</c>。
+/// 服务层将其映射为 HTTP 409，提示保留本地草稿并加载云端最新版本。
+/// </summary>
+public sealed class CanvasRevisionConflictException : Exception
+{
+    public CanvasRevisionConflictException()
+        : base("canvas revision conflict")
+    {
+    }
+}
+
+/// <summary>
 /// 画布工程（canvas_projects）仓储方法。
 /// 对应 Go: <c>repository/repository.go</c> 与 <c>repository/project_workbench_read.go</c> 的画布部分。
 /// </summary>
@@ -35,7 +47,7 @@ public sealed partial class Repository
         return await QueryAsync<CanvasProject>(
             connection,
             SqlBuilder.SelectColumns<CanvasProject>(
-                ["ID", "Title", "CreatedAt", "UpdatedAt"], "user_id = @userId", "updated_at DESC"),
+                ["ID", "Title", "CreatedAt", "UpdatedAt", "Revision"], "user_id = @userId", "updated_at DESC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -55,27 +67,71 @@ public sealed partial class Repository
     }
 
     /// <summary>
-    /// 画布 upsert：已有行更新内容，未命中（新建）插入。
-    /// 对应 Go: <c>UpsertCanvasProject</c>（UPDATE 未命中回退 Create）。
+    /// 画布 upsert：按版本号 CAS 递增，未命中（新建）仅在 revision=0 时插入。
+    /// 对应 Go: <c>UpsertCanvasProject</c>——版本谓词与递增必须在同一条 SQL 内完成，
+    /// 行缺失是冲突，绝不重建已删除画布。
     /// </summary>
     public async Task UpsertCanvasProjectAsync(
         CanvasProject project,
         CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        int updated = await ExecuteAsync(
-            connection,
-            "UPDATE \"canvas_projects\" SET \"project_id\" = @ProjectID, \"title\" = @Title, \"payload_json\" = @PayloadJSON, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID AND \"user_id\" = @UserID",
-            project,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (updated > 0)
+        await UpsertCanvasProjectCoreAsync(connection, transaction: null, project, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>事务内变体：供快照保存与画布保存共用同一连接。</summary>
+    public async Task UpsertCanvasProjectCoreAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        CanvasProject project,
+        CancellationToken cancellationToken = default)
+    {
+        long expected = project.Revision;
+        if (expected < 0)
         {
+            throw new CanvasRevisionConflictException();
+        }
+        if (expected == 0)
+        {
+            CanvasProject created = new()
+            {
+                ID = project.ID,
+                UserID = project.UserID,
+                ProjectID = project.ProjectID,
+                Title = project.Title,
+                PayloadJSON = project.PayloadJSON,
+                Revision = 1,
+                CreatedAt = project.CreatedAt,
+                UpdatedAt = project.UpdatedAt,
+            };
+            int inserted = await ExecuteAsync(
+                connection,
+                SqlBuilder.Insert(typeof(CanvasProject), onConflictDoNothing: true),
+                created,
+                transaction,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (inserted != 1)
+            {
+                throw new CanvasRevisionConflictException();
+            }
+            project.Revision = 1;
             return;
         }
-        await connection.ExecuteAsync(new CommandDefinition(
-            SqlBuilder.Insert(typeof(CanvasProject)),
-            project,
-            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        int updated = await ExecuteAsync(
+            connection,
+            """
+            UPDATE "canvas_projects" SET "project_id" = @ProjectID, "title" = @Title, "payload_json" = @PayloadJSON, "updated_at" = @UpdatedAt, "revision" = @NextRevision
+            WHERE "id" = @ID AND "user_id" = @UserID AND "revision" = @ExpectedRevision
+            """,
+            new { project.ProjectID, project.Title, project.PayloadJSON, project.UpdatedAt, NextRevision = expected + 1, project.ID, project.UserID, ExpectedRevision = expected },
+            transaction,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (updated != 1)
+        {
+            throw new CanvasRevisionConflictException();
+        }
+        project.Revision = expected + 1;
     }
 
     /// <summary>

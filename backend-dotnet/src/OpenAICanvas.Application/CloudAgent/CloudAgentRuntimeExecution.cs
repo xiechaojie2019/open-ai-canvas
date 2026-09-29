@@ -223,6 +223,7 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentMediaPlan? plan, string modelName)
     {
         string name = call.Function.Name;
+        string approvalID = $"{run.ID}-{state.Step}-{state.CallIndex}";
         CloudAgentApprovalPreviewDto preview;
         if (plan is not null)
         {
@@ -269,12 +270,26 @@ public sealed partial class CloudAgentRuntimeService
         }
         state.Approval = new CloudAgentApprovalDto
         {
-            ID = $"{run.ID}-{state.Step}-{state.CallIndex}",
+            ID = approvalID,
             Call = call,
             CallHash = CloudAgentMutations.ApprovalCallHash(call),
             Preview = preview,
             ModelName = modelName,
         };
+        if (plan is not null)
+        {
+            // 钉住参考资源到审批所有者名下（对应 Go: pinCloudAgentPreparedMedia），
+            // 报价有效期 30 分钟（对应 Go: cloudAgentMediaQuoteLifetime）。
+            DateTime leaseExpiresAt = DateTime.UtcNow.AddMinutes(30);
+            List<string> leaseResources = await LeaseResourceIDsAsync(
+                context, run.UserID, state.Request.CanvasID, plan.Args.ReferenceNodeIDs).ConfigureAwait(false);
+            if (leaseResources.Count > 0)
+            {
+                await context.UpsertCloudAgentResourceLeasesAsync(
+                    run.UserID, run.ID, approvalID, leaseResources, leaseExpiresAt).ConfigureAwait(false);
+            }
+            state.Approval.LeaseExpiresAt = leaseExpiresAt;
+        }
         current.Status = "waiting_approval";
         CloudAgentContracts.AddEvent(state, run.ID, "approval_requested", CloudAgentContracts.Payload(
             ("approvalId", state.Approval.ID),
@@ -376,6 +391,14 @@ public sealed partial class CloudAgentRuntimeService
                     state.MediaTaskID = task.ID;
                     state.Generations++;
                     state.VideoSeconds += media.Args.Duration;
+                    // 审批通过即提交：租约从审批所有者转移到任务所有者
+                    // （对应 Go: TransferCloudAgentResourceLeases(userID, approvalID, "task:"+taskID, ...)）。
+                    if (state.Approval is not null)
+                    {
+                        await context.TransferCloudAgentResourceLeasesAsync(
+                            run.UserID, state.Approval.ID, "task:" + task.ID, task.ID,
+                            state.Approval.LeaseExpiresAt ?? DateTime.UtcNow.AddMinutes(30)).ConfigureAwait(false);
+                    }
                     CloudAgentContracts.AddEvent(state, run.ID, "generation_task_created",
                         CloudAgentContracts.Payload(
                             ("toolName", "generate_media"),
@@ -718,11 +741,15 @@ public sealed partial class CloudAgentRuntimeService
         {
             throw CloudAgentSessionService.CreationConflict("审批不存在或已过期");
         }
+        // 资源租约只是保护机制：过期清理在控制面路径上执行是安全的，
+        // 不改变审批决策本身（对应 Go: DecideCloudAgentApproval 开头的过期清扫）。
+        await _repository.ReleaseExpiredCloudAgentResourceLeasesAsync(DateTime.UtcNow, cancellationToken)
+            .ConfigureAwait(false);
         if (settings is not null)
         {
             await UpdateMediaApprovalAsync(run, state, settings, cancellationToken).ConfigureAwait(false);
         }
-        bool claimed = await _repository.MutateCloudAgentAsync(userID, id, run.Revision, (current, context) =>
+        bool claimed = await _repository.MutateCloudAgentAsync(userID, id, run.Revision, async (current, context) =>
         {
             state.Approval!.Decision = decision;
             state.Approval.Reason = reason;
@@ -738,13 +765,27 @@ public sealed partial class CloudAgentRuntimeService
                 current.Status = "rejected";
                 current.FailureMessage = "";
                 state.Approval = null;
+                // 拒绝后审批所有者名下的资源租约一并释放（对应 Go: runtime 的拒绝路径）。
+                await context.ReleaseCloudAgentResourceLeasesAsync(userID, approvalID).ConfigureAwait(false);
                 CloudAgentContracts.AddEvent(state, id, "approval_decided", CloudAgentContracts.Payload(
                     ("approvalId", approvalID),
                     ("decision", decision),
                     ("reason", reason),
                     ("text", "已拒绝本次操作，未写入画布。你可以告诉 Agent 修改方向后重新申请。")));
                 CloudAgentContracts.Save(current, state);
-                return context.SaveRunAsync(current);
+                await context.SaveRunAsync(current).ConfigureAwait(false);
+                return;
+            }
+            if (settings is not null && state.Approval.LeaseExpiresAt is DateTime leaseExpiresAt
+                && state.Approval.Call.Function.Name == "generate_media")
+            {
+                // 参数修改后以同一所有者重写租约集合并刷新有效期（对应 Go: ReplaceCloudAgentResourceLeases）。
+                CloudAgentMediaArgs planArgs =
+                    CloudAgentContracts.DecodeObject<CloudAgentMediaArgs>(state.Approval.Call.Function.Arguments);
+                List<string> leaseResources = await LeaseResourceIDsAsync(
+                    context, userID, state.Request.CanvasID, planArgs.ReferenceNodeIDs).ConfigureAwait(false);
+                await context.ReplaceCloudAgentResourceLeasesAsync(
+                    userID, id, approvalID, leaseResources, leaseExpiresAt).ConfigureAwait(false);
             }
             current.Status = "running";
             CloudAgentContracts.AddEvent(state, id, "approval_decided", CloudAgentContracts.Payload(
@@ -754,7 +795,7 @@ public sealed partial class CloudAgentRuntimeService
                 ("preview", JsonSerializer.SerializeToElement(state.Approval.Preview, GoJson.WriteOptions)),
                 ("modelName", state.Approval.ModelName)));
             CloudAgentContracts.Save(current, state);
-            return context.SaveRunAsync(current);
+            await context.SaveRunAsync(current).ConfigureAwait(false);
         }).ConfigureAwait(false);
         if (!claimed)
         {
@@ -764,6 +805,44 @@ public sealed partial class CloudAgentRuntimeService
 
     private static string CreationSettingsHash(CloudAgentMediaSettings settings) =>
         CloudAgentContracts.Sha256Hex(JsonSerializer.Serialize(settings, GoJson.WriteOptions));
+
+    /// <summary>
+    /// 收集参考节点的资源 ID（metadata.storageKey 的 resource: 前缀）。
+    /// 对应 Go: prepared.ResourceSignatures 的键集合。
+    /// </summary>
+    private async Task<List<string>> LeaseResourceIDsAsync(
+        CloudAgentMutationContext context, string userID, string canvasID,
+        IReadOnlyList<string> referenceNodeIDs)
+    {
+        if (referenceNodeIDs.Count == 0)
+        {
+            return [];
+        }
+        CanvasProject? canvas = await context.CanvasProjectForUserAsync(userID, canvasID).ConfigureAwait(false);
+        if (canvas is null)
+        {
+            return [];
+        }
+        JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
+        Dictionary<string, JsonObject> nodes = CloudAgentJsonHelpers.Objects(CloudAgentJsonHelpers.Get(doc, "nodes"));
+        List<string> ids = [];
+        foreach (string nodeID in referenceNodeIDs)
+        {
+            if (!nodes.TryGetValue(nodeID, out JsonObject? node))
+            {
+                continue;
+            }
+            string? key = (node["metadata"] as JsonObject)?["storageKey"] is JsonValue value
+                && value.TryGetValue<string>(out string? text)
+                ? text
+                : null;
+            if (key is not null && key.StartsWith("resource:", StringComparison.Ordinal))
+            {
+                ids.Add(key["resource:".Length..]);
+            }
+        }
+        return ids;
+    }
 
     private async Task<CloudAgentRuntimeDto> DecodeForExecutionSafeAsync(CloudAgentExecution run)
     {
@@ -980,6 +1059,8 @@ public sealed partial class CloudAgentRuntimeService
                 current.CleanupPending = false;
                 current.ActiveTaskID = "";
                 current.MediaTaskID = "";
+                // 清理收尾释放本轮全部资源租约（对应 Go: finishCloudAgentCleanup 的 ReleaseByRun）。
+                await context.ReleaseCloudAgentResourceLeasesByRunAsync(run.UserID, run.ID).ConfigureAwait(false);
                 await context.SaveRunAsync(current).ConfigureAwait(false);
             }, cancellationToken).ConfigureAwait(false);
         if (!claimed)

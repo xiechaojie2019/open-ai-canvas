@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 
 namespace OpenAICanvas.Application;
@@ -13,6 +14,43 @@ namespace OpenAICanvas.Application;
 /// </summary>
 public static class BillingCalc
 {
+    /// <summary>
+    /// 供应商像素帧估算与预留余量分离；公式快照可在无供应商 usage 时结算视频。
+    /// 对应 Go: <c>video_token_billing.go</c> 的 <c>VideoTokenEstimate</c>。
+    /// </summary>
+    public sealed record VideoTokenEstimate
+    {
+        [JsonPropertyName("formulaTokens")]
+        public long FormulaTokens { get; init; }
+
+        [JsonPropertyName("reservedTokens")]
+        public long ReservedTokens { get; init; }
+
+        [JsonPropertyName("outputWidth")]
+        public long OutputWidth { get; init; }
+
+        [JsonPropertyName("outputHeight")]
+        public long OutputHeight { get; init; }
+
+        [JsonPropertyName("framesPerSecond")]
+        public long FramesPerSecond { get; init; }
+
+        [JsonPropertyName("outputSeconds")]
+        public long OutputSeconds { get; init; }
+
+        [JsonPropertyName("referenceSeconds")]
+        public double ReferenceSeconds { get; init; }
+
+        [JsonPropertyName("referenceDurationEstimated")]
+        public bool ReferenceDurationEstimated { get; init; }
+
+        [JsonPropertyName("dimensionsEstimated")]
+        public bool DimensionsEstimated { get; init; }
+
+        [JsonPropertyName("reservationMarginPercent")]
+        public long ReservationMarginPercent { get; init; }
+    }
+
     /// <summary>报价输入上下文（Go 用 map[string]any，这里收紧为显式形状）。</summary>
     public sealed record QuoteInputContext(
         string Mode,
@@ -25,7 +63,11 @@ public static class BillingCalc
             Config.TryGetValue("videoSeconds", out JsonElement value) ? value : null;
     }
 
-    public readonly record struct TokenBillingEstimate(long InputTokens, long OutputTokens);
+    public readonly record struct TokenBillingEstimate(long InputTokens, long OutputTokens)
+    {
+        /// <summary>视频像素帧公式快照（结算回退依据）。对应 Go: <c>tokenBillingEstimate.Video</c>。</summary>
+        public VideoTokenEstimate? Video { get; init; }
+    }
 
     /// <summary>
     /// 构造报价用的输入结构。对应 Go: <c>quoteInput</c>。
@@ -121,8 +163,8 @@ public static class BillingCalc
 
     /// <summary>
     /// 方舟视频成功后才返回真实 completion_tokens；创建任务前按官方像素帧公式预授权，
-    /// 并保留少量帧率/取整余量，实际结算时会按 usage 自动退回差额。
-    /// 对应 Go: <c>estimateArkVideoTokens</c>。
+    /// 并保留 10% 帧率/取整余量，实际结算时无 usage 时按公式快照结算。
+    /// 对应 Go: <c>estimateArkVideoTokens</c> / <c>estimateArkVideoTokenUsage</c>。
     /// </summary>
     private static TokenBillingEstimate EstimateArkVideoTokens(QuoteInputContext input)
     {
@@ -131,8 +173,9 @@ public static class BillingCalc
         {
             return default;
         }
-        if (!long.TryParse(SprintValue(videoSeconds).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long durationSeconds) ||
-            durationSeconds <= 0)
+        if (!long.TryParse(SprintValue(videoSeconds).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long seconds) ||
+            seconds <= 0 ||
+            seconds > (long.MaxValue - 15_000) / 1000)
         {
             return default;
         }
@@ -141,36 +184,161 @@ public static class BillingCalc
             ? SprintValue(quality)
             : "";
         string size = input.Config.TryGetValue("size", out JsonElement sizeElement) ? SprintValue(sizeElement) : "";
-        long pixels = ArkVideoOutputPixels(vquality, size, input.ModelKey);
-        if (pixels <= 0)
+        (long width, long height) dimensions = ArkVideoBillingDimensions(vquality, size, input.ModelKey);
+        if (dimensions.width <= 0 || dimensions.height <= 0)
         {
             return default;
         }
 
-        if (durationSeconds > long.MaxValue / 1000)
+        // 报价路径只有参考视频数量占位（Go 为 nil 元素）：按 15 秒上限预留并披露。
+        long referenceMillis = input.ReferenceVideoCount > 0 ? 15_000 : 0;
+        bool referenceEstimated = input.ReferenceVideoCount > 0;
+        const long fps = 24;
+        const long margin = 10;
+        if (dimensions.width > long.MaxValue / dimensions.height / fps)
         {
             return default;
         }
-        long totalDurationMillis = durationSeconds * 1000;
-        long referenceCount = 0;
-        if (input.ReferenceVideoCount > 0)
+        long pixels = dimensions.width * dimensions.height;
+        long millis = seconds * 1000 + referenceMillis;
+        if (millis > (long.MaxValue - 1_023_999) / (pixels * fps))
         {
-            referenceCount = input.ReferenceVideoCount;
-            // 方舟参考视频总时长上限为 15 秒；缺少媒体元数据时按上限预留。
-            totalDurationMillis += 15_000;
+            return default;
         }
+        // 官方公式：(输入秒 + 输出秒) * W * H * FPS / 1024。供应商 usage 优先；
+        // 否则公式快照即计费依据。
+        long formulaTokens = (millis * pixels * fps + 1_023_999) / 1_024_000;
+        if (formulaTokens > (long.MaxValue - 99) / (100 + margin))
+        {
+            return default;
+        }
+        VideoTokenEstimate detail = new()
+        {
+            FormulaTokens = formulaTokens,
+            ReservedTokens = (formulaTokens * (100 + margin) + 99) / 100,
+            OutputWidth = dimensions.width,
+            OutputHeight = dimensions.height,
+            FramesPerSecond = fps,
+            OutputSeconds = seconds,
+            ReferenceSeconds = referenceMillis / 1000.0,
+            ReferenceDurationEstimated = referenceEstimated,
+            DimensionsEstimated = false,
+            ReservationMarginPercent = margin,
+        };
+        return new TokenBillingEstimate(0, detail.ReservedTokens) { Video = detail };
+    }
 
-        long frames = checked((totalDurationMillis * 24 + 999) / 1000) + 1 + referenceCount;
-        if (pixels > (long.MaxValue - 1023) / frames)
+    /// <summary>
+    /// 官方 Seedance 分辨率档位尺寸（非分辨率标签乘法；4K 按 1080p 面积 ×4）。
+    /// 对应 Go: <c>arkVideoBillingDimensions</c> 的主流档位分支。
+    /// </summary>
+    private static (long Width, long Height) ArkVideoBillingDimensions(
+        string resolution, string ratio, string modelName)
+    {
+        resolution = resolution.Trim().ToLowerInvariant();
+        ratio = ratio.Trim().ToLowerInvariant();
+        (long width, long height) exact = PixelDimensions(ratio);
+        if (exact.width > 0)
         {
-            return default;
+            return exact;
         }
-        long tokens = (pixels * frames + 1023) / 1024;
-        if (tokens > (long.MaxValue - 99) / 110)
+        bool defaulted = resolution.Length == 0 || resolution is "auto" or "high" or "medium";
+        if (defaulted)
         {
-            return default;
+            resolution = "720p";
         }
-        return new TokenBillingEstimate(0, (tokens * 110 + 99) / 100);
+        if (resolution == "low")
+        {
+            resolution = "480p";
+        }
+        if (ratio.Length == 0)
+        {
+            ratio = "16:9";
+        }
+        switch (resolution)
+        {
+            case "480":
+            case "720":
+            case "1080":
+            case "2160":
+                resolution += "p";
+                break;
+            case "4k":
+                resolution = "2160p";
+                break;
+        }
+        (long, long)[] values = resolution switch
+        {
+            "480p" => [(864, 496), (752, 560), (640, 640), (560, 752), (496, 864), (992, 432)],
+            "720p" => [(1280, 720), (1112, 834), (960, 960), (834, 1112), (720, 1280), (1470, 630)],
+            "1080p" => [(1920, 1080), (1664, 1248), (1440, 1440), (1248, 1664), (1080, 1920), (2206, 946)],
+            "2160p" => [(3840, 2160), (3326, 2494), (2880, 2880), (2494, 3326), (2160, 3840), (4398, 1886)],
+            _ => [],
+        };
+        if (values.Length == 0)
+        {
+            return (0, 0);
+        }
+        (long width, long height) best = values[0];
+        if (ratio == "adaptive")
+        {
+            foreach ((long width, long height) candidate in values)
+            {
+                if ((long)candidate.width * candidate.height > (long)best.width * best.height)
+                {
+                    best = candidate;
+                }
+            }
+            return best;
+        }
+        // 宽高比挑选：与标称比例最接近的官方档位。
+        (long, long) match = best;
+        double target = RatioValue(ratio);
+        if (target <= 0)
+        {
+            return best;
+        }
+        double bestDelta = double.MaxValue;
+        foreach ((long width, long height) candidate in values)
+        {
+            double delta = Math.Abs((double)candidate.width / candidate.height - target);
+            if (delta < bestDelta)
+            {
+                bestDelta = delta;
+                match = candidate;
+            }
+        }
+        return match;
+    }
+
+    /// <summary>"1080x1920" 形式的精确像素尺寸。</summary>
+    private static (long Width, long Height) PixelDimensions(string ratio)
+    {
+        string[] parts = ratio.Split('x', StringSplitOptions.TrimEntries);
+        if (parts.Length == 2
+            && long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out long width)
+            && long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long height)
+            && width > 0 && height > 0)
+        {
+            return (width, height);
+        }
+        return (0, 0);
+    }
+
+    private static double RatioValue(string ratio)
+    {
+        int index = ratio.IndexOf(':');
+        if (index <= 0 || index == ratio.Length - 1)
+        {
+            return 0;
+        }
+        if (!double.TryParse(ratio[..index], NumberStyles.Float, CultureInfo.InvariantCulture, out double width) ||
+            !double.TryParse(ratio[(index + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out double height) ||
+            height == 0)
+        {
+            return 0;
+        }
+        return width / height;
     }
 
     /// <summary>对应 Go: <c>arkVideoOutputPixels</c>。</summary>

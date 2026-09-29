@@ -86,6 +86,7 @@ public sealed class AuthEmailCodeTests : IDisposable
         {
             username = "admin",
             password = "password123",
+                        acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -140,6 +141,7 @@ public sealed class AuthEmailCodeTests : IDisposable
             password = "password123",
             email = "new@qq.com",
             emailCode = code,
+            acceptedTerms = true,
         });
 
         Assert.Equal(HttpStatusCode.OK, registered.StatusCode);

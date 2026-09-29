@@ -71,6 +71,7 @@ public sealed class FeatureEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
 

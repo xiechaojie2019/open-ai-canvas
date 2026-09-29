@@ -112,15 +112,21 @@ public sealed partial class Repository
                 throw AppError.BadAuthRequest("项目仍有排队中或进行中的任务，请先取消这些任务");
             }
 
-            // 画布解绑：回写 payload（project_id 移除）并清空 project_id 列。
+            // 画布解绑：按版本守卫回写 payload（project_id 移除）并清空 project_id 列。
+            // 对应 Go: <c>DeleteProject</c> 的 revision CAS 递增。
             foreach (CanvasProject canvas in canvasUpdates)
             {
-                await ExecuteAsync(
+                int updated = await ExecuteAsync(
                     connection,
-                    "UPDATE \"canvas_projects\" SET \"payload_json\" = @PayloadJSON, \"project_id\" = '', \"updated_at\" = @now WHERE \"id\" = @ID",
-                    new { canvas.PayloadJSON, now, canvas.ID },
+                    "UPDATE \"canvas_projects\" SET \"payload_json\" = @PayloadJSON, \"project_id\" = '', \"updated_at\" = @now, \"revision\" = @NextRevision WHERE \"id\" = @ID AND \"user_id\" = @UserID AND \"revision\" = @Revision",
+                    new { canvas.PayloadJSON, now, canvas.ID, canvas.UserID, NextRevision = canvas.Revision + 1, Revision = canvas.Revision },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
+                if (updated != 1)
+                {
+                    // 对应 Go: RowsAffected != 1 返回 gorm.ErrRecordNotFound。
+                    throw new InvalidOperationException("record not found");
+                }
             }
 
             await ExecuteAsync(connection,

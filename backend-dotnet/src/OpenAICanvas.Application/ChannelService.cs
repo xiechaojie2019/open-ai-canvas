@@ -97,6 +97,9 @@ public sealed class ChannelService
                 {
                     Model = item.ModelKey,
                     DisplayName = item.DisplayName,
+                    ChannelLabel = item.ChannelLabel,
+                    Tags = item.Tags,
+                    Description = item.Description,
                     Icon = item.Icon,
                     Capability = item.Capability,
                     Protocol = item.Protocol,

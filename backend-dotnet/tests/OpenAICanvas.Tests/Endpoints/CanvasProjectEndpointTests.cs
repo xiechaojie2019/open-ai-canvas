@@ -72,6 +72,7 @@ public sealed class CanvasProjectEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -81,20 +82,24 @@ public sealed class CanvasProjectEndpointTests : IDisposable
     }
 
     /// <summary>PUT 画布（project 包裹，id 必须与路径一致）。</summary>
-    private static StringContent CanvasBody(string id, string title, int nodeCount = 2)
+    private static StringContent CanvasBody(string id, string title, int nodeCount = 2, long revision = 0, bool includeRevision = true)
     {
         var nodes = new List<object>();
         for (int index = 0; index < nodeCount; index++)
         {
             nodes.Add(new { id = $"n{index}", type = "text", title = $"节点{index}" });
         }
-        object payload = new
+        Dictionary<string, object> payload = new(StringComparer.Ordinal)
         {
-            id,
-            title,
-            createdAt = "2026-01-01T00:00:00Z",
-            nodes,
+            ["id"] = id,
+            ["title"] = title,
+            ["createdAt"] = "2026-01-01T00:00:00Z",
+            ["nodes"] = nodes,
         };
+        if (includeRevision)
+        {
+            payload["revision"] = revision;
+        }
         string body = JsonSerializer.Serialize(new { project = payload });
         return new StringContent(body, Encoding.UTF8, "application/json");
     }
@@ -123,12 +128,13 @@ public sealed class CanvasProjectEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, empty.StatusCode);
         Assert.Equal(0, (await ReadDataAsync(empty)).GetProperty("projects").GetArrayLength());
 
-        // upsert。
+        // upsert（新建 revision=0 → 服务端递增为 1）。
         HttpResponseMessage saved = await admin.PutAsync("/api/canvas-projects/canvas-1", CanvasBody("canvas-1", "我的画布"));
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
         JsonElement project = (await ReadDataAsync(saved)).GetProperty("project");
         Assert.Equal("canvas-1", project.GetProperty("id").GetString());
         Assert.Equal("我的画布", project.GetProperty("title").GetString());
+        Assert.Equal(1, project.GetProperty("revision").GetInt64());
 
         // 单读返回原始 payload。
         HttpResponseMessage detail = await admin.GetAsync("/api/canvas-projects/canvas-1");
@@ -151,13 +157,59 @@ public sealed class CanvasProjectEndpointTests : IDisposable
         Assert.Equal(2, pageData.GetProperty("projects")[0].GetProperty("nodeCount").GetInt32());
         Assert.Equal(0, pageData.GetProperty("projects")[0].GetProperty("previewNodes").GetArrayLength());
 
-        // 覆盖保存（同 ID 更新标题）。
+        // 覆盖保存（同 ID 更新标题，须携带上一次返回的版本号）。
         HttpResponseMessage updated = await admin.PutAsync(
-            "/api/canvas-projects/canvas-1", CanvasBody("canvas-1", "改名画布"));
+            "/api/canvas-projects/canvas-1", CanvasBody("canvas-1", "改名画布", revision: 1));
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         Assert.Equal(
             "改名画布",
             (await ReadDataAsync(updated)).GetProperty("project").GetProperty("title").GetString());
+        Assert.Equal(2, (await ReadDataAsync(updated)).GetProperty("project").GetProperty("revision").GetInt64());
+    }
+
+    [Fact]
+    public async Task 画布upsert_缺少版本返回_428()
+    {
+        using HttpClient admin = await SignInAsAdminAsync();
+
+        HttpResponseMessage response = await admin.PutAsync(
+            "/api/canvas-projects/canvas-no-rev", CanvasBody("canvas-no-rev", "无版本", includeRevision: false));
+
+        Assert.Equal(HttpStatusCode.PreconditionRequired, response.StatusCode);
+        Assert.Contains(
+            "缺少画布版本",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 画布upsert_版本冲突返回_409()
+    {
+        using HttpClient admin = await SignInAsAdminAsync();
+
+        HttpResponseMessage saved = await admin.PutAsync(
+            "/api/canvas-projects/canvas-cas", CanvasBody("canvas-cas", "首次保存"));
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Equal(1, (await ReadDataAsync(saved)).GetProperty("project").GetProperty("revision").GetInt64());
+
+        // 携带旧版本再次保存 → 409，内容不得被覆盖。
+        HttpResponseMessage stale = await admin.PutAsync(
+            "/api/canvas-projects/canvas-cas", CanvasBody("canvas-cas", "过期覆盖"));
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Contains(
+            "云端画布已有更新",
+            await stale.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+
+        HttpResponseMessage detail = await admin.GetAsync("/api/canvas-projects/canvas-cas");
+        Assert.Equal("首次保存", (await ReadDataAsync(detail)).GetProperty("project").GetProperty("title").GetString());
+        Assert.Equal(1, (await ReadDataAsync(detail)).GetProperty("project").GetProperty("revision").GetInt64());
+
+        // 携带最新版本再次保存 → 成功并递增。
+        HttpResponseMessage current = await admin.PutAsync(
+            "/api/canvas-projects/canvas-cas", CanvasBody("canvas-cas", "最新保存", revision: 1));
+        Assert.Equal(HttpStatusCode.OK, current.StatusCode);
+        Assert.Equal(2, (await ReadDataAsync(current)).GetProperty("project").GetProperty("revision").GetInt64());
     }
 
     [Fact]
@@ -184,6 +236,7 @@ public sealed class CanvasProjectEndpointTests : IDisposable
         {
             id = "canvas-data-url",
             title = "内嵌媒体",
+            revision = 0,
             nodes = new[] { new { id = "n1", type = "image", content = "data:image/png;base64,AAAA" } },
         };
         string body = JsonSerializer.Serialize(new { project = payload });
@@ -206,6 +259,7 @@ public sealed class CanvasProjectEndpointTests : IDisposable
         {
             id = "canvas-guard",
             title = "媒体守卫",
+            revision = 0,
             nodes = new[]
             {
                 new

@@ -491,7 +491,7 @@ public sealed partial class LogicalModelService
                 multiplierBps)
             : BillingCalc.CreditAmount(tier.UnitPriceMicrocredits, quantity, multiplierBps);
 
-        return new BillingOrder
+        BillingOrder order = new()
         {
             ID = IdGenerator.NewId(),
             UserID = userID,
@@ -515,10 +515,14 @@ public sealed partial class LogicalModelService
             InputTokenPriceMicrocredits = tier.InputTokenPriceMicrocredits,
             OutputTokenPriceMicrocredits = tier.OutputTokenPriceMicrocredits,
             CachedTokenPriceMicrocredits = tier.CachedTokenPriceMicrocredits,
+            VideoFormulaTokens = tokenEstimate.Video?.FormulaTokens ?? 0,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Status = BillingStatuses.BillingStatusReserved,
         };
+        // 实际执行线路的成本快照。对应 Go: <c>snapshotCreditCost</c>（finance.go）。
+        CreditCostOps.Snapshot(order, tier, requestedQuantity, tokenEstimate);
+        return order;
     }
 
     /// <summary>对应 Go: <c>channelModelPriceTierForBilling</c>。</summary>

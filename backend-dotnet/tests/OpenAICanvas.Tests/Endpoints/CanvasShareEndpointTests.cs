@@ -72,6 +72,7 @@ public sealed class CanvasShareEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -123,7 +124,7 @@ public sealed class CanvasShareEndpointTests : IDisposable
             "/api/canvas-projects/canvas-share-1",
             new StringContent(
                 """
-                {"project":{"id":"canvas-share-1","title":"分享画布","createdAt":"2026-01-01T00:00:00Z","nodes":[
+                {"project":{"id":"canvas-share-1","title":"分享画布","revision":0,"createdAt":"2026-01-01T00:00:00Z","nodes":[
                   {"id":"n1","type":"text","title":"说明","metadata":{"prompt":"内部提示词","taskId":"task-secret"}},
                   {"id":"n2","type":"image","title":"图片","position":{"x":1,"y":2},"width":100,"height":50,
                    "metadata":{"assetId":"asset-share","storageKey":"resource:RES_SHARE","mimeType":"image/png","apiKey":"sk-secret"}}

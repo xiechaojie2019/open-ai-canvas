@@ -1,6 +1,7 @@
 using System.Reflection;
-using Dapper;
 using System.Text;
+using System.Text.Json;
+using Dapper;
 
 namespace OpenAICanvas.Persistence;
 
@@ -114,7 +115,8 @@ public static class SqlBuilder
 
         StringBuilder sql = new();
         sql.Append("SELECT ");
-        sql.Append(string.Join(", ", map.Columns.Select(c => $"{Quote(c.Column)} AS {Quote(c.Property)}")));
+        sql.Append(string.Join(", ", map.Columns
+            .Select(c => $"{Quote(c.Column)} AS {Quote(c.Property)}")));
         sql.Append(" FROM ").Append(Quote(map.Table));
 
         if (!string.IsNullOrWhiteSpace(where))
@@ -245,6 +247,26 @@ public static class SqlBuilder
         return property?.GetValue(entity);
     }
 
+    /// <summary>在实体写入前转换 serializer:json 参数；其他参数对象原样返回。</summary>
+    public static object? PrepareParameters(object? value)
+    {
+        if (value is null or DynamicParameters or System.Collections.IEnumerable)
+        {
+            return value;
+        }
+
+        EntityMap map;
+        try
+        {
+            map = EntityMetadata.For(value.GetType());
+        }
+        catch (InvalidOperationException)
+        {
+            return value;
+        }
+
+        return map.Columns.Any(column => column.CustomSql) ? Parameters(value) : value;
+    }
     /// <summary>把实体转成 Dapper 参数包（属性名 → 值）。</summary>
     public static DynamicParameters Parameters(object entity)
     {
@@ -254,7 +276,10 @@ public static class SqlBuilder
         foreach (ColumnMap column in map.Columns)
         {
             PropertyInfo? property = entity.GetType().GetProperty(column.Property);
-            parameters.Add(column.Property, property?.GetValue(entity));
+            object? value = property?.GetValue(entity);
+            parameters.Add(
+                column.Property,
+                column.CustomSql ? JsonSerializer.Serialize(value ?? Array.Empty<object>()) : value);
         }
 
         return parameters;

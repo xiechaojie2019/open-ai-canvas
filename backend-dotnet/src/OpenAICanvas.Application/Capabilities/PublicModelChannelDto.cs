@@ -1,6 +1,7 @@
 #nullable enable
 using System.Text.Json.Serialization;
 using OpenAICanvas.Application.Capabilities;
+using OpenAICanvas.Domain.Entities;
 
 namespace OpenAICanvas.Application;
 
@@ -72,6 +73,15 @@ public sealed class PublicChannelModelPriceDto
 
     [JsonPropertyName("displayName")]
     public string DisplayName { get; init; } = "";
+
+    [JsonPropertyName("channelLabel")]
+    public string ChannelLabel { get; init; } = "";
+
+    [JsonPropertyName("tags")]
+    public List<ChannelModelTag>? Tags { get; init; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; init; } = "";
 
     [JsonPropertyName("icon")]
     public string Icon { get; init; } = "";

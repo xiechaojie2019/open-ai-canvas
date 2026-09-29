@@ -209,7 +209,7 @@ public sealed partial class Repository
             foreach (ChannelModel item in channelModels)
             {
                 await connection.ExecuteAsync(new CommandDefinition(
-                    SqlBuilder.Insert(typeof(ChannelModel)), item, transaction,
+                    SqlBuilder.Insert(typeof(ChannelModel)), SqlBuilder.PrepareParameters(item), transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
             }
 
@@ -237,7 +237,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int affected = await connection.ExecuteAsync(new CommandDefinition(
             SqlBuilder.Insert(typeof(ChannelModel), onConflictDoNothing: true),
-            items,
+            items.Select(SqlBuilder.PrepareParameters),
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return affected;
     }
@@ -350,7 +350,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             SqlBuilder.Update(typeof(ChannelModel)),
-            item,
+            SqlBuilder.PrepareParameters(item),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -494,14 +494,14 @@ public sealed partial class Repository
             int itemUpdated = await ExecuteAsync(
                 connection,
                 SqlBuilder.Update(typeof(ChannelModel)),
-                item,
+                SqlBuilder.PrepareParameters(item),
                 transaction,
                 cancellationToken).ConfigureAwait(false);
             if (itemUpdated == 0)
             {
                 await connection.ExecuteAsync(new CommandDefinition(
                     SqlBuilder.Insert(typeof(ChannelModel)),
-                    item,
+                    SqlBuilder.PrepareParameters(item),
                     transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
             }

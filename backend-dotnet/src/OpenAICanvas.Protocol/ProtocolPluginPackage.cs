@@ -14,9 +14,9 @@ namespace OpenAICanvas.Protocol;
 /// </remarks>
 public sealed class ProtocolPluginPackage
 {
-    public const long MaxPackageBytes = 16L << 20;
+    public const long MaxPackageBytes = 48L << 20;
     public const long MaxManifestBytes = 512L << 10;
-    public const long MaxEntryBytes = 8L << 20;
+    public const long MaxEntryBytes = 16L << 20;
     private const int MaxFiles = 256;
 
     /// <summary>包内允许的顶层前缀（与 Go 的 allowedPrefixes 一致）。</summary>

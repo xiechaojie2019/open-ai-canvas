@@ -96,6 +96,7 @@ public sealed class AuthEndpointTests : IDisposable
             username = "founder",
             password = "password123",
             displayName = "创始人",
+            acceptedTerms = true,
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -131,6 +132,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "founder",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         HttpResponseMessage response = await _client.GetAsync("/api/auth/settings");
@@ -149,6 +151,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         HttpResponseMessage response = await _client.PostAsJsonAsync("/api/auth/login", new
@@ -170,6 +173,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         HttpResponseMessage response = await _client.PostAsJsonAsync("/api/auth/login", new
@@ -193,6 +197,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         HttpResponseMessage missing = await _client.PostAsJsonAsync("/api/auth/login", new
@@ -212,6 +217,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         // 通过仓储把账号置为禁用，模拟管理员操作。
@@ -242,6 +248,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "ab",
             password = "password123",
+                        acceptedTerms = true,
         });
         Assert.Equal(HttpStatusCode.BadRequest, shortName.StatusCode);
         Assert.Contains("用户名需为 3-32 位", await shortName.Content.ReadAsStringAsync(), StringComparison.Ordinal);
@@ -250,6 +257,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "validname",
             password = "short",
+                        acceptedTerms = true,
         });
         Assert.Equal(HttpStatusCode.BadRequest, shortPassword.StatusCode);
         Assert.Contains("密码至少 8 位", await shortPassword.Content.ReadAsStringAsync(), StringComparison.Ordinal);
@@ -262,6 +270,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         // 第二个用户走注册开关校验，先放开注册。
@@ -271,6 +280,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "bob",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         // Go 的顺序：先查注册开关，再要求邮箱，最后才校验用户名唯一性。
@@ -285,6 +295,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         // 未设置注册开关时回落到 CANVAS_REGISTRATION_ENABLED，默认关闭。
@@ -293,6 +304,7 @@ public sealed class AuthEndpointTests : IDisposable
             username = "bob",
             email = "bob@example.com",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -319,6 +331,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
         await SetRegistrationEnabledAsync(true);
 
@@ -350,6 +363,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
 
         // 账号维度上限是 10 次/10 分钟，第 11 次必须被限流。
@@ -422,6 +436,7 @@ public sealed class AuthEndpointTests : IDisposable
         {
             username = "alice",
             password = "password123",
+                        acceptedTerms = true,
         });
         HttpResponseMessage login = await _client.PostAsJsonAsync("/api/auth/login", new
         {

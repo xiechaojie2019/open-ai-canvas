@@ -182,6 +182,33 @@ public static class TaskEndpoints
             }
         });
 
+        // 手动恢复保存失败的作品。对应 Go: POST /tasks/:id/recover-media。
+        api.MapPost("/tasks/{id}/recover-media", async (
+            HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                TaskEntity task;
+                try
+                {
+                    task = await service.MediaRecovery.RecoverAsync(
+                        user.ID, id, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    // Go handler 对 RecoverTaskMedia 的所有错误统一 fail(c, 400, err)。
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, error);
+                }
+                return ApiResults.Ok(task);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         // ------------------------------------------------------------ 任务列表
 
         api.MapGet("/tasks", async (HttpContext context, CancellationToken cancellationToken) =>

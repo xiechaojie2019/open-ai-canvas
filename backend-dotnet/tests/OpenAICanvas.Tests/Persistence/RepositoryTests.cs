@@ -400,7 +400,7 @@ public class RepositoryTests : IDisposable
             Assert.NotNull(map.Table);
         }
 
-        Assert.Equal(80, EntityMetadata.KnownTypes.Count);
+        Assert.Equal(94, EntityMetadata.KnownTypes.Count);
         await Task.CompletedTask;
     }
 }

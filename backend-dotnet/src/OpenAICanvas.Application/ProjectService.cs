@@ -327,6 +327,7 @@ public sealed class ProjectService
                 ProjectID = "",
                 Title = canvas.Title,
                 PayloadJSON = CanvasPayloadWithoutProject(canvas.PayloadJSON, deleteTime),
+                Revision = canvas.Revision,
                 CreatedAt = canvas.CreatedAt,
                 UpdatedAt = deleteTime,
             });

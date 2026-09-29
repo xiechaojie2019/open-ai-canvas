@@ -30,6 +30,7 @@ public sealed class TaskWorkerService
 
     private readonly Repository _repository;
     private readonly TaskTerminalService _terminal;
+    private readonly CloudAgent.AgentMemoryCompactService _compact;
     private readonly IRuntimePolicyProvider _policy;
     private readonly Coordinator? _coordinator;
     private readonly TimelineTaskExecutor? _timeline;
@@ -46,6 +47,7 @@ public sealed class TaskWorkerService
         _timeline = timeline;
         // CanvasService 只为文本回放收尾服务；未注入时退化为基础任务服务（回放跳过）。
         _terminal = new TaskTerminalService(repository, CanvasService?.Tasks ?? new TaskService(repository));
+        _compact = new CloudAgent.AgentMemoryCompactService(repository);
     }
 
     /// <summary>终态协调依赖文本回放收尾，暂时借道 CanvasService.Tasks；测试可用 <see cref="CanvasService"/> 注入。</summary>
@@ -321,6 +323,9 @@ public sealed class TaskWorkerService
             await _repository.UpdateTaskProgressForLeaseAsync(claimed.ID, claimed.LeaseOwner, stage, progress, ct)
                 .ConfigureAwait(false);
 
+            // 记忆压缩任务开始调用模型（对应 Go: markAgentMemoryCompactRunning）。
+            await _compact.MarkRunningAsync(claimed, ct).ConfigureAwait(false);
+
             await _repository.MarkBillingRunningAsync(claimed.BillingOrderID, ct).ConfigureAwait(false);
 
             (Dictionary<string, object?> result, bool providerSucceeded) =
@@ -333,18 +338,42 @@ public sealed class TaskWorkerService
             }
             if (latest.Status == TaskStatus.TaskStatusCancelled)
             {
+                await _compact.NoteTaskAsync(latest, null, new InvalidOperationException("压缩任务已取消"), ct)
+                    .ConfigureAwait(false);
                 await _terminal.HandleCancelledResultAsync(latest).ConfigureAwait(false);
                 return null;
             }
 
+            // 媒体恢复恢复路径：带检查点的任务是“作品已生成、保存未完成”的重试，
+            // 物化检查点而不是使用原始结果（对应 Go: resumeTaskMedia 分支；
+            // 管线注册 Materializer 后生效，未注册的部署行为不变）。
+            if (claimed.MediaRecoveryJSON.Length > 0 && CanvasService?.MediaRecovery.Materializer is not null)
+            {
+                try
+                {
+                    result = await CanvasService.MediaRecovery.MaterializeAsync(claimed, ct).ConfigureAwait(false);
+                }
+                catch (Exception recoveryError) when (recoveryError is not OperationCanceledException)
+                {
+                    await CanvasService.MediaRecovery.HandleFailureAsync(
+                        claimed, claimed.MediaStage, retryable: true, recoveryError,
+                        (taskId, owner, stage, delay, token) =>
+                            _repository.DeferRunningTaskForProviderPollAsync(taskId, owner, stage, delay, token),
+                        CancellationToken.None).ConfigureAwait(false);
+                    return null;
+                }
+            }
+
             string resultJSON = JsonSerializer.Serialize(result, ProjectCharacterService.GoPayloadOptions);
             await SaveCompletionWithinQuotaAsync(latest, resultJSON, ct).ConfigureAwait(false);
+            await _compact.NoteTaskAsync(latest, result, null, ct).ConfigureAwait(false);
             await _terminal.HandleSuccessAsync(latest).ConfigureAwait(false);
             return null;
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             bool channelSlotFailedBeforeRequest = error is ProviderChannelSlotException;
+            await _compact.NoteTaskAsync(claimed, null, error, CancellationToken.None).ConfigureAwait(false);
             return await _terminal.HandleExecutionFailureAsync(
                 claimed, error, providerSucceeded: false, channelSlotFailedBeforeRequest,
                 CancellationToken.None).ConfigureAwait(false);
@@ -360,6 +389,8 @@ public sealed class TaskWorkerService
             Exception cancellationError = Volatile.Read(ref timeoutHit) != 0
                 ? new TimeoutException(TaskTimeoutMessage(claimed.Type))
                 : new OperationCanceledException("任务已取消");
+            await _compact.NoteTaskAsync(claimed, null, cancellationError, CancellationToken.None)
+                .ConfigureAwait(false);
             await _terminal.HandleExecutionFailureAsync(
                 claimed,
                 cancellationError,
@@ -468,6 +499,10 @@ public sealed class TaskWorkerService
         {
             input.Prompt = task.Prompt;
         }
+        // 将 @[tool:type:ID:label:icon] 令牌替换为对应工具的提示词文本。
+        // 对应 Go: processCanvasGenerationTask（无令牌时零查询直通）。
+        input.Prompt = await new ToolsService(_repository).ResolveToolMentionTokensAsync(
+            task.UserID, input.Mode, input.Prompt, cancellationToken).ConfigureAwait(false);
         // 执行端补注入视频能力声明（对应 Go: validateResolvedVideoCapability 的渠道模型分支）：
         // 任务 input 不持久化 VideoCapability，分辨率等参数归一依赖执行时按渠道模型能力
         // 合同重放，缺失时裸值（如 UI 发的 "720"）会原样透传给上游并被 400。

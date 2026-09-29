@@ -69,6 +69,7 @@ public sealed class ProjectUnitEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -262,7 +263,7 @@ public sealed class ProjectUnitEndpointTests : IDisposable
         HttpResponseMessage canvas = await admin.PutAsync(
             "/api/canvas-projects/canvas-link-1",
             new StringContent(
-                """{"project":{"id":"canvas-link-1","title":"画布","nodes":[]}}""",
+                """{"project":{"id":"canvas-link-1","title":"画布","revision":0,"nodes":[]}}""",
                 System.Text.Encoding.UTF8,
                 "application/json"));
         canvas.EnsureSuccessStatusCode();

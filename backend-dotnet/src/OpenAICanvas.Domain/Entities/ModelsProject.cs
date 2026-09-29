@@ -264,6 +264,64 @@ public class Asset
 }
 
 /// <summary>
+/// 对应 Go <c>BannerAnnouncement</c>，数据库表 <c>banner_announcements</c>。
+/// 源文件：internal/model/models_project.go
+/// </summary>
+public class BannerAnnouncement
+{
+    /// <summary>数据库列 <c>id</c>（maxLength=36，主键）</summary>
+    [JsonPropertyName("id")]
+    public string ID { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>title</c>（maxLength=120）</summary>
+    [JsonPropertyName("title")]
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>title_runs</c></summary>
+    [JsonIgnore]
+    public string TitleRunsJSON { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>notice_type</c>（maxLength=24）</summary>
+    [JsonPropertyName("noticeType")]
+    public string NoticeType { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>link</c>（maxLength=500）</summary>
+    [JsonPropertyName("link")]
+    public string Link { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>status</c>（maxLength=24）</summary>
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>starts_at</c></summary>
+    [JsonPropertyName("startsAt")]
+    [GoOmitEmpty]
+    public DateTime? StartsAt { get; set; }
+
+    /// <summary>数据库列 <c>ends_at</c></summary>
+    [JsonPropertyName("endsAt")]
+    [GoOmitEmpty]
+    public DateTime? EndsAt { get; set; }
+
+    /// <summary>数据库列 <c>created_by</c>（maxLength=36）</summary>
+    [JsonPropertyName("createdBy")]
+    public string CreatedBy { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>created_at</c></summary>
+    [JsonPropertyName("createdAt")]
+    public DateTime CreatedAt { get; set; }
+
+    /// <summary>数据库列 <c>updated_at</c></summary>
+    [JsonPropertyName("updatedAt")]
+    public DateTime UpdatedAt { get; set; }
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonPropertyName("titleRuns")]
+    [GoOmitEmpty]
+    public List<BannerTitleRun> TitleRuns { get; set; } = null!;
+}
+
+/// <summary>
 /// 对应 Go <c>CanvasProject</c>，数据库表 <c>canvas_projects</c>。
 /// 源文件：internal/model/models_project.go
 /// </summary>
@@ -289,6 +347,10 @@ public class CanvasProject
     /// <summary>数据库列 <c>payload_json</c></summary>
     [JsonPropertyName("payloadJson")]
     public string PayloadJSON { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>revision</c>（maxLength=64，not null）</summary>
+    [JsonPropertyName("revision")]
+    public long Revision { get; set; }
 
     /// <summary>数据库列 <c>created_at</c></summary>
     [JsonPropertyName("createdAt")]
@@ -1496,4 +1558,34 @@ public class WorkflowTemplateVersion
     /// <summary>数据库列 <c>created_at</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// 对应 Go <c>BannerTitleRun</c>（辅助结构体，非独立数据表）。源文件：internal/model/models_project.go
+/// </summary>
+public class BannerTitleRun
+{
+    /// <summary>对应 Go <c>BannerTitleRun.Text</c>。</summary>
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>对应 Go <c>BannerTitleRun.FontSize</c>。</summary>
+    [JsonPropertyName("fontSize")]
+    [GoOmitEmpty]
+    public long? FontSize { get; set; }
+
+    /// <summary>对应 Go <c>BannerTitleRun.FontWeight</c>。</summary>
+    [JsonPropertyName("fontWeight")]
+    [GoOmitEmpty]
+    public long? FontWeight { get; set; }
+
+    /// <summary>对应 Go <c>BannerTitleRun.FontFamily</c>。</summary>
+    [JsonPropertyName("fontFamily")]
+    [GoOmitEmpty]
+    public string FontFamily { get; set; } = string.Empty;
+
+    /// <summary>对应 Go <c>BannerTitleRun.Color</c>。</summary>
+    [JsonPropertyName("color")]
+    [GoOmitEmpty]
+    public string Color { get; set; } = string.Empty;
 }

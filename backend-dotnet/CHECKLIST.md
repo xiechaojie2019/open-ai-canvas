@@ -26,7 +26,7 @@
 
 | 文件 | 来源 | 用途 |
 | --- | --- | --- |
-| `schema-dump.json` | `backend/cmd/schema-dump`（GORM 自身解析器） | 80 表 / 958 列 / 421 索引的权威基线 |
+| `schema-dump.json` | `backend/cmd/schema-dump`（GORM 自身解析器） | 94 表 / 1136 列 / 468 模型索引 + 4 原始 SQL 索引的权威基线 |
 | `scripts/generate-entities.py` | — | 从基线生成实体层、枚举常量、SQLite/PostgreSQL 建表脚本 |
 
 重新生成：
@@ -85,11 +85,11 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 | 1.8 | 项目/短剧实体（31 张表） | `model/models_project.go` | ✅ |
 | 1.9 | 任务与创作实体（4 + 2 张表） | `model/models_task.go` `models_creation.go` | ✅ |
 | 1.10 | 其余实体（CloudAgent / AgentProfile / Plugin / AdminAuditEvent / schema_migrations） | `model/*.go`、`database/migrations.go` | ✅ |
-| 1.11 | 建表脚本（**80** 表 + **425** 索引，SQLite 与 PostgreSQL 两份） | `database/schema.go: Models()` | ✅ 由基线生成 |
+| 1.11 | 建表脚本（**94** 表 + **472** 索引，SQLite 与 PostgreSQL 两份） | `database/schema.go: Models()` | ✅ 由基线生成 |
 | 1.12 | 连接工厂与连接池（sqlite 8/4、postgres 30/10） | `database/database.go` | ✅ `CanvasDatabase.cs` |
 | 1.13 | 方言抽象（行锁/upsert/分页/迁移锁） | GORM dialector 行为 | ✅ `SqlDialect.cs` |
 | 1.14 | 软删除强制过滤 | `gorm.DeletedAt` 自动行为 | ✅ `SoftDelete.cs` |
-| 1.15 | 迁移运行器（15 个版本 + 校验和 + 历史 6/7 顺序） | `database/migrations.go` | ✅ `Schema/SchemaMigrator.cs` |
+| 1.15 | 迁移运行器（**34 个版本** + 校验和 + 历史 6/7 顺序） | `database/migrations.go` | ✅ `Schema/SchemaMigrator.cs` |
 | 1.16 | 仓储层（**30 个文件 / 498 个方法 / 9756 行 Go**） | `repository/*.go` | 🟡 核心子集已完成（用户/会话/验证码/序列号 13 个方法 + 通用入口） |
 | 1.17 | 实体列映射与 SQL 构造器 | — | ✅ `EntityMetadata.cs` + `SqlBuilder.cs` |
 
@@ -97,7 +97,7 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 
 **实体层（与 ORM 无关，纯 POCO）**
 
-- `src/OpenAICanvas.Domain/Entities/` — 15 个文件，**80 个实体类**（958 列 + 13 个 `gorm:"-"` 瞬态字段）
+- `src/OpenAICanvas.Domain/Entities/` — 19 个实体文件，**94 个实体类**（1136 列 + 26 个 `gorm:"-"` 瞬态字段）
 - `src/OpenAICanvas.Domain/Entities/Enumerations.cs` — 25 个常量类 / 114 个常量
 - `src/OpenAICanvas.Domain/Model/ModelText.cs` — 名称归一与字数统计
 
@@ -107,7 +107,7 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 - `Persistence/CanvasDatabase.cs` — 连接工厂、事务、连接池
 - `Persistence/SqlDialect.cs` — SQLite / PostgreSQL 方言
 - `Persistence/SoftDelete.cs` — 软删除强制过滤
-- `Persistence/SchemaMigrationCatalog.cs` — 15 个迁移版本定义
+- `Persistence/SchemaMigrationCatalog.cs` — 34 个迁移版本定义
 - `Persistence/Schema/SchemaMigrator.cs` — 迁移运行器与版本校验
 - `Persistence/Schema/Baseline.cs` — 各版本迁移步骤实现
 - `src/OpenAICanvas.Tools` — `schema-ddl [sqlite|postgres] [路径]` 输出建表脚本
@@ -117,13 +117,13 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 | 测试 | 断言 | 结果 |
 | --- | --- | --- |
 | 真实 SQLite 库表数量与 Go 一致 | 80 = 80 | ✅ |
-| 真实 SQLite 库列名与列序一致 | 958 列逐列比对 | ✅ |
-| 真实 SQLite 库索引全部创建 | 425 个 | ✅ |
+| 真实 SQLite 库列名与列序一致 | 1136 列逐列比对 | ✅ |
+| 真实 SQLite 库索引全部创建 | 472 个 | ✅ |
 | 原始 SQL 索引也已创建 | 4 个（基线导出抓不到的） | ✅ |
 | 软删除表带 `deleted_at` 列 | 3 张表 | ✅ |
-| PostgreSQL 建表脚本列类型与 Go 一致 | 958 列逐列比对 | ✅ |
-| 全新库迁移写入 15 条记录且名称/校验和与 Go 一致 | v1..v15 | ✅ |
-| 重复迁移幂等 | 3 次后仍 15 条 | ✅ |
+| PostgreSQL 建表脚本列类型与 Go 一致 | 1136 列逐列比对 | ✅ |
+| 全新库迁移写入 34 条记录且名称/校验和与 Go 一致 | v1..v34 | ✅ |
+| 重复迁移幂等 | 3 次后仍 34 条 | ✅ |
 | 校验和不匹配 / 名称不匹配 / 版本过高 均拒绝启动 | 3 条错误路径 | ✅ |
 | 软删除过滤语义 | 默认注入、显式包含、非软删除表不加 | ✅ |
 | 响应信封 / omitempty / 时间 / 转义契约 | 17 项 | ✅ |
@@ -131,8 +131,8 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 **合计 40/40 通过，`dotnet build` 0 警告 0 错误。**
 
 **端到端实测**：启动服务 → 自动建库 → `GET /api/health/ready` 返回
-`{"code":0,"data":{"status":"ok","ready":true,...,"schema":{"current":15,"expected":15,"ready":true},...},"msg":"ok"}`；
-实际库文件 80 表 / 958 列 / 425 索引 / 15 条迁移记录，与 GORM 基线完全一致。
+`{"code":0,"data":{"status":"ok","ready":true,...,"schema":{"current":34,"expected":34,"ready":true},...},"msg":"ok"}`；
+实际库文件 94 表 / 1136 列 / 472 索引 / 34 条迁移记录，与当前 Go v34 GORM 基线一致。
 
 ### 生成期修正的真实结构差异
 
@@ -265,7 +265,7 @@ cd ../backend-dotnet && python scripts/generate-entities.py schema-dump.json
 | 部分 | 规模 | 状态 |
 | --- | --- | --- |
 | 阶段 0 契约基座 | — | ✅ 完成 |
-| 阶段 1 实体层 + 建表脚本 + 迁移器 | 80 表 / 958 列 / 425 索引 | ✅ 完成 |
+| 阶段 1 实体层 + 建表脚本 + 迁移器 | 94 表 / 1136 列 / 472 索引 | ✅ 完成 |
 | 阶段 1 仓储层 | 30 文件 / **498 方法** / 9756 行 | 🟡 13 个方法（认证链路子集） |
 | 阶段 2–11 路由 | **324 条**（已做 5 条） | ☐ |
 | 阶段 2–11 业务逻辑 | `internal/app` 约 **6.8 万行** | ☐ |

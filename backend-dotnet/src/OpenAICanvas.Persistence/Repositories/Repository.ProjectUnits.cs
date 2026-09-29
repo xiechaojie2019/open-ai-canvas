@@ -121,7 +121,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE \"canvas_projects\" SET \"project_id\" = @projectId, \"updated_at\" = @now WHERE \"id\" = @canvasId AND \"user_id\" = @userId",
+            "UPDATE \"canvas_projects\" SET \"project_id\" = @projectId, \"revision\" = \"revision\" + 1, \"updated_at\" = @now WHERE \"id\" = @canvasId AND \"user_id\" = @userId",
             new { projectId, now = DateTime.UtcNow, canvasId, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

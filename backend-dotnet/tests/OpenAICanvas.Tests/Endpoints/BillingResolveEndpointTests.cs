@@ -412,6 +412,7 @@ public sealed class BillingResolveEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         return Authenticated(response);
@@ -435,6 +436,7 @@ public sealed class BillingResolveEndpointTests : IDisposable
         {
             username,
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         return Authenticated(response);

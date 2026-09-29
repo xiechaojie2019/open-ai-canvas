@@ -262,8 +262,10 @@ public static class AuthEndpoints
 
             try
             {
+                // 对应 Go: acceptedTerms := c.Query("acceptedTerms") == "true"。
+                bool acceptedTerms = context.Request.Query["acceptedTerms"].ToString() == "true";
                 string target = await service.Auth.BeginLinuxDOLoginAsync(
-                    context.Request.Query["next"].ToString(), cancellationToken).ConfigureAwait(false);
+                    context.Request.Query["next"].ToString(), acceptedTerms, cancellationToken).ConfigureAwait(false);
                 return Results.Redirect(target);
             }
             catch (Exception error)

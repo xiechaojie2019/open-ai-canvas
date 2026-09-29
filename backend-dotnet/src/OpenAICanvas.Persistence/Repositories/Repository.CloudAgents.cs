@@ -29,11 +29,16 @@ public sealed partial class Repository
         string userId, string id, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        return await FirstOrDefaultAsync<CloudAgentExecution>(
+        CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
             connection,
             SqlBuilder.Select<CloudAgentExecution>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (run is not null)
+        {
+            await LoadCloudAgentJournalCoreAsync(connection, null, run, cancellationToken).ConfigureAwait(false);
+        }
+        return run;
     }
 
     /// <summary>按活动模型任务查运行。对应 Go: <c>CloudAgentForActiveTask</c>。</summary>
@@ -41,13 +46,18 @@ public sealed partial class Repository
         string userId, string taskId, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        return await FirstOrDefaultAsync<CloudAgentExecution>(
+        CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
             connection,
             SqlBuilder.Select<CloudAgentExecution>(
                 "user_id = @userId AND active_task_id = @taskId AND status IN ('running', 'queued')",
                 limitOffset: " LIMIT 1"),
             new { userId, taskId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (run is not null)
+        {
+            await LoadCloudAgentJournalCoreAsync(connection, null, run, cancellationToken).ConfigureAwait(false);
+        }
+        return run;
     }
 
     /// <summary>缺执行行的历史根任务（恢复用）。对应 Go: <c>CloudAgentRoots</c>。</summary>
@@ -73,13 +83,18 @@ public sealed partial class Repository
             limit = 50;
         }
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        return await QueryAsync<CloudAgentExecution>(
+        List<CloudAgentExecution> runs = (await QueryAsync<CloudAgentExecution>(
             connection,
             SqlBuilder.Select<CloudAgentExecution>(
                 "(status IN ('running', 'queued') OR cleanup_pending = @cleanup) AND id > @after",
                 limitOffset: " ORDER BY id LIMIT @limit"),
             new { cleanup = true, after, limit },
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
+        foreach (CloudAgentExecution run in runs)
+        {
+            await LoadCloudAgentJournalCoreAsync(connection, null, run, cancellationToken).ConfigureAwait(false);
+        }
+        return runs;
     }
 
     /// <summary>
@@ -154,12 +169,17 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction transaction, string userId, string id,
         CancellationToken cancellationToken)
     {
-        return await FirstOrDefaultAsync<CloudAgentExecution>(
+        CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
             connection,
             SqlBuilder.Select<CloudAgentExecution>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
+        if (run is not null)
+        {
+            await LoadCloudAgentJournalCoreAsync(connection, transaction, run, cancellationToken).ConfigureAwait(false);
+        }
+        return run;
     }
 
     /// <summary>
@@ -184,6 +204,61 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction transaction, CloudAgentExecution run,
         CancellationToken cancellationToken)
     {
+        // 追加校验基线：EventCount 不允许回退；已有事件不允许改写（append-only）。
+        long previousEvents = 0;
+        Dictionary<long, string> previousEventBodies = new();
+        Dictionary<string, string> previousMessages = new(StringComparer.Ordinal);
+        if (run.CheckpointVersion >= 2)
+        {
+            CloudAgentExecution? baseline = await FirstOrDefaultAsync<CloudAgentExecution>(
+                connection,
+                "SELECT \"event_count\" AS \"EventCount\" FROM \"cloud_agent_executions\" WHERE \"id\" = @id AND \"user_id\" = @userId LIMIT 1",
+                new { id = run.ID, userId = run.UserID },
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+            if (baseline is not null)
+            {
+                previousEvents = baseline.EventCount;
+            }
+            foreach (CloudAgentEventRecord record in await QueryAsync<CloudAgentEventRecord>(
+                connection,
+                "SELECT \"sequence\" AS \"Sequence\", \"event_json\" AS \"EventJSON\" FROM \"cloud_agent_event_records\" " +
+                "WHERE \"run_id\" = @runID AND \"user_id\" = @userID",
+                new { runID = run.ID, userID = run.UserID },
+                transaction,
+                cancellationToken).ConfigureAwait(false))
+            {
+                previousEventBodies[record.Sequence] = record.EventJSON;
+            }
+            foreach (CloudAgentMessageRecord message in await QueryAsync<CloudAgentMessageRecord>(
+                connection,
+                "SELECT \"run_id\" AS \"RunID\", \"kind\" AS \"Kind\", \"sequence\" AS \"Sequence\", \"message_json\" AS \"MessageJSON\" " +
+                "FROM \"cloud_agent_message_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID",
+                new { runID = run.ID, userID = run.UserID },
+                transaction,
+                cancellationToken).ConfigureAwait(false))
+            {
+                previousMessages[$"{message.Kind}:{message.Sequence}"] = message.MessageJSON;
+            }
+            if (run.EventCount < previousEvents
+                || (run.Journal is null ? 0 : run.Journal.Count) != run.EventCount)
+            {
+                throw new InvalidOperationException("cloud Agent journal cannot be truncated");
+            }
+            foreach ((long sequence, string body) in previousEventBodies)
+            {
+                CloudAgentEventRecord? current = run.Journal is not null && sequence <= run.Journal.Count
+                    ? run.Journal[(int)(sequence - 1)]
+                    : null;
+                if (current is null
+                    || current.Sequence != sequence
+                    || !CloudAgentJson.SameJsonDocument(current.EventJSON, body))
+                {
+                    throw new InvalidOperationException("cloud Agent journal is append-only");
+                }
+            }
+        }
+
         int updated = await ExecuteAsync(
             connection,
             SqlBuilder.Update(typeof(CloudAgentExecution)),
@@ -196,6 +271,110 @@ public sealed partial class Repository
                 connection, SqlBuilder.Insert(typeof(CloudAgentExecution)), run, transaction, cancellationToken)
                 .ConfigureAwait(false);
         }
+
+        if (run.CheckpointVersion < 2)
+        {
+            return;
+        }
+        foreach (CloudAgentEventRecord record in run.Journal)
+        {
+            if (record.Sequence <= previousEvents)
+            {
+                continue;
+            }
+            await ExecuteAsync(
+                connection,
+                SqlBuilder.Insert(typeof(CloudAgentEventRecord)),
+                SqlBuilder.Parameters(record),
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+        }
+        foreach (CloudAgentMessageRecord message in run.Transcript)
+        {
+            string key = $"{message.Kind}:{message.Sequence}";
+            if (previousMessages.TryGetValue(key, out string? existing) && existing == message.MessageJSON)
+            {
+                continue;
+            }
+            await ExecuteAsync(
+                connection,
+                """
+                INSERT INTO "cloud_agent_message_records" ("run_id", "kind", "sequence", "user_id", "message_json")
+                VALUES (@RunID, @Kind, @Sequence, @UserID, @MessageJSON)
+                ON CONFLICT ("run_id", "kind", "sequence")
+                DO UPDATE SET "message_json" = excluded."message_json"
+                """,
+                SqlBuilder.Parameters(message),
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+        }
+        foreach (string kind in new[] { "canonical", "history" })
+        {
+            long count = run.Transcript.Count(message => message.Kind == kind);
+            await ExecuteAsync(
+                connection,
+                "DELETE FROM \"cloud_agent_message_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID " +
+                "AND \"kind\" = @kind AND \"sequence\" > @count",
+                new { runID = run.ID, userID = run.UserID, kind, count },
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 调用者最近运行的 journal 行，按事件时间排列。运行先解析完整，
+    /// 固定事件上限不会把一个运行的事件切开。对应 Go: <c>RecentCloudAgentEventsForUser</c>。
+    /// </summary>
+    public async Task<List<CloudAgentEventRecord>> RecentCloudAgentEventsForUserAsync(
+        string userID, int runLimit, CancellationToken cancellationToken = default)
+    {
+        if (runLimit < 1)
+        {
+            return [];
+        }
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        List<string> runIDs = (await QueryAsync<string>(
+            connection,
+            "SELECT \"id\" FROM \"cloud_agent_executions\" WHERE \"user_id\" = @userID " +
+            "ORDER BY \"created_at\" DESC LIMIT @runLimit",
+            new { userID, runLimit },
+            cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
+        if (runIDs.Count == 0)
+        {
+            return [];
+        }
+        List<CloudAgentEventRecord> records = (await QueryAsync<CloudAgentEventRecord>(
+            connection,
+            "SELECT \"run_id\" AS \"RunID\", \"sequence\" AS \"Sequence\", \"event_json\" AS \"EventJSON\", \"created_at\" AS \"CreatedAt\" " +
+            "FROM \"cloud_agent_event_records\" WHERE \"user_id\" = @userID AND \"run_id\" IN @runIDs ORDER BY \"created_at\"",
+            new { userID, runIDs },
+            cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
+        return records;
+    }
+
+    /// <summary>加载 journal 与 transcript（CheckpointVersion>=2 的状态重建依据）。</summary>
+    private async Task LoadCloudAgentJournalCoreAsync(
+        DbConnection connection, DbTransaction? transaction, CloudAgentExecution run,
+        CancellationToken cancellationToken)
+    {
+        if (run.CheckpointVersion < 2)
+        {
+            return;
+        }
+        run.Journal = (await QueryAsync<CloudAgentEventRecord>(
+            connection,
+            "SELECT \"run_id\" AS \"RunID\", \"sequence\" AS \"Sequence\", \"event_json\" AS \"EventJSON\", \"created_at\" AS \"CreatedAt\" " +
+            "FROM \"cloud_agent_event_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID ORDER BY \"sequence\"",
+            new { runID = run.ID, userID = run.UserID },
+            transaction,
+            cancellationToken).ConfigureAwait(false)).ToList();
+        run.Transcript = (await QueryAsync<CloudAgentMessageRecord>(
+            connection,
+            "SELECT \"run_id\" AS \"RunID\", \"kind\" AS \"Kind\", \"sequence\" AS \"Sequence\", \"message_json\" AS \"MessageJSON\" " +
+            "FROM \"cloud_agent_message_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID ORDER BY \"kind\", \"sequence\"",
+            new { runID = run.ID, userID = run.UserID },
+            transaction,
+            cancellationToken).ConfigureAwait(false)).ToList();
     }
 
     /// <summary>事务内记录 Agent 画布变更。对应 Go: <c>tx.Create</c> 同名方法。</summary>
@@ -403,4 +582,71 @@ public sealed class CloudAgentMutationContext : IAsyncDisposable
         CancellationToken cancellationToken = default) =>
         _repository.MarkCloudAgentCanvasMutationUndoneInTxAsync(
             _connection, _transaction, userId, runId, mutationId, undoneAt, cancellationToken);
+
+    // ---------------------------------------------------- Agent 个人记忆（事务内）
+
+    public Task<long> CountAgentLessonsByAuthorAsync(
+        string userId, string status, CancellationToken cancellationToken = default) =>
+        _repository.CountAgentLessonsByAuthorInTxAsync(_connection, _transaction, userId, status, cancellationToken);
+
+    public Task<List<AgentLesson>> UserAgentLessonsAsync(
+        string userId, string status, int limit, CancellationToken cancellationToken = default) =>
+        _repository.UserAgentLessonsInTxAsync(_connection, _transaction, userId, status, limit, cancellationToken);
+
+    public Task<AgentLesson?> AgentLessonByTopicAsync(
+        string userId, string topic, CancellationToken cancellationToken = default) =>
+        _repository.AgentLessonByTopicInTxAsync(_connection, _transaction, userId, topic, cancellationToken);
+
+    public Task<List<AgentLesson>> ApprovedAgentLessonsAsync(
+        string userId, int limit, CancellationToken cancellationToken = default) =>
+        _repository.ApprovedAgentLessonsInTxAsync(_connection, _transaction, userId, limit, cancellationToken);
+
+    public Task<List<AgentLesson>> AgentLessonsByCategoryAsync(
+        string userId, string category, int limit, CancellationToken cancellationToken = default) =>
+        _repository.AgentLessonsByCategoryInTxAsync(_connection, _transaction, userId, category, limit, cancellationToken);
+
+    public Task<List<AgentLessonCategoryCountRow>> ApprovedAgentLessonCategoryCountsAsync(
+        string userId, CancellationToken cancellationToken = default) =>
+        _repository.ApprovedAgentLessonCategoryCountsInTxAsync(_connection, _transaction, userId, cancellationToken);
+
+    public Task BumpAgentLessonHitsAsync(
+        string userId, IReadOnlyList<string> ids, CancellationToken cancellationToken = default) =>
+        _repository.BumpAgentLessonHitsInTxAsync(_connection, _transaction, userId, ids, cancellationToken);
+
+    public Task TouchAgentLessonAsync(
+        string userId, string id, DateTime verifiedAt, CancellationToken cancellationToken = default) =>
+        _repository.TouchAgentLessonInTxAsync(_connection, _transaction, userId, id, verifiedAt, cancellationToken);
+
+    public Task CreateAgentLessonAsync(
+        AgentLesson lesson, CancellationToken cancellationToken = default) =>
+        _repository.CreateAgentLessonInTxAsync(_connection, _transaction, lesson, cancellationToken);
+
+    // -------------------------------------------------- Agent 资源租约（事务内）
+
+    public Task UpsertCloudAgentResourceLeasesAsync(
+        string userId, string runId, string ownerId, IReadOnlyList<string> resourceIds, DateTime expiresAt,
+        CancellationToken cancellationToken = default) =>
+        _repository.UpsertCloudAgentResourceLeasesInTxAsync(
+            _connection, _transaction, userId, runId, ownerId, resourceIds, expiresAt, cancellationToken);
+
+    public Task ReplaceCloudAgentResourceLeasesAsync(
+        string userId, string runId, string ownerId, IReadOnlyList<string> resourceIds, DateTime expiresAt,
+        CancellationToken cancellationToken = default) =>
+        _repository.ReplaceCloudAgentResourceLeasesInTxAsync(
+            _connection, _transaction, userId, runId, ownerId, resourceIds, expiresAt, cancellationToken);
+
+    public Task ReleaseCloudAgentResourceLeasesAsync(
+        string userId, string ownerId, CancellationToken cancellationToken = default) =>
+        _repository.ReleaseCloudAgentResourceLeasesInTxAsync(
+            _connection, _transaction, userId, ownerId, cancellationToken);
+
+    public Task ReleaseCloudAgentResourceLeasesByRunAsync(
+        string userId, string runId, CancellationToken cancellationToken = default) =>
+        _repository.ReleaseCloudAgentResourceLeasesByRunInTxAsync(_connection, _transaction, userId, runId, cancellationToken);
+
+    public Task TransferCloudAgentResourceLeasesAsync(
+        string userId, string fromOwner, string toOwner, string runId, DateTime expiresAt,
+        CancellationToken cancellationToken = default) =>
+        _repository.TransferCloudAgentResourceLeasesInTxAsync(
+            _connection, _transaction, userId, fromOwner, toOwner, runId, expiresAt, cancellationToken);
 }

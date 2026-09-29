@@ -304,9 +304,9 @@ public sealed class ProjectUnitService
         }
         DateTime now = DateTime.UtcNow;
         string payloadJson = CanvasPayloadWithoutProject(canvas.PayloadJSON, now);
-        // 关系列、同步快照和更新时间必须原子更新，否则浏览器会用旧 projectId 把关系重新写回。
+        // 关系列、画布版本、同步快照和更新时间必须原子更新，否则浏览器会用旧 projectId 把关系重新写回。
         await _repository.UnassignCanvasFromProjectAsync(
-            userId, projectId, canvas.ID, payloadJson, now, cancellationToken).ConfigureAwait(false);
+            userId, projectId, canvas.ID, payloadJson, now, canvas.Revision, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>对应 Go: <c>canvasPayloadWithoutProject</c>。剥离 projectId 并刷新 updatedAt（键序 Ordinal）。</summary>

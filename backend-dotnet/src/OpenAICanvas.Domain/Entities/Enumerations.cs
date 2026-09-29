@@ -64,6 +64,7 @@ public static class ChannelInterfaceType
     public const string ChannelInterfaceOpenAIImage = "openai-image";
     public const string ChannelInterfaceGrokImage = "grok-image";
     public const string ChannelInterfaceVolcengineArkImage = "volcengine-ark-image";
+    public const string ChannelInterfaceVolcengineArkAgentPlanImage = "volcengine-ark-agent-plan-image";
     public const string ChannelInterfaceVolcengineJiMengImage = "volcengine-jimeng-image";
     public const string ChannelInterfaceGeminiImage = "gemini-image";
     public const string ChannelInterfaceOpenAIAudio = "openai-audio";
@@ -73,6 +74,7 @@ public static class ChannelInterfaceType
     public const string ChannelInterfaceNewAPIChannel2 = "newapi-channel-2";
     public const string ChannelInterfaceXAIVideo = "xai-video";
     public const string ChannelInterfaceVolcengineArkVideo = "volcengine-ark-video";
+    public const string ChannelInterfaceVolcengineArkAgentPlanVideo = "volcengine-ark-agent-plan-video";
     public const string ChannelInterfaceVolcengineJiMengVideo = "volcengine-jimeng-video";
     public const string ChannelInterfaceGeminiVeo = "gemini-veo";
     public const string ChannelInterfaceNovitaVideo = "novita-video";

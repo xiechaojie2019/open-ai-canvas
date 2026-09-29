@@ -24,8 +24,9 @@ public sealed partial class Repository : RepositoryBase
     public async Task CreateAsync<T>(T value, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        DynamicParameters parameters = SqlBuilder.Parameters(value);
         await connection.ExecuteAsync(new CommandDefinition(
-            SqlBuilder.Insert(typeof(T)), value, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            SqlBuilder.Insert(typeof(T)), parameters, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>对应 Go: <c>NextPrefixedID</c>。在事务中递增序列。</summary>

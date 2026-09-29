@@ -93,6 +93,10 @@ public sealed partial class CloudAgentRuntimeService
                         ["text"] = CloudAgentContracts.TruncateRunes(TaskResultText(task.ResultJSON), 4000),
                     }, null);
                 }
+                case "recall_lessons":
+                case "remember_lesson":
+                    return (await CloudAgentLessons.ToolAsync(
+                        context, userID, state, call, CancellationToken.None).ConfigureAwait(false), null);
                 default:
                     throw AppError.BadAuthRequest("未知工具");
             }

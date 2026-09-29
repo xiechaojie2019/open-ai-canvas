@@ -16,7 +16,7 @@ public class CloudAgentSessionContractTests
         string[] expected =
         [
             "agent_profile_read", "canvas_list_node_types", "canvas_get_state", "canvas_read_batch_table",
-            "canvas_read_storyboard", "skill_read_file", "task_get", "model_list", "canvas_create_storyboard",
+            "canvas_read_storyboard", "skill_read_file", "task_get", "recall_lessons", "remember_lesson", "model_list", "canvas_create_storyboard",
             "canvas_edit_storyboard", "canvas_edit_batch_table", "canvas_apply_ops", "generate_media",
         ];
         Assert.Equal(expected, CloudAgentTools.SupportedToolNames());

@@ -48,6 +48,10 @@ public class AuthSession
 /// </summary>
 public class EmailVerificationCode
 {
+    /// <summary>数据库列 <c>attempts</c>（maxLength=64）</summary>
+    [JsonIgnore]
+    public long Attempts { get; set; }
+
     /// <summary>数据库列 <c>id</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
@@ -102,6 +106,10 @@ public class OAuthState
     /// <summary>数据库列 <c>next_path</c></summary>
     [JsonPropertyName("nextPath")]
     public string NextPath { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>accepted_terms</c>（not null）</summary>
+    [JsonPropertyName("acceptedTerms")]
+    public bool AcceptedTerms { get; set; }
 
     /// <summary>数据库列 <c>expires_at</c></summary>
     [JsonPropertyName("expiresAt")]
@@ -173,6 +181,21 @@ public class User
     [JsonPropertyName("email")]
     [GoOmitEmpty]
     public string Email { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>phone</c>（maxLength=24）</summary>
+    [JsonPropertyName("phone")]
+    [GoOmitEmpty]
+    public string Phone { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>email_verified_at</c></summary>
+    [JsonPropertyName("emailVerifiedAt")]
+    [GoOmitEmpty]
+    public DateTime? EmailVerifiedAt { get; set; }
+
+    /// <summary>数据库列 <c>phone_verified_at</c></summary>
+    [JsonPropertyName("phoneVerifiedAt")]
+    [GoOmitEmpty]
+    public DateTime? PhoneVerifiedAt { get; set; }
 
     /// <summary>数据库列 <c>display_name</c>（maxLength=80）</summary>
     [JsonPropertyName("displayName")]

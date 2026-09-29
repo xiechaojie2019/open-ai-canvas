@@ -119,6 +119,7 @@ public abstract class RepositoryBase
         string sql, object? parameters, DbTransaction? transaction, CancellationToken cancellationToken)
     {
         (string preparedSql, object? preparedParameters) = ExpandCollectionParameters(sql, parameters);
+        preparedParameters = SqlBuilder.PrepareParameters(preparedParameters);
         return new(preparedSql, preparedParameters, transaction, cancellationToken: cancellationToken);
     }
 

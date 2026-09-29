@@ -50,6 +50,15 @@ public sealed class PublicChannelModelDto
     [JsonPropertyName("modelKey")]
     public string ModelKey { get; set; } = "";
 
+    [JsonPropertyName("channelLabel")]
+    public string ChannelLabel { get; set; } = "";
+
+    [JsonPropertyName("tags")]
+    public List<ChannelModelTag>? Tags { get; set; }
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = "";
+
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = "";
 
@@ -261,6 +270,9 @@ public sealed class ModelCatalogService
         {
             ID = cm.ID,
             ModelKey = cm.ModelKey,
+            ChannelLabel = cm.ChannelLabel,
+            Tags = cm.Tags,
+            Description = cm.Description,
             DisplayName = cm.DisplayName,
             SortOrder = cm.SortOrder,
             Icon = cm.Icon,

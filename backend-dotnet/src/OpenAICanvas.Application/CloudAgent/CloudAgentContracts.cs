@@ -367,6 +367,11 @@ public sealed class CloudAgentApprovalDto
     [JsonPropertyName("reason")]
     [GoOmitEmpty]
     public string Reason { get; set; } = "";
+
+    /// <summary>资源租约到期时间（对应 Go: prepared.Quote.ExpiresAt，报价后 30 分钟）。</summary>
+    [JsonPropertyName("leaseExpiresAt")]
+    [GoOmitEmpty]
+    public DateTime? LeaseExpiresAt { get; set; }
 }
 
 /// <summary>Agent 事件。对应 Go: <c>app.CloudAgentEvent</c>。</summary>
@@ -777,7 +782,8 @@ public static partial class CloudAgentContracts
         return result;
     }
 
-    /// <summary>反序列化运行状态。对应 Go: <c>cloudAgentDecode</c>（校验随运行时批次）。</summary>
+    /// <summary>反序列化运行状态。对应 Go: <c>cloudAgentDecode</c>。
+    /// CheckpointVersion>=2 时 Events/Messages/TextHistory 从执行日志表重建（StateJSON 已瘦身）。</summary>
     public static CloudAgentRuntimeDto Decode(CloudAgentExecution run)
     {
         if (run.StateJSON.Trim().Length == 0)
@@ -794,20 +800,143 @@ public static partial class CloudAgentContracts
         {
             throw new InvalidOperationException($"decode Agent runtime state: {cause.Message}", cause);
         }
+        if (run.CheckpointVersion < 2)
+        {
+            return state;
+        }
+        // 重建校验与 Go 逐条对齐：journal 完整、sequence 连续、身份匹配。
+        if ((run.Journal?.Count ?? 0) != run.EventCount || (run.Transcript?.Count ?? 0) != run.MessageCount)
+        {
+            return state; // 加载器未填充（旧调用点）：StateJSON 仍带全量，按旧格式继续。
+        }
+        state.Events = [];
+        state.Canonical.Messages = [];
+        state.TextHistory = [];
+        foreach (CloudAgentEventRecord record in run.Journal)
+        {
+            int expected = state.Events.Count + 1;
+            if (record.Sequence != expected)
+            {
+                throw new InvalidOperationException("Agent event sequence is incomplete");
+            }
+            CloudAgentEventDto? agentEvent = JsonSerializer.Deserialize<CloudAgentEventDto>(record.EventJSON, GoJson.ReadOptions)
+                ?? throw new InvalidOperationException("decode Agent event: null record");
+            if (agentEvent.Seq != record.Sequence || agentEvent.RunID != run.ID
+                || agentEvent.EventID != $"{run.ID}:{record.Sequence}")
+            {
+                throw new InvalidOperationException("Agent event identity is invalid");
+            }
+            state.Events.Add(agentEvent);
+        }
+        foreach (CloudAgentMessageRecord record in run.Transcript)
+        {
+            switch (record.Kind)
+            {
+                case "canonical":
+                {
+                    Dictionary<string, JsonElement>? message = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                        record.MessageJSON, GoJson.ReadOptions);
+                    if (message is null || record.Sequence != state.Canonical.Messages.Count + 1)
+                    {
+                        throw new InvalidOperationException("Agent message sequence is incomplete");
+                    }
+                    state.Canonical.Messages.Add(message);
+                    break;
+                }
+                case "history":
+                {
+                    CloudAgentTextMessageDto? message = JsonSerializer.Deserialize<CloudAgentTextMessageDto>(
+                        record.MessageJSON, GoJson.ReadOptions);
+                    if (message is null || record.Sequence != state.TextHistory.Count + 1)
+                    {
+                        throw new InvalidOperationException("Agent history sequence is incomplete");
+                    }
+                    state.TextHistory.Add(message);
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("Agent transcript kind is invalid");
+            }
+        }
         return state;
     }
 
-    /// <summary>序列化并裁剪运行状态到执行记录。对应 Go: <c>cloudAgentSave</c>。</summary>
+    /// <summary>
+    /// 序列化并裁剪运行状态到执行记录：Events/Messages/TextHistory 剥离到执行日志表
+    /// （journal append-only），StateJSON 只保留其余状态。对应 Go: <c>cloudAgentCheckpoint</c> + <c>cloudAgentSave</c>。
+    /// </summary>
     public static void Save(CloudAgentExecution run, CloudAgentRuntimeDto state)
     {
-        string raw = JsonSerializer.Serialize(state, GoJson.WriteOptions);
+        // 检查点事件校验（对应 Go: buildCloudAgentCheckpoint 的 seq/身份检查）。
+        for (int index = 0; index < state.Events.Count; index++)
+        {
+            CloudAgentEventDto agentEvent = state.Events[index];
+            int sequence = index + 1;
+            if (agentEvent.Seq != sequence || agentEvent.RunID != run.ID || agentEvent.EventID != $"{run.ID}:{sequence}")
+            {
+                throw new CloudAgentCheckpointException("Agent event sequence or identity is invalid");
+            }
+        }
+
+        // 瘦身 checkpoint：剥离三份大字段后序列化。
+        CloudAgentRuntimeDto checkpoint = JsonSerializer.Deserialize<CloudAgentRuntimeDto>(
+            JsonSerializer.Serialize(state, GoJson.WriteOptions), GoJson.ReadOptions) ?? new();
+        checkpoint.Canonical.Messages = [];
+        checkpoint.TextHistory = null;
+        checkpoint.Events = [];
+        string raw = JsonSerializer.Serialize(checkpoint, GoJson.WriteOptions);
         if (raw.Length > 512 * 1024)
         {
             throw new CloudAgentCheckpointException("Agent 状态超过 512KB 上限");
         }
+
         run.CanvasID = state.Request.CanvasID;
         run.ActiveTaskID = state.ActiveTaskID;
         run.MediaTaskID = state.MediaTaskID;
+        run.ParentID = state.ParentID;
+        if (run.Title.Length == 0)
+        {
+            run.Title = TruncateRunes(state.Request.Prompt, 80);
+        }
+        run.Journal = state.Events.Select(agentEvent => new CloudAgentEventRecord
+        {
+            RunID = run.ID,
+            UserID = run.UserID,
+            Sequence = agentEvent.Seq,
+            EventJSON = JsonSerializer.Serialize(agentEvent, GoJson.WriteOptions),
+            CreatedAt = agentEvent.CreatedAt,
+        }).ToList();
+        List<CloudAgentMessageRecord> transcript = [];
+        int canonicalSequence = 0;
+        foreach (Dictionary<string, JsonElement> message in state.Canonical.Messages)
+        {
+            canonicalSequence++;
+            transcript.Add(new CloudAgentMessageRecord
+            {
+                RunID = run.ID,
+                UserID = run.UserID,
+                Kind = "canonical",
+                Sequence = canonicalSequence,
+                MessageJSON = JsonSerializer.Serialize(message, GoJson.WriteOptions),
+            });
+        }
+        int historySequence = 0;
+        foreach (CloudAgentTextMessageDto message in state.TextHistory)
+        {
+            historySequence++;
+            transcript.Add(new CloudAgentMessageRecord
+            {
+                RunID = run.ID,
+                UserID = run.UserID,
+                Kind = "history",
+                Sequence = historySequence,
+                MessageJSON = JsonSerializer.Serialize(message, GoJson.WriteOptions),
+            });
+        }
+        run.Transcript = transcript;
+        run.CheckpointVersion = 2;
+        run.EventCount = run.Journal.Count;
+        run.MessageCount = run.Transcript.Count;
         run.StateJSON = raw;
     }
 

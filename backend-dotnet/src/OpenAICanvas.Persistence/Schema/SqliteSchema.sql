@@ -15,6 +15,42 @@ CREATE TABLE IF NOT EXISTS "admin_audit_events" (
     PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "agent_lessons" (
+    "id" text NOT NULL,
+    "topic" text,
+    "category" text,
+    "situation" text,
+    "lesson" text,
+    "source" text,
+    "steps_json" text,
+    "status" text,
+    "author_user_id" text,
+    "hits" integer,
+    "injected" integer,
+    "last_verified_at" datetime,
+    "created_at" datetime,
+    "updated_at" datetime,
+    PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "agent_memory_settings" (
+    "user_id" text NOT NULL,
+    "compact_interval" text,
+    "logical_model_id" text,
+    "channel_id" text,
+    "channel_model_key" text,
+    "model" text,
+    "last_compact_at" datetime,
+    "compact_started_at" datetime,
+    "compact_task_id" text,
+    "last_status" text,
+    "last_summary_json" text,
+    "last_error" text,
+    "created_at" datetime,
+    "updated_at" datetime,
+    PRIMARY KEY ("user_id")
+);
+
 CREATE TABLE IF NOT EXISTS "agent_profiles" (
     "id" text NOT NULL,
     "user_id" text,
@@ -171,7 +207,49 @@ CREATE TABLE IF NOT EXISTS "auth_sessions" (
     PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "auth_verifications" (
+    "id" text NOT NULL,
+    "token_hash" text,
+    "purpose" text,
+    "method" text,
+    "user_id" text,
+    "email" text,
+    "phone" text,
+    "email_hash" text,
+    "phone_hash" text,
+    "policy_hash" text,
+    "ready" numeric,
+    "attempts" integer,
+    "expires_at" datetime,
+    "used_at" datetime,
+    "created_at" datetime,
+    PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "banner_announcements" (
+    "id" text NOT NULL,
+    "title" text,
+    "title_runs" text,
+    "notice_type" text,
+    "link" text,
+    "status" text,
+    "starts_at" datetime,
+    "ends_at" datetime,
+    "created_by" text,
+    "created_at" datetime,
+    "updated_at" datetime,
+    PRIMARY KEY ("id")
+);
+
 CREATE TABLE IF NOT EXISTS "billing_orders" (
+    "cost_configured" numeric NOT NULL DEFAULT false,
+    "cost_unit_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_input_token_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_output_token_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_cached_token_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_billing_mode" text NOT NULL DEFAULT '',
+    "cost_quantity" integer NOT NULL DEFAULT 0,
+    "cost_video_formula_tokens" integer NOT NULL DEFAULT 0,
     "id" text NOT NULL,
     "user_id" text,
     "idempotency_key" text,
@@ -191,6 +269,7 @@ CREATE TABLE IF NOT EXISTS "billing_orders" (
     "quantity" integer,
     "amount_microcredits" integer,
     "reserved_amount_microcredits" integer,
+    "charge_limit_set" numeric NOT NULL DEFAULT false,
     "charge_limit_microcredits" integer,
     "actual_amount_microcredits" integer,
     "refunded_amount_microcredits" integer,
@@ -200,6 +279,8 @@ CREATE TABLE IF NOT EXISTS "billing_orders" (
     "input_tokens" integer,
     "output_tokens" integer,
     "cached_tokens" integer,
+    "video_formula_tokens" integer NOT NULL DEFAULT 0,
+    "usage_source" text NOT NULL DEFAULT '',
     "usage_available" numeric,
     "status" text,
     "provider_request_id" text,
@@ -220,6 +301,7 @@ CREATE TABLE IF NOT EXISTS "canvas_projects" (
     "project_id" text,
     "title" text,
     "payload_json" text,
+    "revision" integer NOT NULL DEFAULT 1,
     "created_at" datetime,
     "updated_at" datetime,
     PRIMARY KEY ("id")
@@ -238,6 +320,28 @@ CREATE TABLE IF NOT EXISTS "canvas_shares" (
     PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "canvas_snapshot_resources" (
+    "snapshot_id" text NOT NULL,
+    "resource_id" text NOT NULL,
+    PRIMARY KEY ("snapshot_id", "resource_id")
+);
+
+CREATE TABLE IF NOT EXISTS "canvas_snapshots" (
+    "id" text NOT NULL,
+    "canvas_id" text NOT NULL,
+    "user_id" text NOT NULL,
+    "revision" integer NOT NULL,
+    "title" text,
+    "node_count" integer,
+    "connection_count" integer,
+    "payload_bytes" integer,
+    "payload_json" text NOT NULL,
+    "reason" text,
+    "content_updated_at" datetime,
+    "created_at" datetime NOT NULL,
+    PRIMARY KEY ("id")
+);
+
 CREATE TABLE IF NOT EXISTS "canvas_unit_links" (
     "id" text NOT NULL,
     "project_id" text,
@@ -249,6 +353,11 @@ CREATE TABLE IF NOT EXISTS "canvas_unit_links" (
 );
 
 CREATE TABLE IF NOT EXISTS "channel_model_price_tiers" (
+    "cost_configured" numeric NOT NULL DEFAULT false,
+    "cost_unit_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_input_token_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_output_token_price_microcredits" integer NOT NULL DEFAULT 0,
+    "cost_cached_token_price_microcredits" integer NOT NULL DEFAULT 0,
     "id" text NOT NULL,
     "channel_model_id" text,
     "selector_key" text NOT NULL DEFAULT '{}',
@@ -276,6 +385,9 @@ CREATE TABLE IF NOT EXISTS "channel_models" (
     "model_key" text,
     "provider_model_key" text,
     "display_name" text,
+    "channel_label" text NOT NULL DEFAULT '',
+    "tags" text NOT NULL,
+    "description" text NOT NULL DEFAULT '',
     "sort_order" integer NOT NULL DEFAULT 0,
     "icon" text,
     "capability" text,
@@ -323,11 +435,26 @@ CREATE TABLE IF NOT EXISTS "cloud_agent_canvas_mutations" (
     PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "cloud_agent_event_records" (
+    "run_id" text NOT NULL,
+    "sequence" integer NOT NULL,
+    "user_id" text,
+    "event_json" text NOT NULL,
+    "created_at" datetime,
+    PRIMARY KEY ("run_id", "sequence")
+);
+
 CREATE TABLE IF NOT EXISTS "cloud_agent_executions" (
     "id" text NOT NULL,
     "user_id" text,
     "status" text,
     "revision" integer,
+    "checkpoint_version" integer NOT NULL DEFAULT 0,
+    "conversation_id" text,
+    "parent_id" text,
+    "title" text,
+    "event_count" integer,
+    "message_count" integer,
     "canvas_id" text,
     "active_task_id" text,
     "media_task_id" text,
@@ -337,6 +464,24 @@ CREATE TABLE IF NOT EXISTS "cloud_agent_executions" (
     "created_at" datetime,
     "updated_at" datetime,
     PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "cloud_agent_message_records" (
+    "run_id" text NOT NULL,
+    "kind" text NOT NULL,
+    "sequence" integer NOT NULL,
+    "user_id" text,
+    "message_json" text NOT NULL,
+    PRIMARY KEY ("run_id", "kind", "sequence")
+);
+
+CREATE TABLE IF NOT EXISTS "cloud_agent_resource_leases" (
+    "user_id" text NOT NULL,
+    "run_id" text,
+    "owner_id" text NOT NULL,
+    "resource_id" text NOT NULL,
+    "expires_at" datetime,
+    PRIMARY KEY ("user_id", "owner_id", "resource_id")
 );
 
 CREATE TABLE IF NOT EXISTS "creation_runs" (
@@ -414,6 +559,7 @@ CREATE TABLE IF NOT EXISTS "credit_ledger_entries" (
 );
 
 CREATE TABLE IF NOT EXISTS "email_verification_codes" (
+    "attempts" integer,
     "id" text NOT NULL,
     "email" text,
     "code_hash" text,
@@ -518,12 +664,21 @@ CREATE TABLE IF NOT EXISTS "model_pricings" (
     PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "notification_quota" (
+    "key" text NOT NULL,
+    "count" integer,
+    "next_at" datetime,
+    "expires_at" datetime,
+    PRIMARY KEY ("key")
+);
+
 CREATE TABLE IF NOT EXISTS "o_auth_states" (
     "id" text NOT NULL,
     "provider" text,
     "state_hash" text,
     "code_verifier" text,
     "next_path" text,
+    "accepted_terms" numeric NOT NULL DEFAULT false,
     "expires_at" datetime,
     "used_at" datetime,
     "created_at" datetime,
@@ -986,6 +1141,42 @@ CREATE TABLE IF NOT EXISTS "skills" (
     PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "sms_channels" (
+    "id" text NOT NULL,
+    "name" text,
+    "provider" text,
+    "enabled" numeric,
+    "priority" integer,
+    "daily_limit" integer,
+    "sign_name" text,
+    "app_id" text,
+    "credentials" text,
+    "templates_json" text,
+    "version" integer,
+    "created_at" datetime,
+    "updated_at" datetime,
+    "deleted_at" datetime,
+    PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "sms_records" (
+    "id" text NOT NULL,
+    "channel_id" text,
+    "channel_name" text,
+    "provider" text,
+    "purpose" text,
+    "masked_phone" text,
+    "target_hash" text,
+    "state" text,
+    "request_id" text,
+    "message_id" text,
+    "error_code" text,
+    "duration_ms" integer,
+    "created_at" datetime,
+    "updated_at" datetime,
+    PRIMARY KEY ("id")
+);
+
 CREATE TABLE IF NOT EXISTS "storage_locations" (
     "id" text NOT NULL,
     "scope" text,
@@ -1052,6 +1243,14 @@ CREATE TABLE IF NOT EXISTS "task_text_delta" (
 );
 
 CREATE TABLE IF NOT EXISTS "tasks" (
+    "agent_run_id" text,
+    "generation_id" text,
+    "approval_id" text,
+    "authorized_charge_microcredits" integer,
+    "execution_diagnostic_json" text,
+    "cancellation_source" text,
+    "cancellation_actor_id" text,
+    "cancellation_requested_at" datetime,
     "creation_submission_id" text,
     "id" text NOT NULL,
     "user_id" text,
@@ -1085,6 +1284,8 @@ CREATE TABLE IF NOT EXISTS "tasks" (
     "lease_expires_at" datetime,
     "input_json" text,
     "result_json" text,
+    "media_recovery_json" text,
+    "media_stage" text,
     "text_draft" text,
     "error" text,
     "attempts" integer,
@@ -1093,6 +1294,34 @@ CREATE TABLE IF NOT EXISTS "tasks" (
     "created_at" datetime,
     "updated_at" datetime,
     PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "tool_favorites" (
+    "id" integer PRIMARY KEY AUTOINCREMENT,
+    "user_id" text,
+    "tool_id" integer,
+    "created_at" datetime
+);
+
+CREATE TABLE IF NOT EXISTS "tools" (
+    "id" integer PRIMARY KEY AUTOINCREMENT,
+    "type" text,
+    "label_en" text,
+    "label" text,
+    "desc" text,
+    "tag" text,
+    "cover" text,
+    "extra_info_json" text,
+    "prompt" text,
+    "ratio" text,
+    "media_url" text,
+    "owner_id" text,
+    "source" text,
+    "enabled" numeric,
+    "visibility" text,
+    "sort_weight" integer,
+    "created_at" datetime,
+    "updated_at" datetime
 );
 
 CREATE TABLE IF NOT EXISTS "topup_products" (
@@ -1206,6 +1435,9 @@ CREATE TABLE IF NOT EXISTS "users" (
     "id" text NOT NULL,
     "username" text,
     "email" text,
+    "phone" text,
+    "email_verified_at" datetime,
+    "phone_verified_at" datetime,
     "display_name" text,
     "role" text,
     "status" text,
@@ -1286,6 +1518,14 @@ CREATE INDEX IF NOT EXISTS "idx_admin_audit_events_action" ON "admin_audit_event
 CREATE INDEX IF NOT EXISTS "idx_admin_audit_events_target_type" ON "admin_audit_events" ("target_type");
 CREATE INDEX IF NOT EXISTS "idx_admin_audit_events_target_id" ON "admin_audit_events" ("target_id");
 CREATE INDEX IF NOT EXISTS "idx_admin_audit_events_created_at" ON "admin_audit_events" ("created_at");
+CREATE INDEX IF NOT EXISTS "idx_agent_lessons_topic" ON "agent_lessons" ("topic");
+CREATE INDEX IF NOT EXISTS "idx_agent_lessons_category" ON "agent_lessons" ("category");
+CREATE INDEX IF NOT EXISTS "idx_agent_lessons_author_status" ON "agent_lessons" ("author_user_id", "status");
+CREATE INDEX IF NOT EXISTS "idx_agent_lessons_status" ON "agent_lessons" ("status");
+CREATE INDEX IF NOT EXISTS "idx_agent_lessons_author_user_id" ON "agent_lessons" ("author_user_id");
+CREATE INDEX IF NOT EXISTS "idx_agent_memory_settings_compact_interval" ON "agent_memory_settings" ("compact_interval");
+CREATE INDEX IF NOT EXISTS "idx_agent_memory_settings_compact_task_id" ON "agent_memory_settings" ("compact_task_id");
+CREATE INDEX IF NOT EXISTS "idx_agent_memory_settings_last_status" ON "agent_memory_settings" ("last_status");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_agent_profiles_scope" ON "agent_profiles" ("user_id", "scope", "project_id", "canvas_id");
 CREATE INDEX IF NOT EXISTS "idx_agent_profiles_user_id" ON "agent_profiles" ("user_id");
 CREATE INDEX IF NOT EXISTS "idx_agent_profiles_hash" ON "agent_profiles" ("hash");
@@ -1342,6 +1582,10 @@ CREATE INDEX IF NOT EXISTS "idx_assets_status" ON "assets" ("status");
 CREATE INDEX IF NOT EXISTS "idx_assets_primary_version_id" ON "assets" ("primary_version_id");
 CREATE INDEX IF NOT EXISTS "idx_auth_sessions_user_id" ON "auth_sessions" ("user_id");
 CREATE INDEX IF NOT EXISTS "idx_auth_sessions_expires_at" ON "auth_sessions" ("expires_at");
+CREATE INDEX IF NOT EXISTS "idx_auth_verifications_expires_at" ON "auth_verifications" ("expires_at");
+CREATE INDEX IF NOT EXISTS "idx_banner_announcements_status" ON "banner_announcements" ("status");
+CREATE INDEX IF NOT EXISTS "idx_banner_announcements_starts_at" ON "banner_announcements" ("starts_at");
+CREATE INDEX IF NOT EXISTS "idx_banner_announcements_ends_at" ON "banner_announcements" ("ends_at");
 CREATE INDEX IF NOT EXISTS "idx_billing_orders_user_id" ON "billing_orders" ("user_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_billing_user_idempotency" ON "billing_orders" ("user_id", "idempotency_key");
 CREATE INDEX IF NOT EXISTS "idx_billing_orders_task_id" ON "billing_orders" ("task_id");
@@ -1365,6 +1609,10 @@ CREATE INDEX IF NOT EXISTS "idx_canvas_shares_project_id" ON "canvas_shares" ("p
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_canvas_shares_token_hash" ON "canvas_shares" ("token_hash");
 CREATE INDEX IF NOT EXISTS "idx_canvas_shares_enabled" ON "canvas_shares" ("enabled");
 CREATE INDEX IF NOT EXISTS "idx_canvas_shares_expires_at" ON "canvas_shares" ("expires_at");
+CREATE INDEX IF NOT EXISTS "idx_canvas_snapshot_resources_resource_id" ON "canvas_snapshot_resources" ("resource_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_canvas_snapshot_revision" ON "canvas_snapshots" ("canvas_id", "revision");
+CREATE INDEX IF NOT EXISTS "idx_canvas_snapshot_created" ON "canvas_snapshots" ("canvas_id", "created_at");
+CREATE INDEX IF NOT EXISTS "idx_canvas_snapshots_user_id" ON "canvas_snapshots" ("user_id");
 CREATE INDEX IF NOT EXISTS "idx_canvas_unit_links_project_id" ON "canvas_unit_links" ("project_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_canvas_unit_links_unique" ON "canvas_unit_links" ("project_id", "canvas_id", "unit_id");
 CREATE INDEX IF NOT EXISTS "idx_canvas_unit_links_project_unit" ON "canvas_unit_links" ("project_id", "unit_id");
@@ -1390,9 +1638,16 @@ CREATE INDEX IF NOT EXISTS "idx_cloud_agent_canvas_mutations_canvas_id" ON "clou
 CREATE INDEX IF NOT EXISTS "idx_cloud_agent_canvas_mutations_step_id" ON "cloud_agent_canvas_mutations" ("step_id");
 CREATE INDEX IF NOT EXISTS "idx_cloud_agent_canvas_mutations_status" ON "cloud_agent_canvas_mutations" ("status");
 CREATE INDEX IF NOT EXISTS "idx_cloud_agent_canvas_mutations_created_at" ON "cloud_agent_canvas_mutations" ("created_at");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_event_records_user_id" ON "cloud_agent_event_records" ("user_id");
 CREATE INDEX IF NOT EXISTS "idx_cloud_agent_executions_user_id" ON "cloud_agent_executions" ("user_id");
 CREATE INDEX IF NOT EXISTS "idx_cloud_agent_executions_status" ON "cloud_agent_executions" ("status");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_executions_conversation_id" ON "cloud_agent_executions" ("conversation_id");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_executions_parent_id" ON "cloud_agent_executions" ("parent_id");
 CREATE INDEX IF NOT EXISTS "idx_cloud_agent_executions_cleanup_pending" ON "cloud_agent_executions" ("cleanup_pending");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_message_records_user_id" ON "cloud_agent_message_records" ("user_id");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_resource_leases_run_id" ON "cloud_agent_resource_leases" ("run_id");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_resource_leases_resource_id" ON "cloud_agent_resource_leases" ("resource_id");
+CREATE INDEX IF NOT EXISTS "idx_cloud_agent_resource_leases_expires_at" ON "cloud_agent_resource_leases" ("expires_at");
 CREATE INDEX IF NOT EXISTS "idx_creation_runs_user_id" ON "creation_runs" ("user_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_creation_client" ON "creation_runs" ("user_id", "client_key");
 CREATE INDEX IF NOT EXISTS "idx_creation_submissions_user_id" ON "creation_submissions" ("user_id");
@@ -1434,6 +1689,7 @@ CREATE INDEX IF NOT EXISTS "idx_model_channels_scope" ON "model_channels" ("scop
 CREATE INDEX IF NOT EXISTS "idx_model_channels_enabled" ON "model_channels" ("enabled");
 CREATE INDEX IF NOT EXISTS "idx_model_channels_deleted_at" ON "model_channels" ("deleted_at");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_model_pricing_scope" ON "model_pricings" ("channel_id", "model", "capability");
+CREATE INDEX IF NOT EXISTS "idx_notification_quota_expires_at" ON "notification_quota" ("expires_at");
 CREATE INDEX IF NOT EXISTS "idx_o_auth_states_provider" ON "o_auth_states" ("provider");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_o_auth_states_state_hash" ON "o_auth_states" ("state_hash");
 CREATE INDEX IF NOT EXISTS "idx_o_auth_states_expires_at" ON "o_auth_states" ("expires_at");
@@ -1609,6 +1865,13 @@ CREATE INDEX IF NOT EXISTS "idx_skills_sort_weight" ON "skills" ("sort_weight");
 CREATE INDEX IF NOT EXISTS "idx_skills_is_private" ON "skills" ("is_private");
 CREATE INDEX IF NOT EXISTS "idx_skills_created_at" ON "skills" ("created_at");
 CREATE INDEX IF NOT EXISTS "idx_skills_updated_at" ON "skills" ("updated_at");
+CREATE INDEX IF NOT EXISTS "idx_sms_channels_provider" ON "sms_channels" ("provider");
+CREATE INDEX IF NOT EXISTS "idx_sms_channels_deleted_at" ON "sms_channels" ("deleted_at");
+CREATE INDEX IF NOT EXISTS "idx_sms_records_channel_id" ON "sms_records" ("channel_id");
+CREATE INDEX IF NOT EXISTS "idx_sms_records_purpose" ON "sms_records" ("purpose");
+CREATE INDEX IF NOT EXISTS "idx_sms_records_target_hash" ON "sms_records" ("target_hash");
+CREATE INDEX IF NOT EXISTS "idx_sms_records_state" ON "sms_records" ("state");
+CREATE INDEX IF NOT EXISTS "idx_sms_records_created_at" ON "sms_records" ("created_at");
 CREATE INDEX IF NOT EXISTS "idx_storage_locations_scope_owner_active" ON "storage_locations" ("scope", "owner_id", "active");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_storage_locations_identity" ON "storage_locations" ("scope", "owner_id", "provider", "location_digest");
 CREATE INDEX IF NOT EXISTS "idx_storage_locations_provider" ON "storage_locations" ("provider");
@@ -1626,6 +1889,8 @@ CREATE INDEX IF NOT EXISTS "idx_task_text_deltas_user_created" ON "task_text_del
 CREATE INDEX IF NOT EXISTS "idx_task_text_delta_task_id" ON "task_text_delta" ("task_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_task_text_deltas_sequence" ON "task_text_delta" ("task_id", "sequence");
 CREATE INDEX IF NOT EXISTS "idx_task_text_delta_expires_at" ON "task_text_delta" ("expires_at");
+CREATE INDEX IF NOT EXISTS "idx_tasks_agent_run_id" ON "tasks" ("agent_run_id");
+CREATE INDEX IF NOT EXISTS "idx_tasks_generation_id" ON "tasks" ("generation_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_tasks_creation_submission_id" ON "tasks" ("creation_submission_id");
 CREATE INDEX IF NOT EXISTS "idx_tasks_user_id" ON "tasks" ("user_id");
 CREATE INDEX IF NOT EXISTS "idx_tasks_user_created" ON "tasks" ("user_id", "created_at");
@@ -1649,6 +1914,20 @@ CREATE INDEX IF NOT EXISTS "idx_tasks_provider_cancel_status" ON "tasks" ("provi
 CREATE INDEX IF NOT EXISTS "idx_tasks_next_poll_at" ON "tasks" ("next_poll_at");
 CREATE INDEX IF NOT EXISTS "idx_tasks_lease_owner" ON "tasks" ("lease_owner");
 CREATE INDEX IF NOT EXISTS "idx_tasks_lease_expires_at" ON "tasks" ("lease_expires_at");
+CREATE INDEX IF NOT EXISTS "idx_tool_favorites_user_id" ON "tool_favorites" ("user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_tool_favorite_user_tool" ON "tool_favorites" ("user_id", "tool_id");
+CREATE INDEX IF NOT EXISTS "idx_tool_favorites_tool_id" ON "tool_favorites" ("tool_id");
+CREATE INDEX IF NOT EXISTS "idx_tool_favorites_created_at" ON "tool_favorites" ("created_at");
+CREATE INDEX IF NOT EXISTS "idx_tools_type" ON "tools" ("type");
+CREATE INDEX IF NOT EXISTS "idx_tools_label_en" ON "tools" ("label_en");
+CREATE INDEX IF NOT EXISTS "idx_tools_tag" ON "tools" ("tag");
+CREATE INDEX IF NOT EXISTS "idx_tools_owner_id" ON "tools" ("owner_id");
+CREATE INDEX IF NOT EXISTS "idx_tools_source" ON "tools" ("source");
+CREATE INDEX IF NOT EXISTS "idx_tools_enabled" ON "tools" ("enabled");
+CREATE INDEX IF NOT EXISTS "idx_tools_visibility" ON "tools" ("visibility");
+CREATE INDEX IF NOT EXISTS "idx_tools_sort_weight" ON "tools" ("sort_weight");
+CREATE INDEX IF NOT EXISTS "idx_tools_created_at" ON "tools" ("created_at");
+CREATE INDEX IF NOT EXISTS "idx_tools_updated_at" ON "tools" ("updated_at");
 CREATE INDEX IF NOT EXISTS "idx_topup_products_amount_fen" ON "topup_products" ("amount_fen");
 CREATE INDEX IF NOT EXISTS "idx_topup_products_enabled" ON "topup_products" ("enabled");
 CREATE INDEX IF NOT EXISTS "idx_topup_products_sort_order" ON "topup_products" ("sort_order");

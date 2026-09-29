@@ -127,6 +127,10 @@ public sealed partial class AuthService
         RegisterRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!request.AcceptedTerms)
+        {
+            throw AppError.BadAuthRequest("请先同意影策服务协议");
+        }
         string username = NormalizeUsername(request.Username);
         string email = NormalizeEmail(request.Email);
         string displayName = NormalizeDisplayName(request.DisplayName, username);

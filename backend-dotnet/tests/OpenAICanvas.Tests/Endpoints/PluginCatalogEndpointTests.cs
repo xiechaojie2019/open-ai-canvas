@@ -74,6 +74,7 @@ public sealed class PluginCatalogEndpointTests : IDisposable
         {
             username = "plugincatalogadmin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
 

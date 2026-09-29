@@ -654,6 +654,11 @@ public sealed partial class CloudAgentRuntimeService
             state.SkillReads = null;
             state.ProfileReads = null;
         }
+        // 每步按最新任务文本刷新个人记忆索引（Go 每步重建 canonical 后 attach；此处等价为剥离再注入）。
+        state.Canonical.SystemPrompt = CloudAgentLessons.Strip(state.Canonical.SystemPrompt);
+        await CloudAgentLessons.AttachAsync(
+            state.Canonical, _repository, run.UserID, CloudAgentLessons.TaskText(state), cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<string, JsonElement> stepInput = new(StringComparer.Ordinal)
         {
             ["mode"] = JsonSerializer.SerializeToElement("text"),

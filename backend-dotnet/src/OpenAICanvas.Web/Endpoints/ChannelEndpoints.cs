@@ -128,7 +128,9 @@ public static class ChannelEndpoints
                     .ConfigureAwait(false);
                 IReadOnlyList<ChannelModel> models = await service.AdminChannelModelsAsync(
                     actor, id, cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { models });
+                // 管理端投影：价格档携带 costPricing（成本仅出现在管理员接口）。
+                var adminModels = models.Select(ChannelModelAdminService.AdminChannelModelNode).ToList();
+                return ApiResults.Ok(new { models = adminModels });
             }
             catch (Exception error)
             {
@@ -150,7 +152,7 @@ public static class ChannelEndpoints
                 }
                 ChannelModel model = await service.SaveAdminChannelModelAsync(
                     actor, id, "", request, cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { model });
+                return ApiResults.Ok(new { model = ChannelModelAdminService.AdminChannelModelNode(model) });
             }
             catch (Exception error)
             {
@@ -209,7 +211,7 @@ public static class ChannelEndpoints
                 }
                 ChannelModel model = await service.SaveAdminChannelModelAsync(
                     actor, id, modelId, request, cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { model });
+                return ApiResults.Ok(new { model = ChannelModelAdminService.AdminChannelModelNode(model) });
             }
             catch (Exception error)
             {

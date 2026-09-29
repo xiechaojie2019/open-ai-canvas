@@ -397,6 +397,7 @@ public sealed class TaskEndpointTests : IDisposable
         {
             username,
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         return Authenticated(response);

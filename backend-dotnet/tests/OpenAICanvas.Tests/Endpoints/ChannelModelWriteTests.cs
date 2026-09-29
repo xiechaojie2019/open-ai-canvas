@@ -79,6 +79,7 @@ public sealed class ChannelModelWriteTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -187,6 +188,87 @@ public sealed class ChannelModelWriteTests : IDisposable
         HttpResponseMessage list = await admin.GetAsync("/api/admin/channels");
         JsonElement channels = (await ReadDataAsync(list)).GetProperty("channels");
         Assert.Equal(["gpt-text"], channels[0].GetProperty("models").EnumerateArray().Select(m => m.GetString()));
+    }
+
+    [Fact]
+    public async Task 保存模型_展示名标签描述写读与校验()
+    {
+        string channelId = await SeedChannelAsync();
+        HttpClient admin = await SignInAsAdminAsync();
+
+        HttpResponseMessage created = await admin.PostAsJsonAsync(
+            $"/api/admin/channels/{channelId}/models",
+            new
+            {
+                modelKey = "gpt-label",
+                displayName = "",
+                channelLabel = "官方推荐",
+                tags = new object[]
+                {
+                    new { text = "便宜", color = "green" },
+                    new { text = "新模型", color = "blue" },
+                },
+                description = "适合快速验证的文本模型",
+                capability = "text",
+                protocol = "chat-completion",
+                billingMode = "fixed_request",
+                unitPriceMicrocredits = 100_000,
+                priceConfigured = true,
+                capabilityConfig = new
+                {
+                    version = 1,
+                    text = new { references = new { promptMaxChars = 32000, maxImages = 4, maxVideos = 0 } },
+                },
+            });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        JsonElement model = (await ReadDataAsync(created)).GetProperty("model");
+        Assert.Equal("官方推荐", model.GetProperty("channelLabel").GetString());
+        Assert.Equal("适合快速验证的文本模型", model.GetProperty("description").GetString());
+        Assert.Equal("gpt-label", model.GetProperty("displayName").GetString());
+        JsonElement tags = model.GetProperty("tags");
+        Assert.Equal(2, tags.GetArrayLength());
+        Assert.Equal("便宜", tags[0].GetProperty("text").GetString());
+        Assert.Equal("green", tags[0].GetProperty("color").GetString());
+
+        // 更新后写读一致。
+        HttpResponseMessage updated = await admin.PatchAsJsonAsync(
+            $"/api/admin/channels/{channelId}/models/{model.GetProperty("id").GetString()}",
+            new
+            {
+                modelKey = "gpt-label",
+                displayName = "展示名",
+                channelLabel = "",
+                description = new string('长', 501),
+                capability = "text",
+                protocol = "chat-completion",
+                billingMode = "fixed_request",
+                unitPriceMicrocredits = 100_000,
+                priceConfigured = true,
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, updated.StatusCode);
+
+        // 标签校验失败路径。
+        foreach (object[] bad in new[]
+        {
+            new object[] { new { text = "长标签超过十二个字会导致失败", color = "green" } },
+            new object[] { new { text = "重复", color = "green" }, new { text = "重复", color = "blue" } },
+            new object[] { new { text = "x", color = "magenta" } },
+        })
+        {
+            HttpResponseMessage rejected = await admin.PostAsJsonAsync(
+                $"/api/admin/channels/{channelId}/models",
+                new
+                {
+                    modelKey = "gpt-label-bad",
+                    tags = bad,
+                    capability = "text",
+                    protocol = "chat-completion",
+                    billingMode = "fixed_request",
+                    unitPriceMicrocredits = 100_000,
+                    priceConfigured = true,
+                });
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        }
     }
 
     [Fact]

@@ -192,6 +192,25 @@ public sealed class ResourceDeleteService
             string provider = job.Provider.Trim().ToLowerInvariant();
             if (provider.Length == 0 || provider == "local")
             {
+                // 物理删除前检查画布历史引用；仍被引用时保持 pending 重试（对应 Go: deleteStoredResourceObject 守卫）。
+                Resource identity = new()
+                {
+                    ID = job.ResourceID,
+                    UserID = job.UserID,
+                    Provider = job.Provider,
+                    Endpoint = job.Endpoint,
+                    Bucket = job.Bucket,
+                    StorageSettingID = job.StorageSettingID,
+                    ObjectKey = job.ObjectKey,
+                };
+                if (await _repository.CanvasHistoryReferencesObjectAsync(identity, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    await _repository.UpdateResourceDeletionJobAsync(
+                        job.ID, "pending", "资源仍被画布历史版本引用",
+                        DateTime.UtcNow.AddMinutes(5), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
                 string? error = DeleteLocalResourceObject(job.ObjectKey);
                 if (error is null)
                 {
@@ -290,7 +309,7 @@ public sealed class ResourceDeleteService
     }
 
     /// <summary>对应 Go: <c>assets.CollectOwnedDocumentReferences</c>（定位字段 + 裸 resourceId 字段，无交集求交）。</summary>
-    private static void CollectOwnedDocumentReferences(string raw, HashSet<string> resourceIDs)
+    internal static void CollectOwnedDocumentReferences(string raw, HashSet<string> resourceIDs)
     {
         string trimmed = raw.Trim();
         if (trimmed.Length == 0)

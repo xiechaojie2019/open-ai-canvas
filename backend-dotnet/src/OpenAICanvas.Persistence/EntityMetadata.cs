@@ -8,7 +8,7 @@ using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 namespace OpenAICanvas.Persistence;
 
 /// <summary>属性名 → 数据库列名的映射。</summary>
-public sealed record ColumnMap(string Property, string Column);
+public sealed record ColumnMap(string Property, string Column, bool CustomSql = false);
 
 /// <summary>单个实体的持久化元数据。</summary>
 public sealed record EntityMap(string Table, string? KeyProperty, IReadOnlyList<ColumnMap> Columns)
@@ -48,6 +48,46 @@ public static class EntityMetadata
             new ColumnMap("Summary", "summary"),
             new ColumnMap("MetadataJSON", "metadata_json"),
             new ColumnMap("CreatedAt", "created_at"),
+            }),
+        [typeof(AgentLesson)] = new EntityMap(
+            "agent_lessons",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("Topic", "topic"),
+            new ColumnMap("Category", "category"),
+            new ColumnMap("Situation", "situation"),
+            new ColumnMap("Lesson", "lesson"),
+            new ColumnMap("Source", "source"),
+            new ColumnMap("StepsJSON", "steps_json"),
+            new ColumnMap("Status", "status"),
+            new ColumnMap("AuthorUserID", "author_user_id"),
+            new ColumnMap("Hits", "hits"),
+            new ColumnMap("Injected", "injected"),
+            new ColumnMap("LastVerifiedAt", "last_verified_at"),
+            new ColumnMap("CreatedAt", "created_at"),
+            new ColumnMap("UpdatedAt", "updated_at"),
+            }),
+        [typeof(AgentMemorySetting)] = new EntityMap(
+            "agent_memory_settings",
+            "UserID",
+            new ColumnMap[]
+            {
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("CompactInterval", "compact_interval"),
+            new ColumnMap("LogicalModelID", "logical_model_id"),
+            new ColumnMap("ChannelID", "channel_id"),
+            new ColumnMap("ChannelModelKey", "channel_model_key"),
+            new ColumnMap("Model", "model"),
+            new ColumnMap("LastCompactAt", "last_compact_at"),
+            new ColumnMap("CompactStartedAt", "compact_started_at"),
+            new ColumnMap("CompactTaskID", "compact_task_id"),
+            new ColumnMap("LastStatus", "last_status"),
+            new ColumnMap("LastSummaryJSON", "last_summary_json"),
+            new ColumnMap("LastError", "last_error"),
+            new ColumnMap("CreatedAt", "created_at"),
+            new ColumnMap("UpdatedAt", "updated_at"),
             }),
         [typeof(AgentProfile)] = new EntityMap(
             "agent_profiles",
@@ -225,11 +265,57 @@ public static class EntityMetadata
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
             }),
+        [typeof(AuthVerification)] = new EntityMap(
+            "auth_verifications",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("TokenHash", "token_hash"),
+            new ColumnMap("Purpose", "purpose"),
+            new ColumnMap("Method", "method"),
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("Email", "email"),
+            new ColumnMap("Phone", "phone"),
+            new ColumnMap("EmailHash", "email_hash"),
+            new ColumnMap("PhoneHash", "phone_hash"),
+            new ColumnMap("PolicyHash", "policy_hash"),
+            new ColumnMap("Ready", "ready"),
+            new ColumnMap("Attempts", "attempts"),
+            new ColumnMap("ExpiresAt", "expires_at"),
+            new ColumnMap("UsedAt", "used_at"),
+            new ColumnMap("CreatedAt", "created_at"),
+            }),
+        [typeof(BannerAnnouncement)] = new EntityMap(
+            "banner_announcements",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("Title", "title"),
+            new ColumnMap("TitleRunsJSON", "title_runs"),
+            new ColumnMap("NoticeType", "notice_type"),
+            new ColumnMap("Link", "link"),
+            new ColumnMap("Status", "status"),
+            new ColumnMap("StartsAt", "starts_at"),
+            new ColumnMap("EndsAt", "ends_at"),
+            new ColumnMap("CreatedBy", "created_by"),
+            new ColumnMap("CreatedAt", "created_at"),
+            new ColumnMap("UpdatedAt", "updated_at"),
+            }),
         [typeof(BillingOrder)] = new EntityMap(
             "billing_orders",
             "ID",
             new ColumnMap[]
             {
+            new ColumnMap("CostConfigured", "cost_configured"),
+            new ColumnMap("CostUnitPriceMicrocredits", "cost_unit_price_microcredits"),
+            new ColumnMap("CostInputTokenPriceMicrocredits", "cost_input_token_price_microcredits"),
+            new ColumnMap("CostOutputTokenPriceMicrocredits", "cost_output_token_price_microcredits"),
+            new ColumnMap("CostCachedTokenPriceMicrocredits", "cost_cached_token_price_microcredits"),
+            new ColumnMap("CostBillingMode", "cost_billing_mode"),
+            new ColumnMap("CostQuantity", "cost_quantity"),
+            new ColumnMap("CostVideoFormulaTokens", "cost_video_formula_tokens"),
             new ColumnMap("ID", "id"),
             new ColumnMap("UserID", "user_id"),
             new ColumnMap("IdempotencyKey", "idempotency_key"),
@@ -249,6 +335,7 @@ public static class EntityMetadata
             new ColumnMap("Quantity", "quantity"),
             new ColumnMap("AmountMicrocredits", "amount_microcredits"),
             new ColumnMap("ReservedAmountMicrocredits", "reserved_amount_microcredits"),
+            new ColumnMap("ChargeLimitSet", "charge_limit_set"),
             new ColumnMap("ChargeLimitMicrocredits", "charge_limit_microcredits"),
             new ColumnMap("ActualAmountMicrocredits", "actual_amount_microcredits"),
             new ColumnMap("RefundedAmountMicrocredits", "refunded_amount_microcredits"),
@@ -258,6 +345,8 @@ public static class EntityMetadata
             new ColumnMap("InputTokens", "input_tokens"),
             new ColumnMap("OutputTokens", "output_tokens"),
             new ColumnMap("CachedTokens", "cached_tokens"),
+            new ColumnMap("VideoFormulaTokens", "video_formula_tokens"),
+            new ColumnMap("UsageSource", "usage_source"),
             new ColumnMap("UsageAvailable", "usage_available"),
             new ColumnMap("Status", "status"),
             new ColumnMap("ProviderRequestID", "provider_request_id"),
@@ -280,6 +369,7 @@ public static class EntityMetadata
             new ColumnMap("ProjectID", "project_id"),
             new ColumnMap("Title", "title"),
             new ColumnMap("PayloadJSON", "payload_json"),
+            new ColumnMap("Revision", "revision"),
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
             }),
@@ -298,6 +388,32 @@ public static class EntityMetadata
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
             }),
+        [typeof(CanvasSnapshotResource)] = new EntityMap(
+            "canvas_snapshot_resources",
+            null,
+            new ColumnMap[]
+            {
+            new ColumnMap("SnapshotID", "snapshot_id"),
+            new ColumnMap("ResourceID", "resource_id"),
+            }),
+        [typeof(CanvasSnapshot)] = new EntityMap(
+            "canvas_snapshots",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("CanvasID", "canvas_id"),
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("Revision", "revision"),
+            new ColumnMap("Title", "title"),
+            new ColumnMap("NodeCount", "node_count"),
+            new ColumnMap("ConnectionCount", "connection_count"),
+            new ColumnMap("PayloadBytes", "payload_bytes"),
+            new ColumnMap("PayloadJSON", "payload_json"),
+            new ColumnMap("Reason", "reason"),
+            new ColumnMap("ContentUpdatedAt", "content_updated_at"),
+            new ColumnMap("CreatedAt", "created_at"),
+            }),
         [typeof(CanvasUnitLink)] = new EntityMap(
             "canvas_unit_links",
             "ID",
@@ -315,6 +431,11 @@ public static class EntityMetadata
             "ID",
             new ColumnMap[]
             {
+            new ColumnMap("CostConfigured", "cost_configured"),
+            new ColumnMap("CostUnitPriceMicrocredits", "cost_unit_price_microcredits"),
+            new ColumnMap("CostInputTokenPriceMicrocredits", "cost_input_token_price_microcredits"),
+            new ColumnMap("CostOutputTokenPriceMicrocredits", "cost_output_token_price_microcredits"),
+            new ColumnMap("CostCachedTokenPriceMicrocredits", "cost_cached_token_price_microcredits"),
             new ColumnMap("ID", "id"),
             new ColumnMap("ChannelModelID", "channel_model_id"),
             new ColumnMap("SelectorKey", "selector_key"),
@@ -344,6 +465,9 @@ public static class EntityMetadata
             new ColumnMap("ModelKey", "model_key"),
             new ColumnMap("ProviderModelKey", "provider_model_key"),
             new ColumnMap("DisplayName", "display_name"),
+            new ColumnMap("ChannelLabel", "channel_label"),
+            new ColumnMap("Tags", "tags", true),
+            new ColumnMap("Description", "description"),
             new ColumnMap("SortOrder", "sort_order"),
             new ColumnMap("Icon", "icon"),
             new ColumnMap("Capability", "capability"),
@@ -393,6 +517,17 @@ public static class EntityMetadata
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UndoneAt", "undone_at"),
             }),
+        [typeof(CloudAgentEventRecord)] = new EntityMap(
+            "cloud_agent_event_records",
+            null,
+            new ColumnMap[]
+            {
+            new ColumnMap("RunID", "run_id"),
+            new ColumnMap("Sequence", "sequence"),
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("EventJSON", "event_json"),
+            new ColumnMap("CreatedAt", "created_at"),
+            }),
         [typeof(CloudAgentExecution)] = new EntityMap(
             "cloud_agent_executions",
             "ID",
@@ -402,6 +537,12 @@ public static class EntityMetadata
             new ColumnMap("UserID", "user_id"),
             new ColumnMap("Status", "status"),
             new ColumnMap("Revision", "revision"),
+            new ColumnMap("CheckpointVersion", "checkpoint_version"),
+            new ColumnMap("ConversationID", "conversation_id"),
+            new ColumnMap("ParentID", "parent_id"),
+            new ColumnMap("Title", "title"),
+            new ColumnMap("EventCount", "event_count"),
+            new ColumnMap("MessageCount", "message_count"),
             new ColumnMap("CanvasID", "canvas_id"),
             new ColumnMap("ActiveTaskID", "active_task_id"),
             new ColumnMap("MediaTaskID", "media_task_id"),
@@ -410,6 +551,28 @@ public static class EntityMetadata
             new ColumnMap("StateJSON", "state_json"),
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
+            }),
+        [typeof(CloudAgentMessageRecord)] = new EntityMap(
+            "cloud_agent_message_records",
+            null,
+            new ColumnMap[]
+            {
+            new ColumnMap("RunID", "run_id"),
+            new ColumnMap("Kind", "kind"),
+            new ColumnMap("Sequence", "sequence"),
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("MessageJSON", "message_json"),
+            }),
+        [typeof(CloudAgentResourceLease)] = new EntityMap(
+            "cloud_agent_resource_leases",
+            null,
+            new ColumnMap[]
+            {
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("RunID", "run_id"),
+            new ColumnMap("OwnerID", "owner_id"),
+            new ColumnMap("ResourceID", "resource_id"),
+            new ColumnMap("ExpiresAt", "expires_at"),
             }),
         [typeof(CreationRun)] = new EntityMap(
             "creation_runs",
@@ -498,6 +661,7 @@ public static class EntityMetadata
             "ID",
             new ColumnMap[]
             {
+            new ColumnMap("Attempts", "attempts"),
             new ColumnMap("ID", "id"),
             new ColumnMap("Email", "email"),
             new ColumnMap("CodeHash", "code_hash"),
@@ -612,6 +776,16 @@ public static class EntityMetadata
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
             }),
+        [typeof(NotificationQuota)] = new EntityMap(
+            "notification_quota",
+            "Key",
+            new ColumnMap[]
+            {
+            new ColumnMap("Key", "key"),
+            new ColumnMap("Count", "count"),
+            new ColumnMap("NextAt", "next_at"),
+            new ColumnMap("ExpiresAt", "expires_at"),
+            }),
         [typeof(OAuthState)] = new EntityMap(
             "o_auth_states",
             "ID",
@@ -622,6 +796,7 @@ public static class EntityMetadata
             new ColumnMap("StateHash", "state_hash"),
             new ColumnMap("CodeVerifier", "code_verifier"),
             new ColumnMap("NextPath", "next_path"),
+            new ColumnMap("AcceptedTerms", "accepted_terms"),
             new ColumnMap("ExpiresAt", "expires_at"),
             new ColumnMap("UsedAt", "used_at"),
             new ColumnMap("CreatedAt", "created_at"),
@@ -1137,6 +1312,46 @@ public static class EntityMetadata
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
             }),
+        [typeof(SMSChannel)] = new EntityMap(
+            "sms_channels",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("Name", "name"),
+            new ColumnMap("Provider", "provider"),
+            new ColumnMap("Enabled", "enabled"),
+            new ColumnMap("Priority", "priority"),
+            new ColumnMap("DailyLimit", "daily_limit"),
+            new ColumnMap("SignName", "sign_name"),
+            new ColumnMap("AppID", "app_id"),
+            new ColumnMap("Credentials", "credentials"),
+            new ColumnMap("TemplatesJSON", "templates_json"),
+            new ColumnMap("Version", "version"),
+            new ColumnMap("CreatedAt", "created_at"),
+            new ColumnMap("UpdatedAt", "updated_at"),
+            new ColumnMap("DeletedAt", "deleted_at"),
+            }),
+        [typeof(SMSRecord)] = new EntityMap(
+            "sms_records",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("ChannelID", "channel_id"),
+            new ColumnMap("ChannelName", "channel_name"),
+            new ColumnMap("Provider", "provider"),
+            new ColumnMap("Purpose", "purpose"),
+            new ColumnMap("MaskedPhone", "masked_phone"),
+            new ColumnMap("TargetHash", "target_hash"),
+            new ColumnMap("State", "state"),
+            new ColumnMap("RequestID", "request_id"),
+            new ColumnMap("MessageID", "message_id"),
+            new ColumnMap("ErrorCode", "error_code"),
+            new ColumnMap("DurationMS", "duration_ms"),
+            new ColumnMap("CreatedAt", "created_at"),
+            new ColumnMap("UpdatedAt", "updated_at"),
+            }),
         [typeof(StorageLocation)] = new EntityMap(
             "storage_locations",
             "ID",
@@ -1217,6 +1432,14 @@ public static class EntityMetadata
             "ID",
             new ColumnMap[]
             {
+            new ColumnMap("AgentRunID", "agent_run_id"),
+            new ColumnMap("GenerationID", "generation_id"),
+            new ColumnMap("ApprovalID", "approval_id"),
+            new ColumnMap("AuthorizedChargeMicrocredits", "authorized_charge_microcredits"),
+            new ColumnMap("ExecutionDiagnosticJSON", "execution_diagnostic_json"),
+            new ColumnMap("CancellationSource", "cancellation_source"),
+            new ColumnMap("CancellationActorID", "cancellation_actor_id"),
+            new ColumnMap("CancellationRequestedAt", "cancellation_requested_at"),
             new ColumnMap("CreationSubmissionID", "creation_submission_id"),
             new ColumnMap("ID", "id"),
             new ColumnMap("UserID", "user_id"),
@@ -1250,11 +1473,47 @@ public static class EntityMetadata
             new ColumnMap("LeaseExpiresAt", "lease_expires_at"),
             new ColumnMap("InputJSON", "input_json"),
             new ColumnMap("ResultJSON", "result_json"),
+            new ColumnMap("MediaRecoveryJSON", "media_recovery_json"),
+            new ColumnMap("MediaStage", "media_stage"),
             new ColumnMap("TextDraft", "text_draft"),
             new ColumnMap("Error", "error"),
             new ColumnMap("Attempts", "attempts"),
             new ColumnMap("StartedAt", "started_at"),
             new ColumnMap("CompletedAt", "completed_at"),
+            new ColumnMap("CreatedAt", "created_at"),
+            new ColumnMap("UpdatedAt", "updated_at"),
+            }),
+        [typeof(ToolFavorite)] = new EntityMap(
+            "tool_favorites",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("UserID", "user_id"),
+            new ColumnMap("ToolID", "tool_id"),
+            new ColumnMap("CreatedAt", "created_at"),
+            }),
+        [typeof(Tool)] = new EntityMap(
+            "tools",
+            "ID",
+            new ColumnMap[]
+            {
+            new ColumnMap("ID", "id"),
+            new ColumnMap("Type", "type"),
+            new ColumnMap("LabelEn", "label_en"),
+            new ColumnMap("Label", "label"),
+            new ColumnMap("Desc", "desc"),
+            new ColumnMap("Tag", "tag"),
+            new ColumnMap("Cover", "cover"),
+            new ColumnMap("ExtraInfoJSON", "extra_info_json"),
+            new ColumnMap("Prompt", "prompt"),
+            new ColumnMap("Ratio", "ratio"),
+            new ColumnMap("MediaURL", "media_url"),
+            new ColumnMap("OwnerID", "owner_id"),
+            new ColumnMap("Source", "source"),
+            new ColumnMap("Enabled", "enabled"),
+            new ColumnMap("Visibility", "visibility"),
+            new ColumnMap("SortWeight", "sort_weight"),
             new ColumnMap("CreatedAt", "created_at"),
             new ColumnMap("UpdatedAt", "updated_at"),
             }),
@@ -1391,6 +1650,9 @@ public static class EntityMetadata
             new ColumnMap("ID", "id"),
             new ColumnMap("Username", "username"),
             new ColumnMap("Email", "email"),
+            new ColumnMap("Phone", "phone"),
+            new ColumnMap("EmailVerifiedAt", "email_verified_at"),
+            new ColumnMap("PhoneVerifiedAt", "phone_verified_at"),
             new ColumnMap("DisplayName", "display_name"),
             new ColumnMap("Role", "role"),
             new ColumnMap("Status", "status"),

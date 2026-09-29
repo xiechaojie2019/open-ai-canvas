@@ -63,6 +63,7 @@ public sealed class LinuxDOEndpointTests : IDisposable
             username = "admin",
             email = "admin@example.com",
             password = "password123",
+            acceptedTerms = true,
         });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }

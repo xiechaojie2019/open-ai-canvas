@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
@@ -41,6 +42,10 @@ public sealed class UserDataSummaryDto
 
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; init; }
+
+    [JsonPropertyName("revision")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long Revision { get; init; }
 }
 
 /// <summary>创作端画布库分页条目。对应 Go: <c>canvas.CanvasLibrarySummary</c>。</summary>
@@ -101,6 +106,9 @@ public sealed class UserDataService
     /// <summary>同步数据单条上限。对应 Go: <c>4&lt;&lt;20</c>。</summary>
     private const int MaxSyncedPayloadBytes = 4 << 20;
 
+    /// <summary>历史保留个数。对应 Go: <c>canvasHistoryLimit</c>。</summary>
+    private const int CanvasHistoryLimit = 20;
+
     private readonly Repository _repository;
     private readonly IRuntimePolicyProvider _runtimePolicy;
     private readonly ResourceDeleteService _resourceDelete;
@@ -148,7 +156,7 @@ public sealed class UserDataService
             {
                 continue;
             }
-            result.Add(JsonDocument.Parse(project.PayloadJSON).RootElement.Clone());
+            result.Add(CanvasProjectPayload(project));
         }
         return result;
     }
@@ -166,6 +174,7 @@ public sealed class UserDataService
             Title = project.Title,
             CreatedAt = project.CreatedAt,
             UpdatedAt = project.UpdatedAt,
+            Revision = project.Revision,
         }).ToList();
     }
 
@@ -181,16 +190,28 @@ public sealed class UserDataService
         {
             throw new InvalidOperationException("record not found");
         }
-        return JsonDocument.Parse(project.PayloadJSON).RootElement.Clone();
+        return CanvasProjectPayload(project);
     }
 
-    /// <summary>画布 upsert。对应 Go: <c>UpsertUserCanvasProject</c>。</summary>
-    public async Task<UserDataSummaryDto> UpsertUserCanvasProjectAsync(
+    /// <summary>
+    /// 画布 upsert。对应 Go: <c>upsertUserCanvasProjectWithHistory</c>（不含历史快照）：
+    /// 版本号必填并 CAS 校验递增，服务端为实体真相；浏览器缓存只是首屏快照。
+    /// </summary>
+    public Task<UserDataSummaryDto> UpsertUserCanvasProjectAsync(
         string userId,
         JsonElement raw,
+        CancellationToken cancellationToken = default) =>
+        UpsertUserCanvasProjectCoreAsync(userId, raw, "automatic", cancellationToken);
+
+    /// <summary>带保存理由的核心（automatic / before_restore）。对应 Go: <c>upsertUserCanvasProjectWithHistory</c>。</summary>
+    private async Task<UserDataSummaryDto> UpsertUserCanvasProjectCoreAsync(
+        string userId,
+        JsonElement raw,
+        string reason,
         CancellationToken cancellationToken = default)
     {
         string rawText = raw.GetRawText();
+        long revision = ParseCanvasRevision(raw);
         CanvasProject project = CanvasProjectFromJSON(userId, rawText);
         await _storageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -199,13 +220,38 @@ public sealed class UserDataService
 
             CanvasProject? existing = await _repository.CanvasProjectForUserAsync(userId, project.ID, cancellationToken)
                 .ConfigureAwait(false);
+            if ((existing is null && revision != 0) || (existing is not null && existing.Revision != revision))
+            {
+                throw CanvasRevisionConflict();
+            }
             long existingBytes = existing is null ? 0 : Encoding.UTF8.GetByteCount(existing.PayloadJSON);
+            project.Revision = revision;
+            project.UpdatedAt = DateTime.UtcNow;
+            if (existing is not null)
+            {
+                project.CreatedAt = existing.CreatedAt;
+            }
+            project.PayloadJSON = CleanCanvasProjectPayloadForStore(
+                rawText, existing?.PayloadJSON, project.CreatedAt, project.UpdatedAt);
             await StructuredQuotaAsync(
                 userId, "canvas", existing is null,
-                Encoding.UTF8.GetByteCount(rawText) - existingBytes,
+                Encoding.UTF8.GetByteCount(project.PayloadJSON) - existingBytes,
                 cancellationToken).ConfigureAwait(false);
 
-            await _repository.UpsertCanvasProjectAsync(project, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await SaveDocumentWithHistoryAsync(existing, project, reason, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (CanvasRevisionConflictException)
+            {
+                throw CanvasRevisionConflict();
+            }
+            catch (InvalidOperationException error) when (
+                error.Message == Repository.CanvasHistoryResourceMissingError)
+            {
+                throw AppError.New(409, "画布引用的素材已变化，当前内容未被覆盖，请保留草稿并重新加载");
+            }
         }
         finally
         {
@@ -217,7 +263,245 @@ public sealed class UserDataService
             Title = project.Title,
             CreatedAt = project.CreatedAt,
             UpdatedAt = project.UpdatedAt,
+            Revision = project.Revision,
         };
+    }
+
+    /// <summary>
+    /// 画布版本历史列表。对应 Go: <c>canvas.Service.CanvasHistory</c>。
+    /// </summary>
+    public async Task<(List<CanvasSnapshot> Snapshots, long CurrentRevision)> HistoryAsync(
+        string userId, string canvasID, CancellationToken cancellationToken = default)
+    {
+        CanvasProject? project = await ScopedCanvasHistoryProjectAsync(userId, canvasID, cancellationToken)
+            .ConfigureAwait(false);
+        List<CanvasSnapshot> snapshots = await _repository.CanvasSnapshotsAsync(
+            project.UserID, project.ID, CanvasHistoryLimit, cancellationToken).ConfigureAwait(false);
+        return (snapshots, project.Revision);
+    }
+
+    /// <summary>单个历史快照（含 payload）。对应 Go: <c>canvas.Service.CanvasHistorySnapshot</c>。</summary>
+    public async Task<CanvasSnapshot> HistorySnapshotAsync(
+        string userId, string canvasID, string snapshotID, CancellationToken cancellationToken = default)
+    {
+        CanvasProject project = await ScopedCanvasHistoryProjectAsync(userId, canvasID, cancellationToken)
+            .ConfigureAwait(false);
+        return await _repository.CanvasSnapshotAsync(project.UserID, project.ID, snapshotID, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw AppError.New(404, "历史版本不存在或已过期，请刷新历史列表");
+    }
+
+    /// <summary>
+    /// 恢复到历史版本：校验当前版本 CAS，恢复文档内容但保留归属与业务关联字段。
+    /// 对应 Go: <c>canvas.Service.RestoreCanvasHistory</c>。
+    /// </summary>
+    public async Task<UserDataSummaryDto> RestoreCanvasHistoryAsync(
+        string userId, string canvasID, string snapshotID, long? revision,
+        CancellationToken cancellationToken = default)
+    {
+        if (revision is null)
+        {
+            throw AppError.New(428, "请先刷新画布版本再恢复");
+        }
+        CanvasProject current = await ScopedCanvasHistoryProjectAsync(userId, canvasID, cancellationToken)
+            .ConfigureAwait(false);
+        if (current.Revision != revision.Value)
+        {
+            throw CanvasRevisionConflict();
+        }
+        CanvasSnapshot snapshot = await HistorySnapshotAsync(userId, canvasID, snapshotID, cancellationToken)
+            .ConfigureAwait(false);
+        JsonObject payload = ParseCanvasPayloadObject(snapshot.PayloadJSON);
+        // 恢复文档内容，但保留当前归属与业务关联。
+        payload["id"] = current.ID;
+        payload["revision"] = revision.Value;
+        payload["createdAt"] = ProjectService.FormatRfc3339Nano(current.CreatedAt);
+        payload["projectId"] = current.ProjectID;
+        string raw = payload.ToJsonString();
+        return await UpsertUserCanvasProjectCoreAsync(
+            userId, JsonSerializer.Deserialize<JsonElement>(raw), "before_restore", cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<CanvasProject> ScopedCanvasHistoryProjectAsync(
+        string userId, string canvasID, CancellationToken cancellationToken)
+    {
+        CanvasProject? project = await _repository.CanvasProjectMetadataAsync(
+            userId, canvasID.Trim(), cancellationToken).ConfigureAwait(false)
+            ?? throw AppError.New(404, "画布不存在或无权访问");
+        return project;
+    }
+
+    /// <summary>
+    /// CAS 保存画布并随内容决定是否捕获历史快照。浏览器、云端 Agent 与创作任务共用。
+    /// 对应 Go: <c>canvas.SaveDocumentWithHistory</c>。
+    /// </summary>
+    private async Task SaveDocumentWithHistoryAsync(
+        CanvasProject? before, CanvasProject after, string reason, CancellationToken cancellationToken)
+    {
+        (CanvasSnapshot? snapshot, List<string> resourceIDs) = BuildCanvasSnapshot(before, after, reason);
+        List<string> restoredIDs = [];
+        if (reason == "before_restore")
+        {
+            HashSet<string> refs = [];
+            ResourceDeleteService.CollectOwnedDocumentReferences(after.PayloadJSON, refs);
+            restoredIDs = [.. refs];
+        }
+        await _repository.SaveCanvasWithSnapshotAsync(
+            after, snapshot, resourceIDs, restoredIDs,
+            after.UpdatedAt.AddMinutes(-5), CanvasHistoryLimit,
+            force: reason == "before_restore", cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>内容无变化（除恢复强制）时不建快照。对应 Go: <c>buildCanvasSnapshot</c>。</summary>
+    private (CanvasSnapshot? Snapshot, List<string> ResourceIDs) BuildCanvasSnapshot(
+        CanvasProject? before, CanvasProject after, string reason)
+    {
+        if (before is null)
+        {
+            return (null, []);
+        }
+        JsonElement oldContent = CanvasHistoryContent(before);
+        JsonElement newContent = CanvasHistoryContent(after);
+        if (reason != "before_restore" && JsonNode.DeepEquals(
+                JsonNode.Parse(oldContent.GetRawText()), JsonNode.Parse(newContent.GetRawText())))
+        {
+            return (null, []);
+        }
+        string raw = CanvasProjectPayload(before).GetRawText();
+        int nodeCount = 0;
+        int connectionCount = 0;
+        using (JsonDocument document = JsonDocument.Parse(raw))
+        {
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (document.RootElement.TryGetProperty("nodes", out JsonElement nodes)
+                    && nodes.ValueKind == JsonValueKind.Array)
+                {
+                    nodeCount = nodes.GetArrayLength();
+                }
+                if (document.RootElement.TryGetProperty("connections", out JsonElement connections)
+                    && connections.ValueKind == JsonValueKind.Array)
+                {
+                    connectionCount = connections.GetArrayLength();
+                }
+            }
+        }
+        HashSet<string> resources = [];
+        ResourceDeleteService.CollectOwnedDocumentReferences(raw, resources);
+        return (new CanvasSnapshot
+        {
+            ID = IdGenerator.NewId(),
+            CanvasID = before.ID,
+            UserID = before.UserID,
+            Revision = before.Revision,
+            Title = before.Title,
+            NodeCount = nodeCount,
+            ConnectionCount = connectionCount,
+            PayloadJSON = raw,
+            PayloadBytes = Encoding.UTF8.GetByteCount(raw),
+            Reason = reason,
+            ContentUpdatedAt = before.UpdatedAt,
+            CreatedAt = after.UpdatedAt,
+        }, [.. resources]);
+    }
+
+    /// <summary>内容比对基线：行字段覆盖后剔除易变键。对应 Go: <c>canvasHistoryContent</c>。</summary>
+    private static JsonElement CanvasHistoryContent(CanvasProject project)
+    {
+        JsonObject payload = ParseCanvasPayloadObject(CanvasProjectPayload(project).GetRawText());
+        foreach (string key in new[] { "revision", "updatedAt", "createdAt", "viewport", "remoteContentHash" })
+        {
+            payload.Remove(key);
+        }
+        return JsonSerializer.SerializeToElement(payload);
+    }
+
+    /// <summary>对应 Go: <c>canvasRevisionConflict</c>（HTTP 409）。</summary>
+    private static AppError CanvasRevisionConflict() =>
+        AppError.New(409, "云端画布已有更新，已停止覆盖；请保留本地草稿并加载最新版本");
+
+    /// <summary>
+    /// 解析画布版本号。缺失返回 428；非整数或超出 JS 安全整数范围返回 400。
+    /// 对应 Go: <c>upsertUserCanvasProjectWithHistory</c> 的 version 结构校验。
+    /// </summary>
+    private static long ParseCanvasRevision(JsonElement raw)
+    {
+        // JSON null 与字段缺失等价：Go 反序列化后指针仍为 nil，返回 428。
+        if (raw.ValueKind != JsonValueKind.Object || !raw.TryGetProperty("revision", out JsonElement revision) ||
+            revision.ValueKind == JsonValueKind.Null || revision.ValueKind == JsonValueKind.Undefined)
+        {
+            throw AppError.New(428, "缺少画布版本，请保留本地草稿后重新加载画布");
+        }
+        if (revision.ValueKind != JsonValueKind.Number || !revision.TryGetInt64(out long value))
+        {
+            throw AppError.BadAuthRequest("画布版本格式错误");
+        }
+        if (value < 0 || value >= 9007199254740991)
+        {
+            throw AppError.BadAuthRequest("画布版本无效");
+        }
+        return value;
+    }
+
+    /// <summary>
+    /// 存储前清洗画布载荷：删除 revision/remoteContentHash，viewport 以服务端既有值为准，
+    /// createdAt/updatedAt 以解析时间为准。对应 Go: <c>upsertUserCanvasProjectWithHistory</c> 的 payload 处理。
+    /// </summary>
+    internal static string CleanCanvasProjectPayloadForStore(
+        string rawText, string? previousPayloadJson, DateTime createdAt, DateTime updatedAt)
+    {
+        JsonObject payload = ParseCanvasPayloadObject(rawText);
+        payload.Remove("revision");
+        payload.Remove("remoteContentHash");
+        payload["viewport"] = PreviousCanvasViewport(previousPayloadJson)
+            ?? JsonNode.Parse("""{"x":0,"y":0,"k":1}""");
+        payload["createdAt"] = ProjectService.FormatRfc3339Nano(createdAt);
+        payload["updatedAt"] = ProjectService.FormatRfc3339Nano(updatedAt);
+        return payload.ToJsonString();
+    }
+
+    /// <summary>
+    /// 读路径组装画布载荷：行元数据（含 revision）是权威。对应 Go: <c>canvasProjectPayload</c>。
+    /// </summary>
+    internal static JsonElement CanvasProjectPayload(CanvasProject project)
+    {
+        JsonObject payload = ParseCanvasPayloadObject(project.PayloadJSON);
+        payload["id"] = project.ID;
+        payload["title"] = project.Title;
+        payload["projectId"] = project.ProjectID;
+        payload["revision"] = project.Revision;
+        payload["createdAt"] = ProjectService.FormatRfc3339Nano(project.CreatedAt);
+        payload["updatedAt"] = ProjectService.FormatRfc3339Nano(project.UpdatedAt);
+        return JsonSerializer.SerializeToElement(payload);
+    }
+
+    private static JsonObject ParseCanvasPayloadObject(string rawText)
+    {
+        try
+        {
+            return JsonNode.Parse(rawText) as JsonObject ?? [];
+        }
+        catch (JsonException)
+        {
+            throw AppError.New(500, "画布数据解析失败");
+        }
+    }
+
+    private static JsonNode? PreviousCanvasViewport(string? previousPayloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(previousPayloadJson))
+        {
+            return null;
+        }
+        try
+        {
+            return JsonNode.Parse(previousPayloadJson)?["viewport"]?.DeepClone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>删除画布。对应 Go: <c>DeleteUserCanvasProject</c>。</summary>

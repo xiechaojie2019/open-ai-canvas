@@ -492,6 +492,7 @@ public sealed class PaymentEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         return Authenticated(response);

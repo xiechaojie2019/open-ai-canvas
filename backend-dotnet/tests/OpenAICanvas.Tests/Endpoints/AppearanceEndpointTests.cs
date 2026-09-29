@@ -86,6 +86,7 @@ public sealed class AppearanceEndpointTests : IDisposable
         {
             username = "appearanceadmin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];

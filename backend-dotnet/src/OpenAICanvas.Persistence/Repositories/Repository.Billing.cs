@@ -129,6 +129,7 @@ public sealed partial class Repository
         string id, string providerRequestId, CancellationToken cancellationToken = default)
     {
         BillingUsage? observedUsage = null;
+        string observedUsageSource = BillingUsageSourceProvider;
         long observedActual = 0;
         bool observedActualAvailable = false;
 
@@ -159,15 +160,17 @@ public sealed partial class Repository
             bool tokenMode = order.BillingMode == "token" && !ZeroPricedTokenOrder(order);
             if (tokenMode)
             {
-                BillingUsage usage = await ReadBillingUsageAsync(connection, transaction, id, cancellationToken)
-                    .ConfigureAwait(false);
+                (BillingUsage? usage, string usageSource) = TokenSettlementUsage(order,
+                    await TryReadBillingUsageAsync(connection, transaction, id, cancellationToken)
+                        .ConfigureAwait(false));
                 observedUsage = usage;
+                observedUsageSource = usageSource;
 
                 long reserved = order.ReservedAmountMicrocredits > 0
                     ? order.ReservedAmountMicrocredits
                     : order.AmountMicrocredits;
 
-                long actual = TokenUsageAmount(order, usage);
+                long actual = TokenUsageAmount(order, usage!);
                 bool chargeCapped = order.ChargeLimitMicrocredits > 0 && actual > order.ChargeLimitMicrocredits;
                 if (chargeCapped)
                 {
@@ -209,6 +212,15 @@ public sealed partial class Repository
                     .ConfigureAwait(false);
 
                 DateTime now = DateTime.UtcNow;
+                string consumeNote = chargeCapped
+                    ? "Token 实际用量超过 Agent 报价，已按本轮硬上限结算"
+                    : supplement > 0
+                        ? "Token 实际用量超过预授权，已补扣差额"
+                        : "";
+                if (usageSource == BillingUsageSourceVideoFormula)
+                {
+                    consumeNote = "按提交时的视频 Token 公式快照结算；" + consumeNote;
+                }
                 await ExecuteAsync(
                     connection,
                     """
@@ -216,7 +228,7 @@ public sealed partial class Repository
                         status = @settled, settled_at = @now, updated_at = @now,
                         actual_amount_microcredits = @actual, refunded_amount_microcredits = @refund,
                         input_tokens = @inputTokens, output_tokens = @outputTokens, cached_tokens = @cachedTokens,
-                        usage_available = @usageAvailable
+                        usage_available = @usageAvailable, usage_source = @usageSource
                         {providerSet}
                     WHERE id = @id
                     """.Replace("{providerSet}", providerRequestId.Length > 0 ? ", provider_request_id = @providerRequestId" : ""),
@@ -229,18 +241,13 @@ public sealed partial class Repository
                         inputTokens = usage.InputTokens,
                         outputTokens = usage.OutputTokens,
                         cachedTokens = usage.CachedTokens,
-                        usageAvailable = true,
+                        usageAvailable = usageSource == BillingUsageSourceProvider,
+                        usageSource,
                         providerRequestId,
                         id,
                     },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
-
-                string consumeNote = chargeCapped
-                    ? "Token 实际用量超过 Agent 报价，已按本轮硬上限结算"
-                    : supplement > 0
-                        ? "Token 实际用量超过预授权，已补扣差额"
-                        : "";
 
                 await InsertLedgerAsync(connection, transaction, new CreditLedgerEntry
                 {
@@ -353,7 +360,7 @@ public sealed partial class Repository
             if (observedUsage is not null)
             {
                 await PersistObservedUsageAsync(
-                    connection, id, observedUsage, observedActual, observedActualAvailable,
+                    connection, id, observedUsage, observedUsageSource, observedActual, observedActualAvailable,
                     providerRequestId, cancellationToken).ConfigureAwait(false);
             }
 
@@ -722,6 +729,58 @@ public sealed partial class Repository
 
     // ---------------------------------------------------------------- 内部
 
+    /// <summary>结算用量来源。对应 Go: <c>billingUsageSourceProvider</c>。</summary>
+    private const string BillingUsageSourceProvider = "provider";
+
+    /// <summary>结算用量来源。对应 Go: <c>billingUsageSourceVideoFormula</c>。</summary>
+    private const string BillingUsageSourceVideoFormula = "video_formula";
+
+    /// <summary>
+    /// 读取用量（缺失返回 null 而不抛错）。对应 Go: <c>tokenSettlementUsage</c> 的读取段。
+    /// </summary>
+    private async Task<BillingUsage?> TryReadBillingUsageAsync(
+        DbConnection connection,
+        DbTransaction? transaction,
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadBillingUsageAsync(connection, transaction, orderId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (BillingUsageUnavailableException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 结算用量与来源：视频无供应商 usage 时回退到提交时记录的公式快照；
+    /// 预授权 Quantity 含余量，不能用作最终用量。对应 Go: <c>tokenSettlementUsage</c>。
+    /// </summary>
+    private static (BillingUsage? Usage, string Source) TokenSettlementUsage(
+        BillingOrder order, BillingUsage? usage)
+    {
+        if (order.Capability != "video")
+        {
+            if (usage is null)
+            {
+                throw new BillingUsageUnavailableException();
+            }
+            return (usage, BillingUsageSourceProvider);
+        }
+        if (usage is not null && usage.OutputTokens > 0 && usage.InputTokens >= 0 && usage.CachedTokens >= 0)
+        {
+            return (new BillingUsage { OutputTokens = usage.OutputTokens }, BillingUsageSourceProvider);
+        }
+        if (order.VideoFormulaTokens > 0)
+        {
+            return (new BillingUsage { OutputTokens = order.VideoFormulaTokens }, BillingUsageSourceVideoFormula);
+        }
+        throw new BillingUsageUnavailableException();
+    }
+
     private async Task<BillingUsage> ReadBillingUsageAsync(
         DbConnection connection,
         DbTransaction? transaction,
@@ -790,6 +849,7 @@ public sealed partial class Repository
         DbConnection connection,
         string id,
         BillingUsage usage,
+        string usageSource,
         long actual,
         bool actualAvailable,
         string providerRequestId,
@@ -801,6 +861,7 @@ public sealed partial class Repository
             "output_tokens = @outputTokens",
             "cached_tokens = @cachedTokens",
             "usage_available = @usageAvailable",
+            "usage_source = @usageSource",
             "updated_at = @now",
         ];
         if (actualAvailable)
@@ -823,7 +884,8 @@ public sealed partial class Repository
                 inputTokens = usage.InputTokens,
                 outputTokens = usage.OutputTokens,
                 cachedTokens = usage.CachedTokens,
-                usageAvailable = true,
+                usageAvailable = usageSource == BillingUsageSourceProvider,
+                usageSource,
                 now = DateTime.UtcNow,
                 actual,
                 providerRequestId,
@@ -855,10 +917,22 @@ public sealed partial class Repository
             throw new BillingUsageUnavailableException();
         }
 
-        long input = Math.Max(usage.InputTokens - usage.CachedTokens, 0);
-        long inputAmount = SafeTokenUsageProduct(input, order.InputTokenPriceMicrocredits);
+        // 视频 Token 总用量已由供应商 completion_tokens（或公式快照）表达，
+        // 不再叠加文本输入和缓存费用。对应 Go: <c>tokenUsageAmount</c>。
+        long inputAmount;
+        long cachedAmount;
+        if (order.Capability == "video")
+        {
+            inputAmount = 0;
+            cachedAmount = 0;
+        }
+        else
+        {
+            long input = Math.Max(usage.InputTokens - usage.CachedTokens, 0);
+            inputAmount = SafeTokenUsageProduct(input, order.InputTokenPriceMicrocredits);
+            cachedAmount = SafeTokenUsageProduct(usage.CachedTokens, order.CachedTokenPriceMicrocredits);
+        }
         long outputAmount = SafeTokenUsageProduct(usage.OutputTokens, order.OutputTokenPriceMicrocredits);
-        long cachedAmount = SafeTokenUsageProduct(usage.CachedTokens, order.CachedTokenPriceMicrocredits);
 
         // 逐段检查加法与乘法溢出，与 Go 的显式边界判定一致（不依赖 checked 的 OverflowException）。
         long baseAmount = SafeAdd(inputAmount, outputAmount);

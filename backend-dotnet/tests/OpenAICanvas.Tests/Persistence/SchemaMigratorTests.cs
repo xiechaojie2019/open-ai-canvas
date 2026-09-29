@@ -36,7 +36,7 @@ public class SchemaMigratorTests : IDisposable
     }
 
     [Fact]
-    public async Task 全新库迁移后写入全部_15_条迁移记录()
+    public async Task 全新库迁移后写入全部_34_条迁移记录()
     {
         SchemaMigrator migrator = new(_database);
         await migrator.MigrateAsync();
@@ -48,14 +48,20 @@ public class SchemaMigratorTests : IDisposable
                 "SELECT version, name, checksum FROM schema_migrations ORDER BY version"))
             .ToList();
 
-        Assert.Equal(15, records.Count);
-        Assert.Equal(Enumerable.Range(1, 15).Select(v => (long)v), records.Select(r => r.Version));
+        Assert.Equal(34, records.Count);
+        Assert.Equal(Enumerable.Range(1, 34).Select(v => (long)v), records.Select(r => r.Version));
 
         // 名称与校验和必须与 Go 完全一致，否则无法接管 Go 版已迁移的数据库。
         Assert.Equal("baseline_gorm_schema", records[0].Name);
         Assert.Equal("sha256:open-ai-canvas-schema-v1-20260830", records[0].Checksum);
         Assert.Equal("agent_profiles", records[14].Name);
         Assert.Equal("sha256:agent-profiles-v15-20260914", records[14].Checksum);
+        Assert.Equal("agent_lessons", records[15].Name);
+        Assert.Equal("sha256:agent-lessons-v16-20260917", records[15].Checksum);
+        Assert.Equal("canvas_revision_history", records[22].Name);
+        Assert.Equal("sha256:canvas-revision-history-v23-20260918", records[22].Checksum);
+        Assert.Equal("task_media_recovery", records[33].Name);
+        Assert.Equal("sha256:task-media-recovery-v34", records[33].Checksum);
     }
 
     [Fact]
@@ -66,8 +72,8 @@ public class SchemaMigratorTests : IDisposable
 
         SchemaStatus status = await migrator.ReadStatusAsync();
 
-        Assert.Equal(15, status.Current);
-        Assert.Equal(15, status.Expected);
+        Assert.Equal(34, status.Current);
+        Assert.Equal(34, status.Expected);
         Assert.True(status.Ready);
     }
 
@@ -83,7 +89,7 @@ public class SchemaMigratorTests : IDisposable
         await connection.OpenAsync();
         long count = await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM schema_migrations");
 
-        Assert.Equal(15, count);
+        Assert.Equal(34, count);
     }
 
     [Fact]
@@ -93,7 +99,7 @@ public class SchemaMigratorTests : IDisposable
         SchemaStatus status = await migrator.ReadStatusAsync();
 
         Assert.Equal(0, status.Current);
-        Assert.Equal(15, status.Expected);
+        Assert.Equal(34, status.Expected);
         Assert.False(status.Ready);
     }
 

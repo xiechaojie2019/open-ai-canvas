@@ -42,7 +42,7 @@
 ## 〇之二、持久化层改用 Dapper（2026-09-17 决策）
 
 **决策**：不使用 EF Core，改用 **Dapper + 手写 SQL**。实体层不受影响——
-生成时已刻意让 `OpenAICanvas.Domain` 不引用任何 ORM 包，80 个实体是纯 POCO，
+生成时已刻意让 `OpenAICanvas.Domain` 不引用任何 ORM 包，94 个实体是纯 POCO，
 没有 `[Key]`/`[Column]`/`[NotMapped]` 特性，两种方案都能直接复用。
 
 **依据（本项目实测的 GORM 调用分布）**
@@ -60,7 +60,7 @@
 
 表结构不再由 ORM 推断，而是由生成器从 `schema-dump.json` 产出静态 DDL：
 
-- `Persistence/Schema/SqliteSchema.sql` — 80 表 + 425 索引
+- `Persistence/Schema/SqliteSchema.sql` — 94 表 + 472 索引
 - `Persistence/Schema/PostgresSchema.sql` — 同上，列类型取 GORM postgres dialector 输出
 
 这比 EF 生成的 DDL 更准：EF 会把带长度的字符串映射成 `TEXT`，而 GORM 在 PostgreSQL 下
@@ -73,12 +73,12 @@
 | 软删除 | `SoftDelete.Apply()` 默认注入 `deleted_at IS NULL`，需显式 `includeDeleted: true` 才包含已删除记录 | 对应 GORM 的自动过滤与 `Unscoped()` |
 | 行锁 | `SqlDialect.ForUpdate()` 在 SQLite 下返回空串 | `gorm.io/driver/sqlite` 的 "FOR" 构建器显式跳过，注释为 "SQLite3 does not support row-level locking" |
 | upsert | `SqlDialect.OnConflictDoNothing()` | 对应 27 处 `clause.OnConflict` |
-| 迁移版本 | `SchemaMigrationCatalog` 的 15 个版本，名称与校验和与 Go 逐字一致 | 保证 .NET 版能接管 Go 版已迁移的数据库 |
+| 迁移版本 | `SchemaMigrationCatalog` 的 **34 个版本**，名称与校验和与 Go v1–v34 逐字一致 | 保证 .NET 版能接管 Go 版已迁移的数据库 |
 | 历史 6/7 顺序 | `PlanFor(version6Record)` | 对应 Go 的 `migrationsForDatabase` |
 | 增量升级 | 列定义从 DDL 脚本解析后构造 `ALTER TABLE ADD COLUMN` | 避免在代码里重复写一份类型导致漂移 |
 
-**已验证**：全新 SQLite 库迁移后 80 表 / 958 列 / 425 索引 / 15 条迁移记录，
-表名与列数与 GORM 基线完全一致，`health/ready` 返回 `schema.current=15, ready=true`。
+**已验证**：全新 SQLite 库迁移后 94 表 / 1136 列 / 472 索引 / 34 条迁移记录，
+表名与列数与当前 Go v34 GORM 基线完全一致，`health/ready` 返回 `schema.current=34, ready=true`。
 
 ---
 
@@ -366,7 +366,7 @@ backend-dotnet/
 
 | # | 模块 | 对应 Go | 状态 |
 | --- | --- | --- | --- |
-| 12.1 | `migrate-schema` | `cmd/migrate-schema` | ✅ Tools 已实现 `up/status/verify`，复用 `SchemaMigrator`，SQLite 15 版生命周期已冒烟 |
+| 12.1 | `migrate-schema` | `cmd/migrate-schema` | ✅ Tools 已实现 `up/status/verify`，复用 `SchemaMigrator`，SQLite 34 版生命周期已冒烟 |
 | 12.2 | `migrate-sqlite-postgres` | `cmd/migrate-sqlite-postgres` | 🟡 已实现 SQLite 完整性检查、目标库结构保护、实体逐表批量复制与 SHA-256 逐字段核对；未在本机连接真实 PostgreSQL，需部署环境双跑验证 |
 | 12.3 | `migrate-logical-model-families` | 同名 cmd | 🟡 已实现 PostgreSQL dry-run / `--apply` 安全门、能力合并、旧 SKU 归档和活动任务保护；GPT Image 2 等 Go 特殊分支未在此最小版本自动合并 |
 | 12.4 | `migrate-channel-model-price-tiers` | 同名 cmd | 🟡 已实现 PostgreSQL dry-run / `--apply`、活动档同步与无档位默认档转换；未自动删除旧 SKU 或复刻全部图像/视频家族清理分支 |
@@ -431,6 +431,38 @@ backend-dotnet/
 ---
 
 ## 九、部署与生产修复日志
+
+### 2026-09-28 · Go v16–v34 数据库迁移移植完成
+
+.NET 迁移目录从 15 版对齐到 Go 当前 **v34**（19 条新迁移，名称与校验和逐字一致），
+schema 基线从 2026-09-16 快照刷新为当前 Go 导出：**80→94 表、958→1136 列、421+4→468+4 索引**。
+此前另一条线曾把 v16 槽位用作自建 `canvas_project_revision` 临时条目，本次按该条目注释的约定
+对齐重排：画布 `revision` 列现由 Go 同名版本 **v23 canvas_revision_history** 负责。
+
+各版本归属（按主题）：v16–v18 Agent 经验教训/记忆设置、v19 支付插件版本列、
+v20–v22 公告 Banner、v23 画布版本历史（含 `canvas_projects.revision`）、
+v24–v27+v32 渠道模型展示名/视频 Token 报价/描述/积分成本/彩色标签、
+v28 Agent 执行日志（`cloud_agent_executions` 新列 + `tasks` 8 列 + `billing_orders.charge_limit_set`）、
+v29 Agent 资源租约、v30–v31 内置工具/收藏、v33 OAuth 协议同意列、v34 任务媒体恢复列。
+v28 的 AutoMigrate 新表（`cloud_agent_event_records`/`cloud_agent_message_records`）由完整建表脚本创建。
+
+连带修正：
+
+1. **实体生成器**（`scripts/generate-entities.py`）：gorm `embedded;embeddedPrefix:cost_`
+   展开列按带前缀列名反推 C# 属性名（如 `CostUnitPriceMicrocredits`），消除与外层字段撞名；
+   `serializer:json` 列标记 `CustomSql`，辅助结构体（`ChannelModelTag`/`BannerTitleRun`）随组发射。
+2. **serializer:json 参数装配**：`SqlBuilder.Parameters`/`PrepareParameters` 把
+   `CustomSql` 列（当前唯一：`channel_models.tags`）序列化为 JSON 文本参与 INSERT/UPDATE，
+   `RepositoryBase.Prepare` 统一接线；渠道模型全部写路径改走该装配。
+3. **插件运行时两处修复**：`BootstrapAsync` 的执行器预检不再对纯支付包运行
+   `LoadInstalledProviders`（此前官方支付包被当作坏包跳过，支付注册表为空）；
+   插件包上限对齐 Go（16→48 MiB 包、8→16 MiB 单条目），17–18 MiB 的官方支付包可通过解析。
+4. **版本常量收敛**：`SystemStatus.CurrentSchemaVersion` 从手抄 15 改为引用
+   `SchemaMigrationCatalog.CurrentSchemaVersion`，消除双源漂移。
+
+验证：迁移/parity/渠道写入/系统性能专项 67/67；插件运行时 6/6；
+全量 1552/1555（3 个失败为 `TaskEndpointTests` 并行时序噪音，隔离复跑 19/19 通过）。
+migrate-schema 工具与 `SqliteSchemaParityTests` 均以新基线通过；未部署生产。
 
 ### 2026-09-23 · Seedance 视频参考素材能力合同补齐
 

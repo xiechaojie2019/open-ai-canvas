@@ -93,6 +93,27 @@ public sealed partial class TaskCreationService
         ValidateTaskType(taskType);
         Dictionary<string, JsonElement> input = NormalizeTaskInput(request.Input);
 
+        // 工具 mention 校验（对应 Go: task_creation.go 的 ResolveToolMentionTokens 预检）。
+        string toolMode = InputString(input, "mode").Trim();
+        if (toolMode.Length == 0)
+        {
+            if (taskType.StartsWith("video_", StringComparison.Ordinal) || taskType == "canvas_video")
+            {
+                toolMode = "video";
+            }
+            else if (taskType == "canvas_image")
+            {
+                toolMode = "image";
+            }
+        }
+        await new ToolsService(_repository).ResolveToolMentionTokensAsync(
+            userId, toolMode, prompt, cancellationToken).ConfigureAwait(false);
+        if (InputString(input, "prompt") is string inputPrompt && inputPrompt != request.Prompt)
+        {
+            await new ToolsService(_repository).ResolveToolMentionTokensAsync(
+                userId, toolMode, inputPrompt, cancellationToken).ConfigureAwait(false);
+        }
+
         // 前端自管的文本持久化任务：直连模型生成、增量上报 text-deltas，不排入 worker 队列。
         if (IsTextReplayTaskRequest(input))
         {

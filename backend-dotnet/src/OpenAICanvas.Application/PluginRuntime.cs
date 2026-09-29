@@ -176,13 +176,16 @@ public sealed class PluginRuntime
                     continue;
                 }
                 // 非支付插件先做执行器预检，坏包不进注册表。
-                try
+                if (package.Manifest.Contributes.Providers.Count > 0)
                 {
-                    ProtocolManifestCodec.LoadInstalledProviders(package.ManifestRaw, resolve: HostAdapterResolver);
-                }
-                catch (Exception error) when (error is InvalidOperationException or NotSupportedException)
-                {
-                    continue;
+                    try
+                    {
+                        ProtocolManifestCodec.LoadInstalledProviders(package.ManifestRaw, resolve: HostAdapterResolver);
+                    }
+                    catch (Exception error) when (error is InvalidOperationException or NotSupportedException)
+                    {
+                        continue;
+                    }
                 }
 
                 string sha = PluginHash(packageBytes);

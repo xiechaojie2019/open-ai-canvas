@@ -15,8 +15,8 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
-            INSERT INTO oauth_states (id, provider, state_hash, code_verifier, next_path, expires_at, used_at, created_at)
-            VALUES (@ID, @Provider, @StateHash, @CodeVerifier, @NextPath, @ExpiresAt, @UsedAt, @CreatedAt)
+            INSERT INTO o_auth_states (id, provider, state_hash, code_verifier, next_path, accepted_terms, expires_at, used_at, created_at)
+            VALUES (@ID, @Provider, @StateHash, @CodeVerifier, @NextPath, @AcceptedTerms, @ExpiresAt, @UsedAt, @CreatedAt)
             """;
         await connection.ExecuteAsync(new CommandDefinition(sql, state, cancellationToken: cancellationToken));
     }
@@ -33,8 +33,8 @@ public sealed partial class Repository
         return await InTransactionAsync(async (connection, transaction) =>
         {
             const string selectSql = """
-                SELECT id, provider, state_hash, code_verifier, next_path, expires_at, used_at, created_at
-                FROM oauth_states
+                SELECT id, provider, state_hash, code_verifier, next_path, accepted_terms, expires_at, used_at, created_at
+                FROM o_auth_states
                 WHERE provider = @Provider AND state_hash = @StateHash
                   AND used_at IS NULL AND expires_at > @Now
                 LIMIT 1
@@ -51,7 +51,7 @@ public sealed partial class Repository
 
             DateTime now = DateTime.UtcNow;
             const string updateSql = """
-                UPDATE oauth_states SET used_at = @Now
+                UPDATE o_auth_states SET used_at = @Now
                 WHERE id = @ID AND used_at IS NULL
                 """;
 

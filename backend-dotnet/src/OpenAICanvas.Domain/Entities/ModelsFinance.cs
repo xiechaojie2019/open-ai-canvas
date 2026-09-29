@@ -17,6 +17,38 @@ namespace OpenAICanvas.Domain.Entities;
 /// </summary>
 public class BillingOrder
 {
+    /// <summary>数据库列 <c>cost_configured</c>（not null）</summary>
+    [JsonIgnore]
+    public bool CostConfigured { get; set; }
+
+    /// <summary>数据库列 <c>cost_unit_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostUnitPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_input_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostInputTokenPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_output_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostOutputTokenPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_cached_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostCachedTokenPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_billing_mode</c>（maxLength=32，not null）</summary>
+    [JsonIgnore]
+    public string CostBillingMode { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>cost_quantity</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostQuantity { get; set; }
+
+    /// <summary>数据库列 <c>cost_video_formula_tokens</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostVideoFormulaTokens { get; set; }
+
     /// <summary>数据库列 <c>id</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
@@ -95,6 +127,11 @@ public class BillingOrder
     [JsonPropertyName("reservedAmountMicrocredits")]
     public long ReservedAmountMicrocredits { get; set; }
 
+    /// <summary>数据库列 <c>charge_limit_set</c>（not null）</summary>
+    [JsonPropertyName("chargeLimitSet")]
+    [GoOmitEmpty]
+    public bool ChargeLimitSet { get; set; }
+
     /// <summary>数据库列 <c>charge_limit_microcredits</c>（maxLength=64）</summary>
     [JsonPropertyName("chargeLimitMicrocredits")]
     [GoOmitEmpty]
@@ -131,6 +168,15 @@ public class BillingOrder
     /// <summary>数据库列 <c>cached_tokens</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedTokens")]
     public long CachedTokens { get; set; }
+
+    /// <summary>数据库列 <c>video_formula_tokens</c>（maxLength=64，not null）</summary>
+    [JsonPropertyName("videoFormulaTokens")]
+    public long VideoFormulaTokens { get; set; }
+
+    /// <summary>数据库列 <c>usage_source</c>（maxLength=32，not null）</summary>
+    [JsonPropertyName("usageSource")]
+    [GoOmitEmpty]
+    public string UsageSource { get; set; } = string.Empty;
 
     /// <summary>数据库列 <c>usage_available</c></summary>
     [JsonPropertyName("usageAvailable")]

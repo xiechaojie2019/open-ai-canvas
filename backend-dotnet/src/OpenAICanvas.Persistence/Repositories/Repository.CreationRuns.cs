@@ -645,10 +645,14 @@ public sealed partial class Repository
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>创建画布工程。对应 Go: <c>CreateCreationCanvas</c>。</summary>
+    /// <summary>创建画布工程。对应 Go: <c>CreateCreationCanvas</c>（走 UpsertCanvasProject，新建 revision 为 1）。</summary>
     public async Task CreateCanvasProjectAsync(
         CanvasProject canvas, CancellationToken cancellationToken = default)
     {
+        if (canvas.Revision == 0)
+        {
+            canvas.Revision = 1;
+        }
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await connection.ExecuteAsync(new CommandDefinition(
             SqlBuilder.Insert(typeof(CanvasProject)), canvas, cancellationToken: cancellationToken))
@@ -663,7 +667,7 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now
+            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now, revision = revision + 1
             WHERE id = @ID AND user_id = @UserID AND payload_json = @previous
             """,
             new { canvas.PayloadJSON, canvas.Title, now = DateTime.UtcNow, canvas.ID, canvas.UserID, previous },
@@ -672,6 +676,7 @@ public sealed partial class Repository
         {
             throw new InvalidOperationException("creation_conflict");
         }
+        canvas.Revision++;
     }
 
 
@@ -738,6 +743,10 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction,
         CanvasProject canvas, CancellationToken cancellationToken = default)
     {
+        if (canvas.Revision == 0)
+        {
+            canvas.Revision = 1;
+        }
         await ExecuteAsync(
             connection, SqlBuilder.Insert<CanvasProject>(), canvas, transaction, cancellationToken).ConfigureAwait(false);
     }
@@ -749,7 +758,7 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now
+            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now, revision = revision + 1
             WHERE id = @ID AND user_id = @UserID AND payload_json = @previous
             """,
             new { canvas.PayloadJSON, canvas.Title, now = DateTime.UtcNow, canvas.ID, canvas.UserID, previous },
@@ -759,6 +768,7 @@ public sealed partial class Repository
         {
             throw new InvalidOperationException("creation_conflict");
         }
+        canvas.Revision++;
     }
 
 }

@@ -70,6 +70,7 @@ public sealed class TaskLifecycleEndpointTests : IDisposable
         {
             username = "lifer",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];

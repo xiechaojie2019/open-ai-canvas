@@ -21,6 +21,9 @@ public sealed class RegisterRequest
 
     [JsonPropertyName("password")]
     public string Password { get; set; } = string.Empty;
+
+    [JsonPropertyName("acceptedTerms")]
+    public bool AcceptedTerms { get; set; }
 }
 
 /// <summary>登录请求。对应 Go: <c>auth.LoginRequest</c>。</summary>

@@ -91,6 +91,7 @@ public sealed class CanvasDatabase : IAsyncDisposable
         // SqlBuilder 会显式生成列别名；这里为历史手写 Dapper 查询提供统一兜底，
         // 避免 user_id、created_at 等字段被静默读成实体默认值。
         DefaultTypeMap.MatchNamesWithUnderscores = true;
+        DapperTypeHandlers.Register();
 
         _provider = options.ResolveProvider();
         _connectionString = options.ResolveConnectionString();

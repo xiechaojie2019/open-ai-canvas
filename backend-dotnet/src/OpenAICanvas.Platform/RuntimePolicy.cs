@@ -249,6 +249,9 @@ public sealed class DefaultRuntimePolicyProvider : IRuntimePolicyProvider
     /// <summary>对应 Go: <c>maxRuntimeConcurrency</c>（Go 侧为 999）。</summary>
     public const int MaxRuntimeConcurrency = 999;
 
+    /// <summary>环境变量覆盖后的默认基线。对应 Go: <c>DefaultRuntimePolicy()</c>（Go 单函数同时承担静态默认与环境覆盖）。</summary>
+    public static RuntimePolicySetting EnvBaseline() => new DefaultRuntimePolicyProvider().Current();
+
     public RuntimePolicySetting Current() => _policy;
 
     public PublicRuntimeLimits PublicLimits() => new()

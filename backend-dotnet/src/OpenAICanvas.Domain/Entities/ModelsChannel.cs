@@ -206,6 +206,11 @@ public class ApiCallLog
     public string TaskStatus { get; set; } = string.Empty;
 
     /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonPropertyName("mediaStage")]
+    [GoOmitEmpty]
+    public string MediaStage { get; set; } = string.Empty;
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
     [JsonPropertyName("billingStatus")]
     [GoOmitEmpty]
     public string BillingStatus { get; set; } = string.Empty;
@@ -217,6 +222,15 @@ public class ApiCallLog
     /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
     [JsonPropertyName("billingAvailable")]
     public bool BillingAvailable { get; set; }
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonPropertyName("creditCostConfigured")]
+    public bool CreditCostConfigured { get; set; }
+
+    /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
+    [JsonPropertyName("creditCostMicrocredits")]
+    [GoOmitEmpty]
+    public long? CreditCostMicrocredits { get; set; }
 
     /// <summary>瞬态字段（Go <c>gorm:"-"</c>）：不建列，但参与 JSON 序列化。</summary>
     [JsonPropertyName("mediaPreviewUrl")]
@@ -235,6 +249,26 @@ public class ApiCallLog
 /// </summary>
 public class ChannelModelPriceTier
 {
+    /// <summary>数据库列 <c>cost_configured</c>（not null）</summary>
+    [JsonIgnore]
+    public bool CostConfigured { get; set; }
+
+    /// <summary>数据库列 <c>cost_unit_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostUnitPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_input_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostInputTokenPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_output_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostOutputTokenPriceMicrocredits { get; set; }
+
+    /// <summary>数据库列 <c>cost_cached_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    [JsonIgnore]
+    public long CostCachedTokenPriceMicrocredits { get; set; }
+
     /// <summary>数据库列 <c>id</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
@@ -338,6 +372,18 @@ public class ChannelModel
     /// <summary>数据库列 <c>display_name</c>（maxLength=160）</summary>
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>channel_label</c>（maxLength=80，not null）</summary>
+    [JsonPropertyName("channelLabel")]
+    public string ChannelLabel { get; set; } = string.Empty;
+
+    /// <summary>数据库列 <c>tags</c>（not null）</summary>
+    [JsonPropertyName("tags")]
+    public List<ChannelModelTag> Tags { get; set; } = null!;
+
+    /// <summary>数据库列 <c>description</c>（maxLength=500，not null）</summary>
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
 
     /// <summary>数据库列 <c>sort_order</c>（maxLength=64，not null）</summary>
     [JsonPropertyName("sortOrder")]
@@ -444,7 +490,7 @@ public class ModelChannel
     public string Name { get; set; } = string.Empty;
 
     /// <summary>数据库列 <c>public_alias</c>（maxLength=80，not null）</summary>
-    [JsonPropertyName("publicAlias")]
+    [JsonIgnore]
     public string PublicAlias { get; set; } = string.Empty;
 
     /// <summary>数据库列 <c>sort_order</c>（maxLength=64，not null）</summary>
@@ -494,4 +540,18 @@ public class ModelChannel
     /// <summary>数据库列 <c>deleted_at</c></summary>
     [JsonIgnore]
     public DateTime? DeletedAt { get; set; }
+}
+
+/// <summary>
+/// 对应 Go <c>ChannelModelTag</c>（辅助结构体，非独立数据表）。源文件：internal/model/models_channel.go
+/// </summary>
+public class ChannelModelTag
+{
+    /// <summary>对应 Go <c>ChannelModelTag.Text</c>。</summary>
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>对应 Go <c>ChannelModelTag.Color</c>。</summary>
+    [JsonPropertyName("color")]
+    public string Color { get; set; } = string.Empty;
 }

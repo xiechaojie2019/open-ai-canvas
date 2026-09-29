@@ -451,6 +451,7 @@ public sealed class PaymentReconciliationTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         return Authenticated(response);

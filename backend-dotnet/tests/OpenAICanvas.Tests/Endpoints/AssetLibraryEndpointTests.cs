@@ -72,6 +72,7 @@ public sealed class AssetLibraryEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -277,6 +278,7 @@ public sealed class AssetLibraryEndpointTests : IDisposable
         {
             id,
             title,
+            revision = 0,
             nodes = new[] { new { id = "n1", type = "text" } },
         };
         string body = JsonSerializer.Serialize(new { project = payload });

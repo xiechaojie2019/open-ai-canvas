@@ -30,6 +30,8 @@ public static class AgentEndpoints
         AgentProfileService profiles,
         CloudAgentSessionService sessions,
         CloudAgentRuntimeService runtime,
+        AgentLessonService memories,
+        AgentMemoryCompactService compact,
         IRateLimiter rateLimiter,
         IRuntimePolicyProvider policyProvider)
     {
@@ -269,6 +271,274 @@ public static class AgentEndpoints
             }
         });
 
+        api.MapGet("/agent/memories", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                int.TryParse(context.Request.Query["limit"], out int limit);
+                List<CloudAgentLessons.AgentLessonView> views = await memories.UserAgentMemoriesAsync(
+                    user.ID, context.Request.Query["status"].ToString().Trim(), limit, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["memories"] = views,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/agent/memories", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemoryRequest? request = await ReadSingleObjectAsync<AgentMemoryRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须只包含一个 JSON 对象"));
+                }
+                CloudAgentLessons.AgentLessonView view = await memories.CreateUserAgentMemoryAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/agent/memories/export", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemoryBundle bundle = await memories.ExportUserAgentMemoriesAsync(user.ID, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(bundle);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/agent/memories/import", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemoryBundle? bundle = await ReadSingleObjectAsync<AgentMemoryBundle>(
+                    context, 512 << 10, cancellationToken).ConfigureAwait(false);
+                if (bundle is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须只包含一个 JSON 对象"));
+                }
+                AgentMemoryImportResult result = await memories.ImportUserAgentMemoriesAsync(
+                    user.ID, bundle, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/agent/memories/{id}", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemoryRequest? request = await ReadSingleObjectAsync<AgentMemoryRequest>(
+                    context, 64 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须只包含一个 JSON 对象"));
+                }
+                string id = (string?)context.Request.RouteValues["id"] ?? "";
+                CloudAgentLessons.AgentLessonView view = await memories.UpdateUserAgentMemoryAsync(
+                    user.ID, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/agent/memories/{id}/decide", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                MemoryDecisionRequest? request = await ReadSingleObjectAsync<MemoryDecisionRequest>(
+                    context, 4 << 10, cancellationToken).ConfigureAwait(false);
+                string decision = request?.Decision ?? "";
+                if (request is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须只包含一个 JSON 对象"));
+                }
+                string id = (string?)context.Request.RouteValues["id"] ?? "";
+                await memories.DecideUserAgentMemoryAsync(user.ID, id, decision, cancellationToken)
+                    .ConfigureAwait(false);
+                // Go 的 gin.H 按字典序输出键：decision 在前。
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["decision"] = decision,
+                    ["id"] = id,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/agent/memories/{id}", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                string id = (string?)context.Request.RouteValues["id"] ?? "";
+                await memories.DeleteUserAgentMemoryAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["id"] = id,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/agent-lessons", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CanvasService.RequireAdmin(user);
+                int.TryParse(context.Request.Query["limit"], out int limit);
+                List<CloudAgentLessons.AgentLessonAdminView> lessons = await memories.AdminAgentLessonsAsync(
+                    context.Request.Query["status"].ToString().Trim(),
+                    context.Request.Query["userId"].ToString().Trim(),
+                    context.Request.Query["keyword"].ToString().Trim(),
+                    limit,
+                    cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["lessons"] = lessons,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/admin/agent-lessons/{id}", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CanvasService.RequireAdmin(user);
+                string id = (string?)context.Request.RouteValues["id"] ?? "";
+                await memories.AdminDeleteAgentLessonAsync(id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["id"] = id,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/agent/memories/settings", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemoryCompactView view = await compact.GetAsync(user.ID, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPatch("/agent/memories/settings", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemorySettingRequest? request = await ReadSingleObjectAsync<AgentMemorySettingRequest>(
+                    context, 8 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须只包含一个 JSON 对象"));
+                }
+                AgentMemoryCompactView view = await compact.UpdateSettingAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/agent/memories/compact", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                AgentMemoryCompactRequest? request = await ReadSingleObjectAsync<AgentMemoryCompactRequest>(
+                    context, 8 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须只包含一个 JSON 对象"));
+                }
+                AgentMemoryCompactView view = await compact.CompactAsync(
+                    user.ID, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapGet("/agent/runs/{id}/events", async (HttpContext context) =>
         {
             return await EventsHandlerAsync(context, service, sessions, policyProvider).ConfigureAwait(false);
@@ -482,6 +752,13 @@ public static class AgentEndpoints
 
         [JsonPropertyName("mediaSettings")]
         public CloudAgentMediaSettings? MediaSettings { get; set; }
+    }
+
+    /// <summary>记忆裁决请求。对应 Go: <c>struct{ Decision string }</c>（严格解码）。</summary>
+    private sealed class MemoryDecisionRequest
+    {
+        [JsonPropertyName("decision")]
+        public string Decision { get; set; } = "";
     }
 
     /// <summary>对应 Go 的 DisallowUnknownFields + 单对象校验：拒绝重复 JSON 或尾部内容。</summary>

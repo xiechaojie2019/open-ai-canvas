@@ -93,6 +93,7 @@ public sealed class CanvasService
         PluginManagement = new PluginManagementService(repository, Plugins, Features);
         RunningHub = new RunningHubManagementService();
         TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
+        MediaRecovery = new TaskMediaRecoveryService(repository, dataDir ?? "data");
         AdminLogMedia = new AdminLogMediaService(repository,
             new ResourceDomainService(repository, RuntimePolicy, dataDir));
         CreationRuns = new CreationRunService(repository, TaskCreations, RuntimePolicy);
@@ -599,6 +600,30 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         UserData.DeleteUserCanvasProjectAsync(userId, id, cancellationToken);
 
+    /// <summary>对应 Go: <c>Service.CanvasHistory</c>。</summary>
+    public Task<(List<CanvasSnapshot> Snapshots, long CurrentRevision)> HistoryAsync(
+        string userId,
+        string canvasID,
+        CancellationToken cancellationToken = default) =>
+        UserData.HistoryAsync(userId, canvasID, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.CanvasHistorySnapshot</c>。</summary>
+    public Task<CanvasSnapshot> HistorySnapshotAsync(
+        string userId,
+        string canvasID,
+        string snapshotID,
+        CancellationToken cancellationToken = default) =>
+        UserData.HistorySnapshotAsync(userId, canvasID, snapshotID, cancellationToken);
+
+    /// <summary>对应 Go: <c>Service.RestoreCanvasHistory</c>。</summary>
+    public Task<UserDataSummaryDto> RestoreCanvasHistoryAsync(
+        string userId,
+        string canvasID,
+        string snapshotID,
+        long? revision,
+        CancellationToken cancellationToken = default) =>
+        UserData.RestoreCanvasHistoryAsync(userId, canvasID, snapshotID, revision, cancellationToken);
+
     /// <summary>对应 Go: <c>Service.PreviewAdminChannelModels</c>。</summary>
     public Task<IReadOnlyList<string>> PreviewAdminChannelModelsAsync(
         User actor,
@@ -651,6 +676,9 @@ public sealed class CanvasService
 
     /// <summary>任务重试与取消。对应 Go: <c>app/task_lifecycle.go</c>。</summary>
     public TaskLifecycleService TaskLifecycle { get; }
+
+    /// <summary>任务媒体恢复。对应 Go: <c>app/task_media_recovery.go</c>。</summary>
+    public TaskMediaRecoveryService MediaRecovery { get; }
 
     /// <summary>智能创作运行。对应 Go: <c>app/creation.go</c>。</summary>
     public CreationRunService CreationRuns { get; }

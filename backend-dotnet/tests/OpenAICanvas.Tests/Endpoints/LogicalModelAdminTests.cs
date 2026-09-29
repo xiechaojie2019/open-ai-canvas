@@ -67,6 +67,7 @@ public sealed class LogicalModelAdminTests : IDisposable
         {
             username,
             password = "password123",
+                        acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -201,6 +202,7 @@ public sealed class LogicalModelAdminTests : IDisposable
             username = "bob",
             password = "password123",
             email = "bob@example.com",
+            acceptedTerms = true,
         });
         Assert.Equal(HttpStatusCode.Forbidden, second.StatusCode);
     }

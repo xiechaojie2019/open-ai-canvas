@@ -26,8 +26,8 @@ public sealed class SystemStatusProbes
 /// </summary>
 public sealed class SystemStatus
 {
-    /// <summary>对应 Go: <c>database.CurrentSchemaVersion</c>。</summary>
-    public const long CurrentSchemaVersion = 15;
+    /// <summary>对应 Go: <c>database.CurrentSchemaVersion</c>。别名引用迁移目录，避免两处漂移。</summary>
+    public const long CurrentSchemaVersion = OpenAICanvas.Persistence.SchemaMigrationCatalog.CurrentSchemaVersion;
 
     private readonly SystemStatusProbes _probes;
     private volatile bool _started;

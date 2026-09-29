@@ -69,6 +69,7 @@ public sealed class SystemPerformanceEndpointTests : IDisposable
         {
             username = "admin",
             password = "password123",
+            acceptedTerms = true,
         });
         response.EnsureSuccessStatusCode();
         string cookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
@@ -105,8 +106,8 @@ public sealed class SystemPerformanceEndpointTests : IDisposable
         Assert.True(data.GetProperty("disk").GetProperty("available").GetBoolean());
         Assert.Equal("sqlite", data.GetProperty("database").GetProperty("driver").GetString());
         Assert.True(data.GetProperty("database").GetProperty("connected").GetBoolean());
-        Assert.Equal(15, data.GetProperty("database").GetProperty("schema").GetProperty("expected").GetInt64());
-        Assert.Equal(15, data.GetProperty("database").GetProperty("schema").GetProperty("current").GetInt64());
+        Assert.Equal(34, data.GetProperty("database").GetProperty("schema").GetProperty("expected").GetInt64());
+        Assert.Equal(34, data.GetProperty("database").GetProperty("schema").GetProperty("current").GetInt64());
         JsonElement databasePool = data.GetProperty("database").GetProperty("pool");
         Assert.Equal(0, databasePool.GetProperty("maxOpenConnections").GetInt64());
         Assert.Equal(0, databasePool.GetProperty("openConnections").GetInt64());

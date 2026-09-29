@@ -14,6 +14,11 @@
     <PackageReference Include="AWSSDK.S3" Version="3.7.405.5" />
   </ItemGroup>
 
+  <!-- 内置工具种子。对应 Go: internal/tools/seed/tools.json 的 go:embed。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Seed\tools.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\OpenAICanvas.Domain\OpenAICanvas.Domain.csproj" />
     <ProjectReference Include="..\OpenAICanvas.Persistence\OpenAICanvas.Persistence.csproj" />

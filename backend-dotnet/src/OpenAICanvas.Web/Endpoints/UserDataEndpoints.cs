@@ -332,6 +332,91 @@ public static class UserDataEndpoints
             }
         });
 
+        // -------------------------------------------------- 画布版本历史（v23）
+
+        api.MapGet("/canvas-projects/{id}/history", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (List<Domain.Entities.CanvasSnapshot> snapshots, long currentRevision) =
+                    await service.HistoryAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["snapshots"] = snapshots,
+                    ["currentRevision"] = currentRevision,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/canvas-projects/{id}/history/{snapshotId}", async (
+            HttpContext context, string id, string snapshotId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                Domain.Entities.CanvasSnapshot snapshot = await service.HistorySnapshotAsync(
+                    user.ID, id, snapshotId, cancellationToken).ConfigureAwait(false);
+                // Go 的 gin.H 按字典序输出键：project 在前。
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["project"] = JsonSerializer.Deserialize<JsonElement>(snapshot.PayloadJSON, Domain.Serialization.GoJson.ReadOptions),
+                    ["snapshot"] = snapshot,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/canvas-projects/{id}/history/{snapshotId}/restore", async (
+            HttpContext context, string id, string snapshotId, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                RuntimeRequestPolicy restorePolicy = policyProvider.Current().Request;
+                if (!await AuthEndpoints.EnforceRateLimitAsync(
+                        context, limiter, "canvas-write:" + user.ID,
+                        restorePolicy.CanvasWritePerMinute, TimeSpan.FromMinutes(1)).ConfigureAwait(false))
+                {
+                    return Results.Empty;
+                }
+                Dictionary<string, JsonElement>? request = await ReadJsonAsync<Dictionary<string, JsonElement>>(
+                    context, 1024, cancellationToken).ConfigureAwait(false);
+                long? revision = request is not null
+                    && request.TryGetValue("revision", out JsonElement revisionElement)
+                    && revisionElement.ValueKind == JsonValueKind.Number
+                    && revisionElement.TryGetInt64(out long parsedRevision)
+                    ? parsedRevision
+                    : null;
+                if (request is null)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        AppError.BadAuthRequest("恢复请求格式错误"));
+                }
+                UserDataSummaryDto project = await service.RestoreCanvasHistoryAsync(
+                    user.ID, id, snapshotId, revision, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["project"] = project,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         // ------------------------------------------------------------ 素材库（节点 B）
 
         api.MapPost("/assets/batch", async (HttpContext context, CancellationToken cancellationToken) =>
@@ -912,6 +997,7 @@ public static class UserDataEndpoints
     public static void MapAnnouncementRoutes(
         this IEndpointRouteBuilder api,
         CanvasService service,
+        Application.BannerAnnouncementService bannerAnnouncements,
         string dataDir)
     {
         api.MapGet("/announcements", async (HttpContext context, CancellationToken cancellationToken) =>
@@ -1097,6 +1183,117 @@ public static class UserDataEndpoints
                 User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
                     .ConfigureAwait(false);
                 await service.DiscardAnnouncementImageAsync(actor, id, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { ok = true });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        // -------------------------------------------------- 常驻滚动通知（v20–v22）
+
+        // 公开：无需登录。对应 Go: GET /banner-announcements。
+        api.MapGet("/banner-announcements", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                List<Domain.Entities.BannerAnnouncement> banners = await bannerAnnouncements.ActiveAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["banners"] = banners,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapGet("/admin/banner-announcements", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                (int page, int pageSize, string? error) = ParsePagination(context, 20);
+                if (error is not null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, new InvalidOperationException(error));
+                }
+                BannerAnnouncementPage result = await bannerAnnouncements.AdminPageAsync(
+                    actor,
+                    context.Request.Query["keyword"].ToString(),
+                    context.Request.Query["status"].ToString(),
+                    page,
+                    pageSize,
+                    cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(result);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPost("/admin/banner-announcements", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateBannerAnnouncementRequest? request = await ReadJsonAsync<CreateBannerAnnouncementRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.BannerAnnouncement banner = await bannerAnnouncements.CreateAsync(
+                    actor, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["banner"] = banner,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/admin/banner-announcements/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                CreateBannerAnnouncementRequest? request = await ReadJsonAsync<CreateBannerAnnouncementRequest>(
+                    context, 256 << 10, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                Domain.Entities.BannerAnnouncement banner = await bannerAnnouncements.UpdateAsync(
+                    actor, id, request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["banner"] = banner,
+                });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapDelete("/admin/banner-announcements/{id}", async (HttpContext context, string id, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User actor = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                await bannerAnnouncements.DeleteAsync(actor, id, cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { ok = true });
             }
             catch (Exception error)
