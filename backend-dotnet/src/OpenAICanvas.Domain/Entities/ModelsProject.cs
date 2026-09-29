@@ -1589,3 +1589,4 @@ public class BannerTitleRun
     [GoOmitEmpty]
     public string Color { get; set; } = string.Empty;
 }
+

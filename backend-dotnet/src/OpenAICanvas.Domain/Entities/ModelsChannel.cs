@@ -555,3 +555,4 @@ public class ChannelModelTag
     [JsonPropertyName("color")]
     public string Color { get; set; } = string.Empty;
 }
+

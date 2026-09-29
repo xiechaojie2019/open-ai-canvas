@@ -386,7 +386,7 @@ CREATE TABLE IF NOT EXISTS "channel_models" (
     "provider_model_key" varchar(120),
     "display_name" varchar(160),
     "channel_label" varchar(80) NOT NULL DEFAULT '',
-    "tags" text NOT NULL,
+    "tags" text NOT NULL DEFAULT '[]',
     "description" varchar(500) NOT NULL DEFAULT '',
     "sort_order" bigint NOT NULL DEFAULT 0,
     "icon" varchar(80),

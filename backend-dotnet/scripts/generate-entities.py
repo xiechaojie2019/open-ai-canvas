@@ -456,6 +456,17 @@ def sql_literal(value: str, go_type: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+
+def with_tag_default(column: dict) -> dict:
+    """defaultValue 渲染为 <nil> 但 gormTag 带 default:'<值>' 时回退解析（tags JSON 列）。"""
+    if column.get("hasDefault") and column.get("defaultValue") == "<nil>":
+        tag = column.get("gormTag") or ""
+        match = re.search(r"default:'((?:[^']|'')*)'", tag)
+        if match:
+            column = dict(column)
+            column["defaultValue"] = match.group(1).replace("''", "'")
+    return column
+
 def generate_schema_ddl(tables: list[dict], provider: str) -> str:
     """生成建表与建索引脚本，列类型取 GORM 各 dialector 的真实输出。"""
     type_key = "sqliteType" if provider == "sqlite" else "postgresType"
@@ -478,6 +489,11 @@ def generate_schema_ddl(tables: list[dict], provider: str) -> str:
         for column in columns:
             sql_type = column[type_key]
             piece = f'    "{column["name"]}" {sql_type}'
+
+            # GORM 对 serializer:json 列的 default:'<字面量>' 在 dump 里渲染成
+            # defaultValue="<nil>"；这里从 gormTag 回退解析，避免丢 DEFAULT
+            # （老表加 NOT NULL 无默认列会因存量行报错）。
+            column = with_tag_default(column)
 
             # SQLite 的自增主键类型里已经带了 PRIMARY KEY，不能再补 NOT NULL 或表级主键。
             if "PRIMARY KEY" in sql_type.upper():
