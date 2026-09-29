@@ -348,6 +348,12 @@ public sealed partial class AdminAnalyticsService
             {
                 log.BillingAvailable = true;
                 log.BillingStatus = order.Status;
+                if (order.ChannelID == log.ChannelID)
+                {
+                    // 管理员积分成本富化（Go v27）：只在实际结算渠道显示。
+                    log.CreditCostConfigured = order.CostConfigured;
+                    log.CreditCostMicrocredits = CreditCostOps.BillingCreditCost(order);
+                }
                 if (order.Status == "settled")
                 {
                     log.BillingAmount = order.ActualAmountMicrocredits;

@@ -45,6 +45,29 @@ public sealed class AnalyticsOverviewDto
     public List<AnalyticsFailureRowDto> Failures { get; set; } = [];
 }
 
+/// <summary>分析财务汇总。对应 Go: <c>app.AnalyticsFinance</c>（struct 字段序）。</summary>
+public sealed class AnalyticsFinanceDto
+{
+    [JsonPropertyName("settledOrders")]
+    public int SettledOrders { get; set; }
+
+    [JsonPropertyName("costedOrders")]
+    public int CostedOrders { get; set; }
+
+    [JsonPropertyName("revenueMicrocredits")]
+    public long RevenueMicrocredits { get; set; }
+
+    [JsonPropertyName("costMicrocredits")]
+    public long CostMicrocredits { get; set; }
+
+    // Go 的 AnalyticsFinance 两个 Profit 字段没有 omitempty：未成本化时输出 null。
+    [JsonPropertyName("profitMicrocredits")]
+    public long? ProfitMicrocredits { get; set; }
+
+    [JsonPropertyName("profitMargin")]
+    public double? ProfitMargin { get; set; }
+}
+
 /// <summary>分析 KPI。对应 Go: <c>app.AnalyticsKPI</c>。</summary>
 public sealed class AnalyticsKpiDto
 {
@@ -74,6 +97,9 @@ public sealed class AnalyticsKpiDto
 
     [JsonPropertyName("currentQueuedTasks")]
     public long CurrentQueuedTasks { get; set; }
+
+    [JsonPropertyName("finance")]
+    public AnalyticsFinanceDto Finance { get; set; } = new();
 
     [JsonPropertyName("estimatedCostMicros")]
     public long EstimatedCostMicros { get; set; }
@@ -160,6 +186,9 @@ public sealed class AnalyticsModelRowDto
 
     [JsonPropertyName("currency")]
     public string Currency { get; set; } = "";
+
+    [JsonPropertyName("finance")]
+    public AnalyticsFinanceDto Finance { get; set; } = new();
 }
 
 /// <summary>用户维度行。对应 Go: <c>app.AnalyticsUserRow</c>。</summary>
@@ -298,6 +327,9 @@ public sealed partial class AdminAnalyticsService
 
         AnalyticsOverviewDto result = BuildAnalyticsOverview(
             filter, tasks, rollingTasks, rollingLogs, logs, activities, users);
+        Dictionary<string, AnalyticsFinancialRecord> financeRecords = await AnalyticsFinancialRecordsAsync(
+            logs, cancellationToken).ConfigureAwait(false);
+        ApplyAnalyticsFinance(result, financeRecords);
         result.KPI.CurrentQueuedTasks = queued;
         return result;
     }
@@ -310,14 +342,24 @@ public sealed partial class AdminAnalyticsService
         AnalyticsFilter filter = NormalizeAnalyticsFilter(query);
         IReadOnlyList<ApiCallLog> logs = await _repository
             .AnalyticsApiCallLogsAsync(filter, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, AnalyticsFinancialRecord> financeRecords = await AnalyticsFinancialRecordsAsync(
+            logs, cancellationToken).ConfigureAwait(false);
 
         StringBuilder writer = new();
         writer.Append("\uFEFF");
-        writer.Append("\uFEFF");
-        writer.AppendLine("时间,用户ID,渠道ID,任务ID,能力,请求阶段,模型,状态,状态码,耗时毫秒,输入Token,输出Token,缓存Token,媒体数量,视频秒数,估算费用(微单位),币种,错误类型");
+        writer.AppendLine("时间,用户ID,渠道ID,任务ID,能力,请求阶段,模型,状态,状态码,耗时毫秒,输入Token,输出Token,缓存Token,媒体数量,视频秒数,收入(微积分),成本(微积分),利润(微积分),错误类型");
         foreach (ApiCallLog log in logs)
         {
-            string cost = log.CostAvailable ? log.EstimatedCostMicros.ToString(CultureInfo.InvariantCulture) : "";
+            string revenue = "", cost = "", profit = "";
+            if (financeRecords.TryGetValue(log.ID, out AnalyticsFinancialRecord? record))
+            {
+                revenue = record.Revenue.ToString(CultureInfo.InvariantCulture);
+                if (record.Cost is not null)
+                {
+                    cost = record.Cost.Value.ToString(CultureInfo.InvariantCulture);
+                    profit = (record.Revenue - record.Cost.Value).ToString(CultureInfo.InvariantCulture);
+                }
+            }
             string inputTokens = "", outputTokens = "", cachedTokens = "";
             if (log.UsageAvailable)
             {
@@ -341,8 +383,9 @@ public sealed partial class AdminAnalyticsService
                 cachedTokens,
                 log.MediaCount.ToString(CultureInfo.InvariantCulture),
                 log.VideoSeconds.ToString(CultureInfo.InvariantCulture),
+                revenue,
                 cost,
-                log.Currency,
+                profit,
                 ClassifyApiCallError(log)));
         }
         return Encoding.UTF8.GetBytes(writer.ToString());
@@ -669,6 +712,103 @@ public sealed partial class AdminAnalyticsService
         return result;
     }
 
+    /// <summary>单条日志的财务记录。对应 Go: <c>app.analyticsFinancialRecord</c>。</summary>
+    private sealed record AnalyticsFinancialRecord(ApiCallLog Log, long Revenue, long? Cost);
+
+    /// <summary>
+    /// 财务记录聚合：一个订单的重试、轮询不能重复计入收入；只归属实际结算渠道。
+    /// 历史订单使用下单价格快照，缺失成本时不反查当前价格。
+    /// 对应 Go: <c>analyticsFinancialRecords</c>。
+    /// </summary>
+    private async Task<Dictionary<string, AnalyticsFinancialRecord>> AnalyticsFinancialRecordsAsync(
+        IReadOnlyList<ApiCallLog> logs, CancellationToken cancellationToken)
+    {
+        List<string> ids = new(logs.Count);
+        foreach (ApiCallLog log in logs)
+        {
+            if (log.Billable && log.BillingOrderID.Length > 0)
+            {
+                ids.Add(log.BillingOrderID);
+            }
+        }
+        Dictionary<string, BillingOrder> orders = await _repository
+            .BillingOrdersByIDsAsync(ids.Distinct().ToList(), cancellationToken).ConfigureAwait(false);
+        Dictionary<string, ApiCallLog> byOrder = new(StringComparer.Ordinal);
+        foreach (ApiCallLog log in logs)
+        {
+            if (!log.Billable
+                || !orders.TryGetValue(log.BillingOrderID, out BillingOrder? order)
+                || order.UserID != log.UserID
+                || order.ChannelID != log.ChannelID
+                || order.Status != BillingStatus.BillingStatusSettled)
+            {
+                continue;
+            }
+            if (log.RequestKind
+                is "poll" or "download" or "upload" or "workflow-schema" or "cancel-query" or "cancel")
+            {
+                continue;
+            }
+            if (!byOrder.TryGetValue(order.ID, out ApiCallLog? previous)
+                || log.CreatedAt < previous.CreatedAt
+                || (log.CreatedAt == previous.CreatedAt && string.CompareOrdinal(log.ID, previous.ID) < 0))
+            {
+                byOrder[order.ID] = log;
+            }
+        }
+        Dictionary<string, AnalyticsFinancialRecord> records = new(byOrder.Count, StringComparer.Ordinal);
+        foreach ((string orderID, ApiCallLog log) in byOrder)
+        {
+            BillingOrder order = orders[orderID];
+            records[log.ID] = new AnalyticsFinancialRecord(
+                log, order.ActualAmountMicrocredits, CreditCostOps.BillingCreditCost(order));
+        }
+        return records;
+    }
+
+    /// <summary>财务累计。对应 Go: <c>(*AnalyticsFinance).add</c>。</summary>
+    private static void AddFinance(AnalyticsFinanceDto finance, AnalyticsFinancialRecord record)
+    {
+        finance.SettledOrders++;
+        finance.RevenueMicrocredits += record.Revenue;
+        if (record.Cost is not null)
+        {
+            finance.CostedOrders++;
+            finance.CostMicrocredits += record.Cost.Value;
+        }
+        finance.ProfitMicrocredits = null;
+        finance.ProfitMargin = null;
+        if (finance.CostedOrders == finance.SettledOrders)
+        {
+            long profit = finance.RevenueMicrocredits - finance.CostMicrocredits;
+            finance.ProfitMicrocredits = profit;
+            if (finance.RevenueMicrocredits > 0)
+            {
+                finance.ProfitMargin = profit * 100.0 / finance.RevenueMicrocredits;
+            }
+        }
+    }
+
+    /// <summary>财务合并进总览 KPI 与模型行。对应 Go: <c>applyAnalyticsFinance</c>。</summary>
+    private static void ApplyAnalyticsFinance(
+        AnalyticsOverviewDto overview, Dictionary<string, AnalyticsFinancialRecord> records)
+    {
+        Dictionary<(string Model, string Capability), AnalyticsFinanceDto> rows = new();
+        foreach (AnalyticsModelRowDto row in overview.Models)
+        {
+            rows[(row.Model, row.Capability)] = row.Finance;
+        }
+        foreach (AnalyticsFinancialRecord record in records.Values)
+        {
+            AddFinance(overview.KPI.Finance, record);
+            string model = record.Log.Model.Length > 0 ? record.Log.Model : "未识别";
+            if (rows.TryGetValue((model, record.Log.Capability), out AnalyticsFinanceDto? rowFinance))
+            {
+                AddFinance(rowFinance, record);
+            }
+        }
+    }
+
     /// <summary>对应 Go: <c>buildAnalyticsUsers</c>。</summary>
     private static List<AnalyticsUserRowDto> BuildAnalyticsUsers(
         AnalyticsFilter filter,
@@ -691,7 +831,8 @@ public sealed partial class AdminAnalyticsService
                 row = new AnalyticsUserRowDto
                 {
                     UserID = userID,
-                    Name = FirstNonEmpty(names.GetValueOrDefault(userID), userID),
+                    // Go 的 map 缺键返回 ""，等价于 GetValueOrDefault 的显式空串默认值。
+                    Name = FirstNonEmpty(names.GetValueOrDefault(userID, ""), userID),
                 };
                 rows[userID] = row;
             }
