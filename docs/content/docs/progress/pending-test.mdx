@@ -2896,6 +2896,17 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - [ ] 请在画布上重新对"移除图片背景/图层拆分"节点执行生成，确认模型已自动路由到 gpt-image-2 且透明背景生效；已有节点的旧绑定在对话框打开时会自动显示为兼容模型。
 - 排障备注：复现时在测试站建的验证任务 `31209a9f1a4daaba7180ef93d41eab3f` 已成功并正常计费（即 gpt-image-2+透明图的通过证据），可删除。
 
+## 创作台"镜 2"视频卡片永久 pending（2026-09-29 · 测试站工单）
+
+创作菜单一条 9月28日 17:46 的"镜 2 视频生成"卡片一直显示"影策正在生成视频……"。排查结论：
+
+- **后端无卡死**：当时唯一的视频任务 `0763c7d1d547c85233e7ef07cd4e367a`（prompt 会动的苹果）17:49 创建、17:53 成功、产物完整——它是用户在任务中心"新建任务"里手动补建的（input 形状 `video_${operation}` + metadata 仅 videoEditOperation 可证），与卡片无关联。
+- **根因一（提交崩溃）**：#554（93bc079b）重构时误删创作页视频分支的 `normalizedVideo` 定义但保留全部引用，视频提交在 try 之外抛 ReferenceError：任务不会创建、catch 不生效、卡片永久 pending。已恢复定义（`normalizeVideoValue(videoProfile, ...)`）。
+- **根因二（孤儿不自愈）**：创建请求响应在刷新/断网时丢失会让 pending 消息永远没有 taskIds，`isRecoverableCreationMessage` 因 `!taskIds?.length` 不再接管，卡片同样永久 pending。已新增 `sweepOrphanedCreationMessages`：水合时把超过 30 分钟仍 pending 且无 taskIds 的消息收敛为显式失败态（生成中断，请重新发送），用户可重试。
+- **顺带发现（未改）**：`TaskForOutput` 的 `PublicTaskInputJSON` 投影会改写实体上的 InputJSON，若被后续保存会把库里的完整输入覆盖成投影（本例 DB 中 prompt/config 已丢失，属同类症状），后续应让投影不改写原实体。
+- [x] 专项测试 21/21；tsc 仅剩 main 既有错误（live2d-loader/project-asset-sync/user-data-sync/sha256/libtv-settings）；vite 打包通过。
+- [ ] 部署后刷新创作页：原卡住的"镜 2"卡片应变为"生成中断"可重试状态；新发视频请求应正常创建任务并出片。
+
 ## v16–v34 移植收尾核对与最终缺口清单（2026-09-29）
 
 逐版本核对 Go migrations v1–v34 与 .NET 目录：34 版名称/序号/校验和全部一致（v6/v7 为两端一致的历史顺序兼容切换），功能面已全部落地。以下为核对后**仍未实现**的剩余项，全部是跨管线/跨功能依赖，按优先级排列：
