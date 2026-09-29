@@ -30,6 +30,9 @@ public sealed class OSSSettingRequest
     [JsonPropertyName("pathStyle")] public bool PathStyle { get; set; }
     [JsonPropertyName("sessionToken")] public string SessionToken { get; set; } = "";
     [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; set; }
+    [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; set; } = "";
+    [JsonPropertyName("requireCDN")] public bool RequireCDN { get; set; }
+    [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; set; }
 }
 
 public sealed class PublicOSSSetting
@@ -53,6 +56,9 @@ public sealed class PublicOSSSetting
     [JsonPropertyName("historyCount")] public long HistoryCount { get; init; }
     [JsonPropertyName("referencedResourceCount")] public long ReferencedResourceCount { get; init; }
     [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; init; }
+    [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; init; } = "";
+    [JsonPropertyName("requireCDN")] public bool RequireCDN { get; init; }
+    [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; init; }
     [JsonPropertyName("updatedBy")] public string? UpdatedBy { get; init; }
     [JsonPropertyName("createdAt")] public DateTime? CreatedAt { get; init; }
     [JsonPropertyName("updatedAt")] public DateTime? UpdatedAt { get; init; }
@@ -296,6 +302,7 @@ public sealed class StorageSettingsService
             HasSessionToken = !string.IsNullOrEmpty(value.SessionToken), StorageLocationId = value.StorageLocationId ?? location?.ID,
             TestedAt = location?.TestedAt, TestedDigest = location?.TestedDigest, HistoryCount = history,
             ReferencedResourceCount = references, AllowUserS3 = allowUserS3 ?? value.AllowUserS3,
+            CdnAuthMode = value.CdnAuthMode, RequireCDN = value.RequireCDN, AllowPrivateProxy = value.AllowPrivateProxy,
             UpdatedBy = updatedBy, CreatedAt = createdAt, UpdatedAt = updatedAt,
         };
     }
@@ -338,6 +345,8 @@ public sealed class StorageSettingsService
             PublicBaseUrl = TrimUrl(request.PublicBaseUrl), PathPrefix = TrimPath(request.PathPrefix),
             S3Preset = preset, PathStyle = request.PathStyle, SessionToken = (request.SessionToken ?? "").Trim(),
             AllowUserS3 = request.AllowUserS3,
+            CdnAuthMode = (request.CdnAuthMode ?? "").Trim().ToLowerInvariant(),
+            RequireCDN = request.RequireCDN, AllowPrivateProxy = request.AllowPrivateProxy,
         };
     }
 
@@ -345,6 +354,8 @@ public sealed class StorageSettingsService
     {
         if (!value.Enabled && string.IsNullOrEmpty(value.PublicBaseUrl))
             throw AppError.BadAuthRequest("服务器本地存储需要填写服务器访问地址");
+        if (value.CdnAuthMode.Length > 0 && value.CdnAuthMode is not ("public" or "qiniu"))
+            throw AppError.BadAuthRequest("CDN 鉴权方式无效，仅支持 public 或 qiniu");
     }
 
     private static void ValidateForTest(StoredOSSSetting value)
@@ -398,11 +409,15 @@ public sealed class StorageSettingsService
         [JsonPropertyName("pathStyle")] public bool PathStyle { get; set; }
         [JsonPropertyName("sessionToken")] public string SessionToken { get; set; } = "";
         [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; set; }
+        [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; set; } = "";
+        [JsonPropertyName("requireCDN")] public bool RequireCDN { get; set; }
+        [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; set; }
         [JsonPropertyName("storageLocationId")] public string? StorageLocationId { get; set; }
         public OSSSettingRequest ToRequest() => new() { Enabled = Enabled, Provider = Provider, Region = Region,
             Endpoint = Endpoint, CdnBaseUrl = CdnBaseUrl, Bucket = Bucket, AccessKeyId = AccessKeyId,
             AccessKeySecret = AccessKeySecret, PublicBaseUrl = PublicBaseUrl, PathPrefix = PathPrefix,
-            S3Preset = S3Preset, PathStyle = PathStyle, SessionToken = SessionToken, AllowUserS3 = AllowUserS3 };
+            S3Preset = S3Preset, PathStyle = PathStyle, SessionToken = SessionToken, AllowUserS3 = AllowUserS3,
+            CdnAuthMode = CdnAuthMode, RequireCDN = RequireCDN, AllowPrivateProxy = AllowPrivateProxy };
         public StoredOSSSetting Clone() => (StoredOSSSetting)MemberwiseClone();
     }
 }

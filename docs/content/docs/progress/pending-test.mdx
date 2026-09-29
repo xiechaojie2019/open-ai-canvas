@@ -2984,3 +2984,11 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - [x] 全量回归 1630/1631（唯一失败为既有并行时序噪音 `ChannelModelWriteTests`，单跑 10/10 通过）。
 - [ ] 测试站部署后建议验收：给支持图片输入的文本模型建一轮 Agent 对话，要求它查看画布上的图片并描述画面；任务中心应出现带 referenceImages 的 cloud_agent_step 任务，且同一张图第三次调用只回执文字。
 - [ ] 已知边界（保持记录）：识图 16 次硬闸触发即终局本轮（与 Go 一致）；未移植的 interjections/plan/step-limits 机制与本链路无耦合。
+
+### 存储设置页格式无效修复 + 对象存储通道现状确认（2026-09-29 · 续五）
+
+- **画布 blob 资源加载异常诊断**：画布 `K_mWyL239jS9urVi8JRCM` 两个图片生成结果节点的 `content` 被持久化为浏览器本地 `blob:` URL、`storageKey` 停在 `generation-image:` 本地键——根因是 `project-asset-sync.ts` 的 `storedGenerationImage` 只写本地 IndexedDB，缺视频/音频分支（`storedGenerationMedia`）已有的幂等上传资源库步骤。`blob:` 天然"来源+会话"作用域，跨端（.79:3030 ↔ .211:5173）与刷新后必然失效。修复方向已给出（图片物化对齐视频：物化后 `uploadMediaFile` 上传并改写节点引用），待用户确认后实施。
+- **存储设置页「服务端返回的存储配置格式无效」**：.NET `PublicOSSSetting` 缺 Go 契约里的 `cdnAuthMode`/`requireCDN`/`allowPrivateProxy` 三个字段，前端响应校验失败。已补齐请求/存储/公共三个 DTO、归一化（trim+小写，非空时仅允许 public/qiniu，报错文案与 Go 一致）与投影，测试补三字段断言。
+- **对象存储通道现状**：.NET `ResourceUploadService` 明确注释对象存储（OSS/COS/Kodo/S3）通道未移植——**即使管理端配好 OSS，资源物理对象目前仍始终以 local provider 落在服务器本地盘**（storage location 注册/连接测试可用，但 `storeResourceObject` 强制回退 local）。与 Go 的差异记录在 PENDING-CONFIRMATIONS.md；「生成图片是否上 OSS」取决于先落地两个前置：① 上游图片物化上传资源库（见第一条），② 后端对象存储写通道移植。
+- [x] StorageSettings 回归 4/4；全量回归 1630/1631（既有并行噪音）。
+- [ ] 部署后验收：管理后台「存储服务」页能正常读取配置不再报格式无效；保存含 CDN 鉴权方式的配置能回读一致。
