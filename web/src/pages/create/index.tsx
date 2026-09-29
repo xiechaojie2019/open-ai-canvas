@@ -17,7 +17,7 @@ import { modelGroupReferenceLimits } from "@/lib/model-selection";
 import type { BackendGenerationResult } from "@/services/api/generation-task";
 import type { Skill } from "@/services/api/skills";
 import type { GenerationTask } from "@/services/api/task-center";
-import { loadCreationConversations, pendingCreationTaskIds, removeCreationConversationSnapshot, saveCreationConversations, updateCreationConversationSnapshot } from "@/services/creation-conversation-store";
+import { loadCreationConversations, pendingCreationTaskIds, removeCreationConversationSnapshot, saveCreationConversations, sweepOrphanedCreationMessages, updateCreationConversationSnapshot } from "@/services/creation-conversation-store";
 import { resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
@@ -260,7 +260,8 @@ export default function CreatePage() {
         let cancelled = false;
         void loadCreationConversations<CreationConversation>().then((stored) => {
             if (cancelled) return;
-            const next = stored?.length ? stored : [newConversation()];
+            // 页面刷新会让提交中的消息与任务失联（taskIds 未写入），先收敛孤儿 pending 再进入恢复链路。
+            const next = stored?.length ? sweepOrphanedCreationMessages(stored) : [newConversation()];
             conversationsRef.current = next;
             setConversations(next);
             setActiveId(next[0].id);
@@ -662,6 +663,8 @@ export default function CreatePage() {
         const requestLifecycle = runtime.beginGenerationConsumer(controller.signal);
         abortRef.current = controller;
         const normalizedImage = mode === "image" ? normalizeImageValue(imageProfile, { size: ratio, quality, count }) : undefined;
+        // #554 重构时误删了这行定义，导致视频提交在 try 外抛 ReferenceError：任务不会创建、卡片永久 pending。
+        const normalizedVideo = mode === "video" ? normalizeVideoValue(videoProfile, { seconds, ratio, resolution: videoQuality }) : undefined;
         const requestConfig = {
             ...generationConfig,
             model: selectedModel,

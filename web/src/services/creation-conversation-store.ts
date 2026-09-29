@@ -9,7 +9,33 @@ type PendingCreationMessage = {
     mode?: string;
     status?: string;
     taskIds?: string[];
+    createdAt?: string;
+    content?: unknown;
 };
+
+// 创建请求的响应在刷新或断网时丢失，会让 pending 消息永远等不到 taskIds，
+// 恢复链路（isRecoverableCreationMessage）因此不再接管它，卡片将永久显示"正在生成"。
+// 水合时把超过时长阈值仍无任务绑定的 pending 消息收敛为显式失败态，让用户可以重试。
+const ORPHANED_PENDING_MESSAGE_MAX_AGE_MS = 30 * 60 * 1000;
+
+export function sweepOrphanedCreationMessages<T extends StoredCreationConversation>(conversations: T[], now = Date.now()): T[] {
+    let changed = false;
+    const next = conversations.map((conversation) => {
+        let conversationChanged = false;
+        const messages = (conversation.messages || []).map((message) => {
+            if (message.role !== "assistant" || message.taskIds?.length) return message;
+            if (message.status !== "pending") return message;
+            const createdAt = Date.parse(message.createdAt || "");
+            if (!Number.isFinite(createdAt) || now - createdAt < ORPHANED_PENDING_MESSAGE_MAX_AGE_MS) return message;
+            conversationChanged = true;
+            return { ...message, status: "error", content: "生成中断，请重新发送" };
+        });
+        if (!conversationChanged) return conversation;
+        changed = true;
+        return { ...conversation, messages };
+    });
+    return changed ? next : conversations;
+}
 
 export type StoredCreationConversation = {
     id: string;
