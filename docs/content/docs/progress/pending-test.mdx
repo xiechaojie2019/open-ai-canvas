@@ -2900,3 +2900,9 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 ### E. 外部验收项（非代码缺口）
 - [ ] PLAN 12.2/12.9：真实 PostgreSQL 环境 SQLite→PG 双跑与 Go/.NET 逐字节对比验收
 - [ ] 前端联调：注册页补 `acceptedTerms`；Agent 记忆设置页；管理后台通知条/工具库/成本价配置；带参考图图片编辑复测
+
+### 补充核对（同日）：Agent 看图链路的架构前提
+
+移植 canvas_inspect_image 前的架构核对发现：测试站库里有 17 个 succeeded 的 operation=cloud_agent 任务，但 **0 个 operation=cloud_agent_step** 任务——.NET 的 Agent 执行架构与 Go 不同（Go 每个模型步入队 cloud_agent_step，.NET 走 runtime 内调度）。且 .NET Providers 文本任务**没有 agentRequests/canonical 分支**（TextTaskInput 无该字段），模型请求目前只含 prompt/TextHistory。
+
+因此 A 组（Agent 看图）不是纯增量移植：需要先梳理 .NET Agent 步骤的模型上下文装配路径（canonical 如何进入模型请求、工具 schema 如何注入请求体），再在同一位置挂看图工具与图片投递。建议单独开一轮做「Agent 模型上下文装配对齐」作为 A 组的前置。
