@@ -1,5 +1,6 @@
 #nullable enable
 using System.Globalization;
+using OpenAICanvas.Application.Capabilities;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Domain.Serialization;
@@ -43,7 +44,8 @@ public static class ProviderMediaHydrator
     /// </summary>
     public static async Task HydrateGenerationMediaAsync(
         string userID, TextTaskInput input, Repository repository, ResourceDomainService domain,
-        RuntimePolicySetting policy, CancellationToken cancellationToken = default)
+        RuntimePolicySetting policy, TextReferenceConfig? textReferences = null,
+        CancellationToken cancellationToken = default)
     {
         string interfaceType = input.Config.InterfaceType.Trim();
         HydrationPolicy hydration = new(
@@ -56,13 +58,30 @@ public static class ProviderMediaHydrator
             hydration = hydration with { RequireURL = false, PreferURL = false };
         }
 
+        // 仅 Agent 看图走内存字节；视频、音频及普通生成任务保留协议策略。
+        // 图片按模型声明的数量与字节上限强制校验（对应 Go: hydrateGenerationMedia 的 imageOnly 分支）。
+        HydrationPolicy agentImagePolicy = hydration;
+        if (input.Mode == "text" && input.AgentRequests?.Canonical is not null)
+        {
+            agentImagePolicy = new HydrationPolicy(RequireURL: false, PreferURL: false, ImageOnly: true, MaxBytes: 0);
+            if (textReferences is not null)
+            {
+                if (input.ReferenceImages.Count > textReferences.MaxImages)
+                {
+                    throw new InvalidOperationException("参考图片数量超过当前模型限制");
+                }
+                agentImagePolicy = agentImagePolicy with { MaxBytes = textReferences.MaxImageBytes };
+            }
+        }
+
         List<List<ProviderMedia>> groups =
             [input.ReferenceImages, input.ReferenceVideos, input.ReferenceAudios];
-        foreach (List<ProviderMedia> group in groups)
+        for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
         {
-            foreach (ProviderMedia media in group)
+            HydrationPolicy groupPolicy = groupIndex == 0 ? agentImagePolicy : hydration;
+            foreach (ProviderMedia media in groups[groupIndex])
             {
-                await HydrateAsync(userID, media, hydration, repository, domain, policy, cancellationToken)
+                await HydrateAsync(userID, media, groupPolicy, repository, domain, policy, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -100,6 +119,16 @@ public static class ProviderMediaHydrator
         {
             throw AppError.BadAuthRequest("任务参考资源尚未上传完成");
         }
+        // Agent 看图强制图片类型与模型字节上限（对应 Go: hydrateProviderMedia 的 imageOnly 分支）。
+        if (hydration.ImageOnly
+            && !resource.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AppError.BadAuthRequest("看图资源不是图片");
+        }
+        if (hydration.MaxBytes > 0 && resource.Size > hydration.MaxBytes)
+        {
+            throw AppError.BadAuthRequest("参考图片文件超过当前模型大小限制");
+        }
 
         bool objectStorage = ResourceUsesObjectStorage(resource);
         bool useObjectURL = hydration.RequireURL || (hydration.PreferURL && objectStorage);
@@ -115,13 +144,17 @@ public static class ProviderMediaHydrator
             media.DurationMs = resource.DurationMs;
             return;
         }
-        // Agent 看图以归属校验后的资源文件为准；普通生成同走字节路径。
-        if (media.DataURL.StartsWith("data:", StringComparison.Ordinal))
+        // Agent 看图以归属校验后的资源文件为准，不能让附带的内嵌内容替换真实图片。
+        if (!hydration.ImageOnly && media.DataURL.StartsWith("data:", StringComparison.Ordinal))
         {
             return;
         }
 
         long resourceLimit = policy.Resource.ResourceUploadMB * 1024 * 1024;
+        if (hydration.MaxBytes > 0)
+        {
+            resourceLimit = Math.Min(resourceLimit, hydration.MaxBytes);
+        }
         ResourceStream stream = await domain.OpenResourceRangeAsync(
             userID, resource.ID, null, cancellationToken).ConfigureAwait(false);
         await using (stream.Body.ConfigureAwait(false))

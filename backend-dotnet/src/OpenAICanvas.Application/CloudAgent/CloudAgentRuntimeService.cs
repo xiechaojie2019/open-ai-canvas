@@ -8,6 +8,7 @@ using OpenAICanvas.Domain.Kernel;
 using OpenAICanvas.Domain.Serialization;
 using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Platform;
+using OpenAICanvas.Providers;
 using OpenAICanvas.Prompts;
 using TaskEntity = OpenAICanvas.Domain.Entities.Task;
 using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
@@ -386,9 +387,10 @@ public sealed partial class CloudAgentRuntimeService
     }
 
     /// <summary>工具结果事件 + 规范消息推进。对应 Go: <c>cloudAgentToolResult</c>。</summary>
-    private static void ToolResult(
+    // 测试需要复刻批次执行路径（Go 侧为包内可见）。
+    internal static void ToolResult(
         string runID, CloudAgentRuntimeDto state, CloudAgentCallDto call,
-        JsonObject? result, Exception? cause)
+        JsonObject? result, Exception? cause, CloudAgentImageInspectionDto? inspection = null)
     {
         Dictionary<string, JsonElement> payload = CloudAgentContracts.Payload(
             ("toolName", call.Function.Name),
@@ -425,6 +427,34 @@ public sealed partial class CloudAgentRuntimeService
                 }
             }
             payload["result"] = JsonSerializer.SerializeToElement(receipt);
+        }
+        if (inspection is not null && cause is null)
+        {
+            // tool 角色只接受字符串内容，因此工具回执照常入历史，图片另起一条 user 消息携带，
+            // 并显式标注为数据而非指令；重复查看时只回执文字、不再附图。
+            string receipt = JsonSerializer.Serialize(inspection.Receipt, GoJson.WriteOptions);
+            payload["result"] = JsonSerializer.SerializeToElement(inspection.Receipt, GoJson.WriteOptions);
+            CloudAgentContracts.AddEvent(state, runID, kind, payload);
+            state.Canonical.Messages.Add(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["role"] = JsonSerializer.SerializeToElement("tool"),
+                ["tool_call_id"] = JsonSerializer.SerializeToElement(call.ID),
+                ["content"] = JsonSerializer.SerializeToElement(receipt),
+            });
+            if (inspection.ImageURL.Trim().Length > 0)
+            {
+                (state.PendingImageInspections ??= []).Add(inspection);
+            }
+            // 一批里可能有多个调用；只有本批最后一个调用执行完，才把整批缓冲合并成
+            // 一条 user 消息追加在全部 tool 结果之后（上游 tool 配对约束）。
+            if (state.CallIndex + 1 >= state.Calls.Count)
+            {
+                FlushPendingImages(state);
+            }
+            state.CallIndex++;
+            state.Approval = null;
+            // 看图是只读成功路径，不占自动纠错名额。
+            return;
         }
         CloudAgentContracts.AddEvent(state, runID, kind, payload);
         state.Canonical.Messages.Add(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
@@ -653,6 +683,9 @@ public sealed partial class CloudAgentRuntimeService
             await AdvanceToolAsync(run, state, cancellationToken).ConfigureAwait(false);
             return;
         }
+        // 兜底 flush：本批调用都执行完了，缓冲里的图片必须在这里合并成一条 user 消息
+        // 落到全部 tool 结果之后；正常路径（最后一个是看图）已在 ToolResult 里 flush 过，幂等。
+        FlushPendingImages(state);
         CloudAgentContextBudget contextBudget = await ContextBudgetForRequestAsync(
             state.Request, cancellationToken).ConfigureAwait(false);
         if (CompactContext(state.Canonical, contextBudget))
@@ -666,9 +699,31 @@ public sealed partial class CloudAgentRuntimeService
         await CloudAgentLessons.AttachAsync(
             state.Canonical, _repository, run.UserID, CloudAgentLessons.TaskText(state), cancellationToken)
             .ConfigureAwait(false);
+        // 轮内唯一裁剪 = 图片：超出保留轮次的看图结果换成文字回执（正文一律保留）。
+        // 必须在压缩判定之后、组装请求之前执行。
+        (bool imagesChanged, int prunedImages) = PruneInspectedImages(state.Canonical, null);
+        if (imagesChanged)
+        {
+            CloudAgentContracts.AddEvent(state, run.ID, "context_images_pruned", CloudAgentContracts.Payload(
+                ("prunedImages", prunedImages),
+                ("retentionRounds", ImageRetentionRounds),
+                ("text", "图片裁剪：移出超出保留轮次的看图结果")));
+        }
         // 新鲜事实帧：任务状态从仓库重读，脱离会话记忆；只淘汰旧轮次以适配输入预算。
         CloudAgentCanonicalRequestDto canonical = await ModelContextAsync(
             run, state, contextBudget, cancellationToken).ConfigureAwait(false);
+        // 仅为实际发给模型的图片建立资源白名单（在 canonical 克隆上执行）。
+        List<ProviderMedia> imageReferences;
+        try
+        {
+            imageReferences = await ImageReferencesAsync(
+                run.UserID, state.Request, canonical, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception cause) when (cause is AppError or InvalidOperationException)
+        {
+            await FailAsync(run, state, SafeToolError(cause)).ConfigureAwait(false);
+            return;
+        }
         Dictionary<string, JsonElement> stepInput = new(StringComparer.Ordinal)
         {
             ["mode"] = JsonSerializer.SerializeToElement("text"),
@@ -692,6 +747,11 @@ public sealed partial class CloudAgentRuntimeService
                     CloudAgentPolicyCompiler.ReasoningEnabled(state.Policy.ReasoningMode)),
             }),
         };
+        if (imageReferences.Count > 0)
+        {
+            stepInput["referenceImages"] = JsonSerializer.SerializeToElement(
+                imageReferences, GoJson.WriteOptions);
+        }
         if (CloudAgentContextBudgets.RequestEstimatedTokens(canonical) > contextBudget.InputBudgetTokens)
         {
             await FailAsync(run, state, CloudAgentContextBudgets.BudgetMessage(contextBudget))

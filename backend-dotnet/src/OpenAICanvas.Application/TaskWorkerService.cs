@@ -486,9 +486,17 @@ public sealed class TaskWorkerService
                 throw new InvalidOperationException(
                     "任务 Worker 未注入 CanvasService，无法解析 resource: 参考素材");
             }
+            // Agent 看图按文本能力合同强制数量/字节上限（普通任务传 null 走协议策略）。
+            OpenAICanvas.Application.Capabilities.TextReferenceConfig? textReferences = null;
+            if (input.Mode == "text" && input.AgentRequests?.Canonical is not null)
+            {
+                OpenAICanvas.Application.Capabilities.ModelCapabilityConfig? textCapability =
+                    await ResolveTextCapabilityAsync(input.Config, cancellationToken).ConfigureAwait(false);
+                textReferences = textCapability?.Text?.References;
+            }
             await ProviderMediaHydrator.HydrateGenerationMediaAsync(
                 task.UserID, input, _repository, CanvasService.ResourceDomain,
-                _policy.Current(), cancellationToken).ConfigureAwait(false);
+                _policy.Current(), textReferences, cancellationToken).ConfigureAwait(false);
         }
         // 注入插件运行时的声明式注册表快照（10.2）：图片/视频/音频声明式分支由此生效。
         ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();

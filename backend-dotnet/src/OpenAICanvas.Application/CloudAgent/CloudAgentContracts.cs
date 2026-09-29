@@ -50,6 +50,11 @@ public sealed class CloudAgentRequestDto
     [JsonPropertyName("permissionMode")]
     public string PermissionMode { get; set; } = "";
 
+    /// <summary>是否给模型暴露看图工具；由服务端在建 run 时按渠道模型合同定格，客户端传入值被忽略。</summary>
+    [JsonPropertyName("visionEnabled")]
+    [GoOmitEmpty]
+    public bool VisionEnabled { get; set; }
+
     [JsonPropertyName("skillIds")]
     [GoOmitEmpty]
     public List<string> SkillIDs { get; set; } = [];
@@ -216,6 +221,10 @@ public sealed class CloudAgentReferenceAnchorDto
     [JsonPropertyName("requiresVisualInspection")]
     public bool RequiresVisualInspection { get; set; }
 
+    [JsonPropertyName("visualNote")]
+    [GoOmitEmpty]
+    public string VisualNote { get; set; } = "";
+
     [JsonPropertyName("width")]
     [GoOmitEmpty]
     public JsonElement? Width { get; set; }
@@ -253,6 +262,20 @@ public sealed class CloudAgentStateDto
 
     [JsonPropertyName("policy")]
     public CloudAgentPolicySnapshotDto Policy { get; set; } = new();
+}
+
+/// <summary>一次看图结果：回执入工具消息，图片经缓冲合并为 user 消息。
+/// 对应 Go: <c>app.cloudAgentImageInspection</c>（CacheKey 只在运行时使用，不序列化）。</summary>
+public sealed class CloudAgentImageInspectionDto
+{
+    [JsonPropertyName("Receipt")]
+    public JsonObject Receipt { get; set; } = new();
+
+    [JsonPropertyName("ImageURL")]
+    public string ImageURL { get; set; } = "";
+
+    [JsonIgnore]
+    public string CacheKey { get; set; } = "";
 }
 
 /// <summary>工具调用。对应 Go: <c>app.cloudAgentCall</c>。</summary>
@@ -481,6 +504,26 @@ public sealed class CloudAgentRuntimeDto
 
     [JsonPropertyName("events")]
     public List<CloudAgentEventDto> Events { get; set; } = [];
+
+    /// <summary>本轮内每张图被查看的次数（同一张图不要反复看）。对应 Go: <c>imageInspectCounts</c>。</summary>
+    [JsonPropertyName("imageInspectCounts")]
+    [GoOmitEmpty]
+    public Dictionary<string, int>? ImageInspectCounts { get; set; }
+
+    /// <summary>按“节点+资源+画布 revision”记录已读取的图片版本，画布变化后自然允许重识。</summary>
+    [JsonPropertyName("imageInspectionReads")]
+    [GoOmitEmpty]
+    public Dictionary<string, int>? ImageInspectionReads { get; set; }
+
+    /// <summary>本轮所有图片识别工具调用次数（含只回执文字的重复调用）。</summary>
+    [JsonPropertyName("imageInspectCalls")]
+    [GoOmitEmpty]
+    public int ImageInspectCalls { get; set; }
+
+    /// <summary>本批已入回执、等待合并成一条 user 图片消息的看图结果。必须进检查点。</summary>
+    [JsonPropertyName("pendingImageInspections")]
+    [GoOmitEmpty]
+    public List<CloudAgentImageInspectionDto>? PendingImageInspections { get; set; }
 }
 
 /// <summary>对应 Go: <c>app.providerTextMessage</c>。</summary>
