@@ -2874,3 +2874,29 @@ SSE 现在按 revision 变化发送紧凑快照，无变化只 heartbeat；客�
 - [x] 旧库升级路径回归（v15 结构 → v34）专项通过；水合专项 4/4；受影响回归 66/66。
 - [ ] 测试站已部署并 healthy（schema 34/34）；请用前端重新提交一次带参考图的图片编辑任务验证修复生效。
 - [ ] 已知边界保持：云存储 provider 的媒体任务走 URL 路径需配置 HTTPS 公网地址（HTTP 测试站建议本地存储）；v28 任务事实列、skill-usage 聚合、v27 切线路成本重算仍待接入。
+
+## v16–v34 移植收尾核对与最终缺口清单（2026-09-29）
+
+逐版本核对 Go migrations v1–v34 与 .NET 目录：34 版名称/序号/校验和全部一致（v6/v7 为两端一致的历史顺序兼容切换），功能面已全部落地。以下为核对后**仍未实现**的剩余项，全部是跨管线/跨功能依赖，按优先级排列：
+
+### A. Agent 看图（vision）链路 —— Go Agent 工作台迭代
+- [ ] `canvas_inspect_image` 工具（schema 注册 + ReadTool 分发 + 识图图片投递）
+- [ ] `cloud_agent_vision.go` 识图循环止损（轮次缓存、同图去重、32 次上限、说明回执、配对校验）
+- [ ] 水合 `imageOnly` 特例（Agent 看图强制图片/字节上限）与 `resolveAgentResourcePlaceholders`（canonical 里 resource: 占位替换）
+- [ ] 创建请求 `VisionEnabled` 字段贯通（会话创建 → 工具注册条件）
+
+### B. v27 管理员成本剩余三处
+- [ ] 切线路故障切换成本重算（Go `model_router.go` + `SwitchTaskLogicalRoute`：备用线路选择、订单替换与积分调整、成本快照重写——.NET 尚无切换流程本体）
+- [ ] 管理员分析财务汇总（Go `analytics_finance.go`：Revenue/Cost/ProfitMargin，复用已就绪的 `CreditCostOps.BillingCreditCost`）
+- [ ] 管理员 API 日志 `creditCostConfigured`/`creditCostMicrocredits` 富化
+
+### C. v28 执行日志剩余两处
+- [ ] tasks 事实列接入：创建时写 `AgentRunID`/`GenerationID`/`ApprovalID`/`AuthorizedChargeMicrocredits`；取消链写 `Cancellation*`；诊断写 `ExecutionDiagnosticJSON`；输出投影 `cloud_agent_task_facts`
+- [ ] skill-usage 聚合端点（仓储 `RecentCloudAgentEventsForUserAsync` 已就绪，缺聚合服务与路由）
+
+### D. v34 媒体物化管线
+- [ ] 下载→暂存→上传 OSS→登记资源四段（Go `task_media_assets.go`），就绪后注册 `TaskMediaRecoveryService.Materializer` 即打通自动/手动恢复全链路
+
+### E. 外部验收项（非代码缺口）
+- [ ] PLAN 12.2/12.9：真实 PostgreSQL 环境 SQLite→PG 双跑与 Go/.NET 逐字节对比验收
+- [ ] 前端联调：注册页补 `acceptedTerms`；Agent 记忆设置页；管理后台通知条/工具库/成本价配置；带参考图图片编辑复测
