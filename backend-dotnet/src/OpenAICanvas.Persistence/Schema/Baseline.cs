@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Text.Json;
 using Dapper;
 using OpenAICanvas.Domain.Model;
+using OpenAICanvas.Persistence;
 
 namespace OpenAICanvas.Persistence.Schema;
 
@@ -15,13 +16,63 @@ public static class Baseline
     /// 应用完整建表脚本（全部表与索引，均带 IF NOT EXISTS，可重复执行）。
     /// </summary>
     /// <remarks>
-    /// 对应 Go 里以 <c>AutoMigrate</c> 为主的迁移步骤（v5/v7/v10/v11/v13/v15）。
-    /// 对已存在的表，<c>CREATE TABLE IF NOT EXISTS</c> 会整体跳过——因此这些版本的
-    /// 新增列必须由各自的 ALTER 步骤单独补齐。
+    /// 对应 Go 里以 <c>AutoMigrate</c> 为主的迁移步骤（v5/v7/v10/v11/v13/v15 及后续各版本）。
+    /// 对已存在的表，<c>CREATE TABLE IF NOT EXISTS</code> 会整体跳过——因此执行索引前先把
+    /// 全部实体缺失的列补齐（对齐 Go AutoMigrate 的加列语义），否则新增列上的
+    /// <c>CREATE INDEX</c> 会在旧库上报列不存在。
     /// </remarks>
     public static async Task ApplyFullSchemaAsync(SchemaMigrationContext ctx)
     {
-        await ctx.ExecuteAsync(ctx.Scripts.For(ctx.Dialect)).ConfigureAwait(false);
+        string script = ctx.Scripts.For(ctx.Dialect);
+        (string tables, string indexes) = SplitTablesAndIndexes(script);
+        await ctx.ExecuteAsync(tables).ConfigureAwait(false);
+        await AlignMissingColumnsAsync(ctx).ConfigureAwait(false);
+        await ctx.ExecuteAsync(indexes).ConfigureAwait(false);
+    }
+
+    /// <summary>生成脚本结构：先全部 CREATE TABLE，后 <c>-- 索引</c> 段。</summary>
+    private static (string Tables, string Indexes) SplitTablesAndIndexes(string script)
+    {
+        int marker = script.IndexOf("\n-- 索引\n", StringComparison.Ordinal);
+        if (marker < 0)
+        {
+            return (script, string.Empty);
+        }
+        return (script[..(marker + 1)], script[(marker + 1)..]);
+    }
+
+    /// <summary>
+    /// 把全部实体缺失的列按建表脚本的定义补齐。对应 Go AutoMigrate 的加列语义。
+    /// </summary>
+    private static async Task AlignMissingColumnsAsync(SchemaMigrationContext ctx)
+    {
+        foreach (System.Type type in EntityMetadata.KnownTypes)
+        {
+            EntityMap map = EntityMetadata.For(type);
+            if (!await ctx.TableExistsAsync(map.Table).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            List<string> existing = (await ctx.QueryAsync<string>(
+                ctx.Dialect.IsPostgres
+                    ? "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = @table"
+                    : $"SELECT name FROM pragma_table_info('{map.Table.Replace("'", "''")}')",
+                new { table = map.Table }).ConfigureAwait(false)).ToList();
+            HashSet<string> present = new(existing, StringComparer.Ordinal);
+
+            foreach (ColumnMap column in map.Columns)
+            {
+                if (present.Contains(column.Column))
+                {
+                    continue;
+                }
+                string definition = ctx.ColumnDefinition(map.Table, column.Column);
+                await ctx.ExecuteAsync(
+                    $"ALTER TABLE \"{map.Table}\" ADD COLUMN \"{column.Column}\" {definition}")
+                    .ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>
