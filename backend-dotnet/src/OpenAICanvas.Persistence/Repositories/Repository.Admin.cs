@@ -219,9 +219,12 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        // {0} 是列名，必须用双引号包裹。
+        // v35 把物理列名收敛为 camelCase 后，未加引号的标识符会被 PG 折叠成全小写
+        // （payloadJson → payloadjson）而报 42703 column does not exist。
         string lengthExpr = Dialect.IsPostgres
-            ? "octet_length(COALESCE({0}, ''))"
-            : "length(CAST(COALESCE({0}, '') AS BLOB))";
+            ? "octet_length(COALESCE(\"{0}\", ''))"
+            : "length(CAST(COALESCE(\"{0}\", '') AS BLOB))";
 
         string query = $"""
             SELECT
