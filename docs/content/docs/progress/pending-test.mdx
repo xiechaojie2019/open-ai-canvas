@@ -3103,3 +3103,12 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 修复：`Save` 对 TextHistory 空保护（`?? []`），对齐 Go 的 nil-slice 零值语义。
 - [x] CloudAgent 相关 9 测试通过。
 - [ ] 部署后：该 agent 运行应自动恢复推进（不再循环 NRE）；如已卡死超时，重新发起对话即可。
+
+### TextHistory 非 nil 化（2026-09-30 · 续十六）
+
+按「C# 对齐 Go 零值语义」的结构性要求，将 `CloudAgentRuntimeDto.TextHistory` 从可空 `List?` 改为**非空 + 初始 `[]`**（Go 的 slice 零值即空表、永不为 nil）：
+
+- `Save` 的 foreach 不再需要空保护；checkpoint 瘦身剥离改为赋 `[]`（GoOmitEmpty 对空表省略，序列化字节与 Go `omitempty` 一致）；
+- Decode/EnsureRoot/会话续接路径均已赋非空，JSON 显式 null 由 GoOmitEmpty 写出时省略、读入时落初始值。
+
+[x] CloudAgent 44 测试通过（含 journal/会话/运行时）。

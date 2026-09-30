@@ -441,9 +441,11 @@ public sealed class CloudAgentRuntimeDto
     [GoOmitEmpty]
     public CloudAgentCreativeAnchorDto? CreativeAnchor { get; set; }
 
+    // Go 的 TextHistory 是 slice，零值为空表、永不为 nil——C# 侧以非空 + 初始值等价实现，
+    // 消费方（Save/ hydrate/ 会话恢复）无需处处判空。
     [JsonPropertyName("textHistory")]
     [GoOmitEmpty]
-    public List<CloudAgentTextMessageDto>? TextHistory { get; set; }
+    public List<CloudAgentTextMessageDto> TextHistory { get; set; } = [];
 
     [JsonPropertyName("skills")]
     public List<CloudAgentSkillDto> Skills { get; set; } = [];
@@ -925,7 +927,7 @@ public static partial class CloudAgentContracts
         CloudAgentRuntimeDto checkpoint = JsonSerializer.Deserialize<CloudAgentRuntimeDto>(
             JsonSerializer.Serialize(state, GoJson.WriteOptions), GoJson.ReadOptions) ?? new();
         checkpoint.Canonical.Messages = [];
-        checkpoint.TextHistory = null;
+        checkpoint.TextHistory = [];
         checkpoint.Events = [];
         string raw = JsonSerializer.Serialize(checkpoint, GoJson.WriteOptions);
         if (raw.Length > 512 * 1024)
@@ -964,8 +966,7 @@ public static partial class CloudAgentContracts
             });
         }
         int historySequence = 0;
-        // Go 的 nil slice 可直接 range；C# 侧 TextHistory 可空，等价零次迭代。
-        foreach (CloudAgentTextMessageDto message in state.TextHistory ?? [])
+        foreach (CloudAgentTextMessageDto message in state.TextHistory)
         {
             historySequence++;
             transcript.Add(new CloudAgentMessageRecord
