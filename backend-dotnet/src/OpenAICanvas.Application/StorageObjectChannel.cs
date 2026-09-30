@@ -208,15 +208,17 @@ public static class StorageObjectChannel
         string path = baseUri.AbsolutePath.TrimEnd('/') + "/" + objectKey.TrimStart('/');
         Uri requestUri = new(baseUri, path);
         HttpRequestMessage request = new(method, requestUri);
-        if (body is not null)
-        {
-            request.Content = new StreamContent(body);
-        }
         string date = DateTime.UtcNow.ToString("R", CultureInfo.InvariantCulture);
         request.Headers.TryAddWithoutValidation("Date", date);
-        if (contentType.Length > 0)
+        if (body is not null)
         {
-            request.Headers.TryAddWithoutValidation("Content-Type", contentType);
+            // Content-Type 必须挂在 Content 上：挂在 request.Headers 会被 HttpClient
+            // 按 Content 头重建时丢弃/改写，导致实际发送头与 V1 签名不一致。
+            request.Content = new StreamContent(new NonDisposingStream(body));
+            if (contentType.Length > 0)
+            {
+                request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            }
         }
         string stringToSign = string.Join("\n", method.Method, "", contentType, date, "/" + setting.Bucket + "/" + objectKey.TrimStart('/'));
         string signature = Convert.ToBase64String(

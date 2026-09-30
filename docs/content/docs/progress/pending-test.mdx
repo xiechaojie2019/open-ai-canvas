@@ -3076,3 +3076,9 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 附带说明：provider-input（模型读取参考素材）的 HTTPS 要求与 Go 一致（resource_access.go:141）；测试站 http 地址只影响需要 URL 型参考素材的协议，multipart/字节路径协议不受影响。
 - 失败任务对照：07:03 的 audio_to_video 两个任务即此问题（存储设置 01:06 已保存但实例读不到）；修复后新任务读取正常。
 - [x] 相关 16 测试通过。
+
+### 阿里云 OSS V1 签名修复（2026-09-30 · 续十二）
+
+- **「对象存储连接测试失败」**：`StorageObjectChannel.AliyunRequest` 把 Content-Type 挂在 `request.Headers` 上，但随后附加的 `StreamContent` 会按 Content 头重建请求头——实际发送的 Content-Type 与 V1 签名所用值不一致 → `SignatureDoesNotMatch`。修复：Content-Type 改挂到 Content 上，并全部经 NonDisposingStream 包装；Date 头改用 InvariantCulture（"R" 在部分区域设置下会本地化星期/月份名）。用真实凭证本地复现：修复前 403 SignatureDoesNotMatch，修复后 PUT/GET/DELETE 回环全通。
+- 测试站现有阿里云配置（dazezb / cn-zhangjiakou / tools 前缀）凭证有效——修复部署后「测试连接」应直接通过。
+- [x] 本地复现回环通过（真实阿里云 PUT→Range GET→DELETE）；存储通道 6 测试通过。
