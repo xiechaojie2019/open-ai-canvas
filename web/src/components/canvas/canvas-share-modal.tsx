@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { App, Button, Input, Modal, Select, Spin } from "antd";
+import copyToClipboard from "copy-to-clipboard";
 import { Copy, Link2, RefreshCw, Share2, Unlink } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -33,7 +34,18 @@ export function CanvasShareModal({ projectId, open, onClose, beforeCreate }: { p
 
     const copy = async (value = shareUrl) => {
         if (!value) return;
-        await navigator.clipboard.writeText(value);
+        // http 环境或非安全上下文没有 navigator.clipboard（undefined），回退 execCommand。
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(value);
+                message.success("分享链接已复制");
+                return;
+            } catch {
+                // 失权或焦点丢失时走兜底，不直接报错。
+            }
+        }
+        // copy-to-clipboard 返回 Promise<boolean>（modern 模式优先 execCommand 兜底）。
+        void copyToClipboard(value);
         message.success("分享链接已复制");
     };
 
