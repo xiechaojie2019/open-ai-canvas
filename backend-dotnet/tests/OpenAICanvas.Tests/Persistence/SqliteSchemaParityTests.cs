@@ -67,6 +67,20 @@ public class SqliteSchemaParityTests : IDisposable
 
     private sealed record ColumnRow(string Name, string Type, long NotNull, long Pk);
 
+    // v35 把物理标识符从 snake_case 收敛为 camelCase，而 schema-dump 仍是 Go/GORM 的
+    // 基线命名。期望值一律通过迁移计划折算，避免测试里再写一份命名规则。
+    private static readonly Dictionary<string, string> TableRenames =
+        CamelCaseRenamePlan.Tables.ToDictionary(item => item.OldName, item => item.NewName);
+
+    private static readonly Dictionary<(string Table, string Column), string> ColumnRenames =
+        CamelCaseRenamePlan.Columns.ToDictionary(item => (item.Table, item.OldName), item => item.NewName);
+
+    private static string PhysicalTable(string table) =>
+        TableRenames.TryGetValue(table, out string? renamed) ? renamed : table;
+
+    private static string PhysicalColumn(string table, string column) =>
+        ColumnRenames.TryGetValue((table, column), out string? renamed) ? renamed : column;
+
     private async Task<Dictionary<string, List<ColumnRow>>> ReadColumnsAsync()
     {
         await using var connection = (SqliteConnection)_database.CreateConnection();
@@ -93,7 +107,7 @@ public class SqliteSchemaParityTests : IDisposable
         List<GoTable> baseline = LoadBaseline();
         Dictionary<string, List<ColumnRow>> actual = await ReadColumnsAsync();
 
-        string[] expected = baseline.Select(t => t.Table).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+        string[] expected = baseline.Select(t => PhysicalTable(t.Table)).OrderBy(t => t, StringComparer.Ordinal).ToArray();
         string[] observed = actual.Keys.OrderBy(t => t, StringComparer.Ordinal).ToArray();
 
         Assert.Equal(expected, observed);
@@ -109,17 +123,19 @@ public class SqliteSchemaParityTests : IDisposable
         List<string> problems = [];
         foreach (GoTable table in baseline)
         {
-            string[] expected = table.Columns.Where(c => c.IsColumn).Select(c => c.Name).ToArray();
-            if (!actual.TryGetValue(table.Table, out List<ColumnRow>? columns))
+            string[] expected = table.Columns.Where(c => c.IsColumn)
+                .Select(c => PhysicalColumn(table.Table, c.Name))
+                .ToArray();
+            if (!actual.TryGetValue(PhysicalTable(table.Table), out List<ColumnRow>? columns))
             {
-                problems.Add($"{table.Table}: 缺少该表");
+                problems.Add($"{PhysicalTable(table.Table)}: 缺少该表");
                 continue;
             }
 
             string[] observed = columns.Select(c => c.Name).ToArray();
             if (!expected.SequenceEqual(observed, StringComparer.Ordinal))
             {
-                problems.Add($"{table.Table}: 期望 [{string.Join(",", expected)}] 实际 [{string.Join(",", observed)}]");
+                problems.Add($"{PhysicalTable(table.Table)}: 期望 [{string.Join(",", expected)}] 实际 [{string.Join(",", observed)}]");
             }
         }
 
@@ -173,7 +189,7 @@ public class SqliteSchemaParityTests : IDisposable
     }
 
     [Fact]
-    public async Task 软删除表带_deleted_at_列()
+    public async Task 软删除表带_deletedAt_列()
     {
         await ApplySchemaAsync();
         Dictionary<string, List<ColumnRow>> actual = await ReadColumnsAsync();
@@ -181,8 +197,42 @@ public class SqliteSchemaParityTests : IDisposable
         foreach (string table in SoftDelete.Tables)
         {
             Assert.True(actual.ContainsKey(table), $"缺少软删除表 {table}");
-            Assert.Contains(actual[table], c => c.Name == "deleted_at");
+            Assert.Contains(actual[table], c => c.Name == SoftDelete.Column);
         }
+    }
+
+    /// <summary>
+    /// 实体元数据声明的表名/列名必须真实存在。这条守卫覆盖的是最容易漏的一类错配：
+    /// 生成器与迁移计划对"某张表要不要改名"给出不同答案时（例如账本表 schema_migrations），
+    /// Dapper 不会报错，只会静默读回默认值。
+    /// </summary>
+    [Fact]
+    public async Task 实体元数据的表名列名都存在于真实库()
+    {
+        await ApplySchemaAsync();
+        Dictionary<string, List<ColumnRow>> actual = await ReadColumnsAsync();
+
+        List<string> problems = [];
+        foreach (Type type in EntityMetadata.KnownTypes)
+        {
+            EntityMap map = EntityMetadata.For(type);
+            if (!actual.TryGetValue(map.Table, out List<ColumnRow>? columns))
+            {
+                problems.Add($"{type.Name}: 表 {map.Table} 不存在");
+                continue;
+            }
+
+            HashSet<string> names = columns.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
+            foreach (ColumnMap column in map.Columns)
+            {
+                if (!names.Contains(column.Column))
+                {
+                    problems.Add($"{type.Name}.{column.Property}: 列 {column.Column} 不存在于 {map.Table}");
+                }
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 }
 

@@ -82,11 +82,11 @@ public sealed partial class Repository
         string userID, string id, CancellationToken cancellationToken = default) =>
         InTransactionAsync(async (connection, transaction) =>
         {
-            string sql = $"DELETE FROM {Quote("agent_lessons")} WHERE {Quote("id")} = @id";
+            string sql = $"DELETE FROM {Quote("agentLessons")} WHERE {Quote("id")} = @id";
             Dictionary<string, object?> parameters = new(StringComparer.Ordinal) { ["id"] = id.Trim() };
             if (userID.Trim().Length > 0)
             {
-                sql += $" AND {Quote("author_user_id")} = @userID";
+                sql += $" AND {Quote("authorUserId")} = @userID";
                 parameters["userID"] = userID.Trim();
             }
             int affected = await ExecuteAsync(connection, sql, parameters, transaction, cancellationToken)
@@ -182,7 +182,7 @@ public sealed partial class Repository
             {
                 await ExecuteAsync(
                     connection,
-                    $"DELETE FROM {Quote("agent_lessons")} WHERE {Quote("author_user_id")} = @userID AND {Quote("id")} IN @ids",
+                    $"DELETE FROM {Quote("agentLessons")} WHERE {Quote("authorUserId")} = @userID AND {Quote("id")} IN @ids",
                     new { userID, ids = deleteIDs },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
@@ -199,7 +199,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<AgentMemorySetting>(
             connection,
-            SqlBuilder.Select<AgentMemorySetting>($"{Quote("user_id")} = @userID", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<AgentMemorySetting>($"{Quote("userId")} = @userID", limitOffset: " LIMIT 1"),
             new { userID = userID.Trim() },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -236,8 +236,8 @@ public sealed partial class Repository
         List<AgentMemorySetting> rows = (await QueryAsync<AgentMemorySetting>(
             connection,
             SqlBuilder.Select<AgentMemorySetting>(
-                $"{Quote("compact_interval")} IN @intervals",
-                orderBy: Quote("last_compact_at") + " ASC",
+                $"{Quote("compactInterval")} IN @intervals",
+                orderBy: Quote("lastCompactAt") + " ASC",
                 limitOffset: $" LIMIT {limit}"),
             new
             {
@@ -306,8 +306,8 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction, string userID, CancellationToken cancellationToken)
     {
         string sql = $"SELECT {Quote("category")} AS {Quote("Category")}, COUNT(1) AS {Quote("Count")} " +
-                     $"FROM {Quote("agent_lessons")} " +
-                     $"WHERE {Quote("author_user_id")} = @userID AND {Quote("status")} = @status " +
+                     $"FROM {Quote("agentLessons")} " +
+                     $"WHERE {Quote("authorUserId")} = @userID AND {Quote("status")} = @status " +
                      $"GROUP BY {Quote("category")}";
         List<AgentLessonCategoryCountRow> rows = (await QueryAsync<AgentLessonCategoryCountRow>(
             connection, sql, new { userID = userID.Trim(), status = AgentLessonApproved },
@@ -319,7 +319,7 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction, string userID, string status, int limit,
         CancellationToken cancellationToken)
     {
-        string where = $"{Quote("author_user_id")} = @userID";
+        string where = $"{Quote("authorUserId")} = @userID";
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal) { ["userID"] = userID.Trim() };
         if (status.Trim().Length > 0)
         {
@@ -330,7 +330,7 @@ public sealed partial class Repository
         {
             limit = 100;
         }
-        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("updated_at")} DESC",
+        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("updatedAt")} DESC",
             limitOffset: $" LIMIT {limit}");
         List<AgentLesson> lessons = (await QueryAsync<AgentLesson>(
             connection, sql, parameters, transaction, cancellationToken).ConfigureAwait(false)).ToList();
@@ -345,7 +345,7 @@ public sealed partial class Repository
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal) { ["id"] = id.Trim() };
         if (userID.Trim().Length > 0)
         {
-            where += $" AND {Quote("author_user_id")} = @userID";
+            where += $" AND {Quote("authorUserId")} = @userID";
             parameters["userID"] = userID.Trim();
         }
         return await FirstOrDefaultAsync<AgentLesson>(
@@ -364,8 +364,8 @@ public sealed partial class Repository
         {
             limit = 500;
         }
-        string where = $"{Quote("author_user_id")} = @userID AND {Quote("status")} = @status";
-        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("hits")} DESC, {Quote("updated_at")} DESC",
+        string where = $"{Quote("authorUserId")} = @userID AND {Quote("status")} = @status";
+        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("hits")} DESC, {Quote("updatedAt")} DESC",
             limitOffset: $" LIMIT {limit}");
         List<AgentLesson> lessons = (await QueryAsync<AgentLesson>(
             connection, sql, new { userID = userID.Trim(), status = AgentLessonApproved },
@@ -377,10 +377,10 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction, string userID, string topic,
         CancellationToken cancellationToken)
     {
-        string where = $"{Quote("author_user_id")} = @userID AND {Quote("status")} = @status AND {Quote("topic")} = @topic";
+        string where = $"{Quote("authorUserId")} = @userID AND {Quote("status")} = @status AND {Quote("topic")} = @topic";
         return await FirstOrDefaultAsync<AgentLesson>(
             connection,
-            SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("updated_at")} DESC", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("updatedAt")} DESC", limitOffset: " LIMIT 1"),
             new { userID = userID.Trim(), status = AgentLessonApproved, topic },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -394,8 +394,8 @@ public sealed partial class Repository
         {
             limit = 500;
         }
-        string where = $"{Quote("author_user_id")} = @userID AND {Quote("status")} = @status AND {Quote("category")} = @category";
-        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("hits")} DESC, {Quote("updated_at")} DESC",
+        string where = $"{Quote("authorUserId")} = @userID AND {Quote("status")} = @status AND {Quote("category")} = @category";
+        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("hits")} DESC, {Quote("updatedAt")} DESC",
             limitOffset: $" LIMIT {limit}");
         List<AgentLesson> lessons = (await QueryAsync<AgentLesson>(
             connection, sql, new { userID = userID.Trim(), status = AgentLessonApproved, category },
@@ -407,14 +407,14 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction, string userID, string status,
         CancellationToken cancellationToken)
     {
-        string where = $"{Quote("author_user_id")} = @userID";
+        string where = $"{Quote("authorUserId")} = @userID";
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal) { ["userID"] = userID.Trim() };
         if (status.Trim().Length > 0)
         {
             where += $" AND {Quote("status")} = @status";
             parameters["status"] = status.Trim();
         }
-        string sql = $"SELECT COUNT(*) FROM {Quote("agent_lessons")} WHERE {where}";
+        string sql = $"SELECT COUNT(*) FROM {Quote("agentLessons")} WHERE {where}";
         long? count = await ScalarAsync<long?>(
             connection, sql, parameters, transaction, cancellationToken).ConfigureAwait(false);
         return count ?? 0;
@@ -433,22 +433,22 @@ public sealed partial class Repository
         }
         if (userID.Trim().Length > 0)
         {
-            where += $" AND {Quote("author_user_id")} = @userID";
+            where += $" AND {Quote("authorUserId")} = @userID";
             parameters["userID"] = userID.Trim();
         }
         if (keyword.Trim().Length > 0)
         {
             string like = "%" + keyword.Trim() + "%";
             where += $" AND ({Quote("topic")} LIKE @like OR {Quote("situation")} LIKE @like OR {Quote("lesson")} LIKE @like " +
-                     $"OR {Quote("author_user_id")} LIKE @like OR {Quote("author_user_id")} IN " +
-                     $"(SELECT {Quote("id")} FROM {Quote("users")} WHERE {Quote("username")} LIKE @like OR {Quote("display_name")} LIKE @like))";
+                     $"OR {Quote("authorUserId")} LIKE @like OR {Quote("authorUserId")} IN " +
+                     $"(SELECT {Quote("id")} FROM {Quote("users")} WHERE {Quote("username")} LIKE @like OR {Quote("displayName")} LIKE @like))";
             parameters["like"] = like;
         }
         if (limit <= 0 || limit > 200)
         {
             limit = 100;
         }
-        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("updated_at")} DESC",
+        string sql = SqlBuilder.Select<AgentLesson>(where, orderBy: $"{Quote("updatedAt")} DESC",
             limitOffset: $" LIMIT {limit}");
         List<AgentLesson> lessons = (await QueryAsync<AgentLesson>(
             connection, sql, parameters, transaction, cancellationToken).ConfigureAwait(false)).ToList();
@@ -459,7 +459,7 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction, string userID, string id, string status,
         CancellationToken cancellationToken)
     {
-        string sql = $"UPDATE {Quote("agent_lessons")} SET {Quote("status")} = @status WHERE {Quote("id")} = @id";
+        string sql = $"UPDATE {Quote("agentLessons")} SET {Quote("status")} = @status WHERE {Quote("id")} = @id";
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal)
         {
             ["status"] = status,
@@ -467,7 +467,7 @@ public sealed partial class Repository
         };
         if (userID.Trim().Length > 0)
         {
-            sql += $" AND {Quote("author_user_id")} = @userID";
+            sql += $" AND {Quote("authorUserId")} = @userID";
             parameters["userID"] = userID.Trim();
         }
         return ExecuteAsync(connection, sql, parameters, transaction, cancellationToken);
@@ -481,11 +481,11 @@ public sealed partial class Repository
         {
             return Task.CompletedTask;
         }
-        string sql = $"UPDATE {Quote("agent_lessons")} SET {Quote("hits")} = {Quote("hits")} + 1 WHERE {Quote("id")} IN @ids";
+        string sql = $"UPDATE {Quote("agentLessons")} SET {Quote("hits")} = {Quote("hits")} + 1 WHERE {Quote("id")} IN @ids";
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal) { ["ids"] = ids };
         if (userID.Trim().Length > 0)
         {
-            sql += $" AND {Quote("author_user_id")} = @userID";
+            sql += $" AND {Quote("authorUserId")} = @userID";
             parameters["userID"] = userID.Trim();
         }
         return ExecuteAsync(connection, sql, parameters, transaction, cancellationToken);
@@ -495,8 +495,8 @@ public sealed partial class Repository
         DbConnection connection, DbTransaction? transaction, string userID, string id, DateTime verifiedAt,
         CancellationToken cancellationToken)
     {
-        string sql = $"UPDATE {Quote("agent_lessons")} SET {Quote("last_verified_at")} = @verifiedAt, " +
-                     $"{Quote("updated_at")} = @verifiedAt WHERE {Quote("id")} = @id";
+        string sql = $"UPDATE {Quote("agentLessons")} SET {Quote("lastVerifiedAt")} = @verifiedAt, " +
+                     $"{Quote("updatedAt")} = @verifiedAt WHERE {Quote("id")} = @id";
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal)
         {
             ["verifiedAt"] = verifiedAt,
@@ -504,7 +504,7 @@ public sealed partial class Repository
         };
         if (userID.Trim().Length > 0)
         {
-            sql += $" AND {Quote("author_user_id")} = @userID";
+            sql += $" AND {Quote("authorUserId")} = @userID";
             parameters["userID"] = userID.Trim();
         }
         return ExecuteAsync(connection, sql, parameters, transaction, cancellationToken);

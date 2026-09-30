@@ -28,7 +28,7 @@ public sealed partial class Repository
         {
             await ExecuteAsync(
                 connection,
-                $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @ownerID",
+                $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @ownerID",
                 new { userID, ownerID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -61,7 +61,7 @@ public sealed partial class Repository
         CancellationToken cancellationToken) =>
         ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("run_id")} = @runID",
+            $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("runId")} = @runID",
             new { userID, runID },
             transaction,
             cancellationToken);
@@ -78,14 +78,14 @@ public sealed partial class Repository
             }
             List<LeaseRow> leases = (await QueryAsync<LeaseRow>(
                 connection,
-                $"SELECT {Quote("run_id")} AS {Quote("RunID")}, {Quote("resource_id")} AS {Quote("ResourceID")} " +
-                $"FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @fromOwner",
+                $"SELECT {Quote("runId")} AS {Quote("RunID")}, {Quote("resourceId")} AS {Quote("ResourceID")} " +
+                $"FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @fromOwner",
                 new { userID, fromOwner },
                 transaction,
                 cancellationToken).ConfigureAwait(false)).ToList();
             await ExecuteAsync(
                 connection,
-                $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @toOwner",
+                $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @toOwner",
                 new { userID, toOwner },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -97,7 +97,7 @@ public sealed partial class Repository
             }
             await ExecuteAsync(
                 connection,
-                $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @fromOwner",
+                $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @fromOwner",
                 new { userID, fromOwner },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -111,7 +111,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("expires_at")} <= @now",
+            $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("expiresAt")} <= @now",
             new { now },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -136,7 +136,7 @@ public sealed partial class Repository
     {
         await ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @ownerID",
+            $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @ownerID",
             new { userID, ownerID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -166,14 +166,14 @@ public sealed partial class Repository
         }
         List<LeaseRow> leases = (await QueryAsync<LeaseRow>(
             connection,
-            $"SELECT {Quote("run_id")} AS {Quote("RunID")}, {Quote("resource_id")} AS {Quote("ResourceID")} " +
-            $"FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @fromOwner",
+            $"SELECT {Quote("runId")} AS {Quote("RunID")}, {Quote("resourceId")} AS {Quote("ResourceID")} " +
+            $"FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @fromOwner",
             new { userID, fromOwner },
             transaction,
             cancellationToken).ConfigureAwait(false)).ToList();
         await ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @toOwner",
+            $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @toOwner",
             new { userID, toOwner },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -185,7 +185,7 @@ public sealed partial class Repository
         }
         await ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @fromOwner",
+            $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @fromOwner",
             new { userID, fromOwner },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -211,10 +211,10 @@ public sealed partial class Repository
     {
         // 冲突时只更新 run_id / expires_at，保留首次钉住关系。
         string sql = $"""
-            INSERT INTO {Quote("cloud_agent_resource_leases")} ({Quote("user_id")}, {Quote("run_id")}, {Quote("owner_id")}, {Quote("resource_id")}, {Quote("expires_at")})
+            INSERT INTO {Quote("cloudAgentResourceLeases")} ({Quote("userId")}, {Quote("runId")}, {Quote("ownerId")}, {Quote("resourceId")}, {Quote("expiresAt")})
             VALUES (@userID, @runID, @ownerID, @resourceID, @expiresAt)
-            ON CONFLICT ({Quote("user_id")}, {Quote("owner_id")}, {Quote("resource_id")})
-            DO UPDATE SET {Quote("run_id")} = excluded.{Quote("run_id")}, {Quote("expires_at")} = excluded.{Quote("expires_at")}
+            ON CONFLICT ({Quote("userId")}, {Quote("ownerId")}, {Quote("resourceId")})
+            DO UPDATE SET {Quote("runId")} = excluded.{Quote("runId")}, {Quote("expiresAt")} = excluded.{Quote("expiresAt")}
             """;
         await ExecuteAsync(
             connection, sql,
@@ -227,7 +227,7 @@ public sealed partial class Repository
         CancellationToken cancellationToken) =>
         ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("cloud_agent_resource_leases")} WHERE {Quote("user_id")} = @userID AND {Quote("owner_id")} = @ownerID",
+            $"DELETE FROM {Quote("cloudAgentResourceLeases")} WHERE {Quote("userId")} = @userID AND {Quote("ownerId")} = @ownerID",
             new { userID, ownerID },
             transaction,
             cancellationToken);

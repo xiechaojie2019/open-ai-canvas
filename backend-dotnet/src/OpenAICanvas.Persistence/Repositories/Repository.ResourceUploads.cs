@@ -17,7 +17,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int affected = await ExecuteAsync(connection,
-            "UPDATE \"resources\" SET \"playback_status\" = 'processing', \"updated_at\" = @now WHERE \"id\" = @resourceId AND \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND (\"playback_status\" = '' OR \"playback_status\" = 'none')",
+            "UPDATE \"resources\" SET \"playbackStatus\" = 'processing', \"updatedAt\" = @now WHERE \"id\" = @resourceId AND \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND (\"playbackStatus\" = '' OR \"playbackStatus\" = 'none')",
             new { resourceId, ready = ResourceStatus.ResourceStatusReady, now = DateTime.UtcNow }, cancellationToken: cancellationToken).ConfigureAwait(false);
         return affected == 1;
     }
@@ -26,20 +26,20 @@ public sealed partial class Repository
     {
         limit = limit is <= 0 or > 100 ? 20 : limit;
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        return await QueryAsync<Resource>(connection, $"SELECT * FROM \"resources\" WHERE \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND (\"playback_status\" = '' OR \"playback_status\" = 'processing') ORDER BY \"updated_at\" ASC LIMIT {limit}", new { ready = ResourceStatus.ResourceStatusReady }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await QueryAsync<Resource>(connection, $"SELECT * FROM \"resources\" WHERE \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND (\"playbackStatus\" = '' OR \"playbackStatus\" = 'processing') ORDER BY \"updatedAt\" ASC LIMIT {limit}", new { ready = ResourceStatus.ResourceStatusReady }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<Resource>> PlaybackNoneVideosAsync(int limit, CancellationToken cancellationToken = default)
     {
         limit = limit is <= 0 or > 100 ? 20 : limit;
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        return await QueryAsync<Resource>(connection, $"SELECT * FROM \"resources\" WHERE \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND \"playback_status\" = 'none' ORDER BY \"updated_at\" ASC LIMIT {limit}", new { ready = ResourceStatus.ResourceStatusReady }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await QueryAsync<Resource>(connection, $"SELECT * FROM \"resources\" WHERE \"kind\" = 'video' AND \"provider\" = 'local' AND \"status\" = @ready AND \"playbackStatus\" = 'none' ORDER BY \"updatedAt\" ASC LIMIT {limit}", new { ready = ResourceStatus.ResourceStatusReady }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ResetStuckPlaybackTranscodesAsync(CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "UPDATE \"resources\" SET \"playback_status\" = '', \"playback_error\" = '', \"updated_at\" = @now WHERE \"kind\" = 'video' AND \"playback_status\" = 'processing'", new { now = DateTime.UtcNow }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(connection, "UPDATE \"resources\" SET \"playbackStatus\" = '', \"playbackError\" = '', \"updatedAt\" = @now WHERE \"kind\" = 'video' AND \"playbackStatus\" = 'processing'", new { now = DateTime.UtcNow }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
     /// <summary>当日上传额度不足。对应 Go: <c>repository.ErrDailyUploadLimitExceeded</c>。</summary>
     public const string DailyUploadLimitExceeded = "daily_upload_limit_exceeded";
@@ -51,7 +51,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<Resource>(
             connection,
-            SqlBuilder.Select<Resource>("user_id = @userId AND upload_key = @uploadKey", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Resource>("\"userId\" = @userId AND \"uploadKey\" = @uploadKey", limitOffset: " LIMIT 1"),
             new { userId, uploadKey },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -70,7 +70,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<Resource>(
             connection,
-            """SELECT * FROM "resources" WHERE "user_id" = @userId ORDER BY "created_at" DESC LIMIT @limit""",
+            """SELECT * FROM "resources" WHERE "userId" = @userId ORDER BY "createdAt" DESC LIMIT @limit""",
             new { userId, limit },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -93,13 +93,13 @@ public sealed partial class Repository
             connection,
             """
             UPDATE "resources" SET
-                "user_id" = @UserID, "kind" = @Kind, "status" = @Status, "provider" = @Provider,
-                "endpoint" = @Endpoint, "bucket" = @Bucket, "storage_setting_id" = @StorageSettingID,
-                "object_key" = @ObjectKey, "public_url" = @PublicURL, "mime_type" = @MimeType,
-                "size" = @Size, "width" = @Width, "height" = @Height, "duration_ms" = @DurationMs,
-                "e_tag" = @ETag, "playback_status" = @PlaybackStatus,
-                "playback_object_key" = @PlaybackObjectKey, "playback_error" = @PlaybackError,
-                "upload_key" = @UploadKey, "error" = @Error, "updated_at" = @UpdatedAt
+                "userId" = @UserID, "kind" = @Kind, "status" = @Status, "provider" = @Provider,
+                "endpoint" = @Endpoint, "bucket" = @Bucket, "storageSettingId" = @StorageSettingID,
+                "objectKey" = @ObjectKey, "publicUrl" = @PublicURL, "mimeType" = @MimeType,
+                "size" = @Size, "width" = @Width, "height" = @Height, "durationMs" = @DurationMs,
+                "eTag" = @ETag, "playbackStatus" = @PlaybackStatus,
+                "playbackObjectKey" = @PlaybackObjectKey, "playbackError" = @PlaybackError,
+                "uploadKey" = @UploadKey, "error" = @Error, "updatedAt" = @UpdatedAt
             WHERE "id" = @ID
             """,
             resource,
@@ -117,8 +117,8 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE "resources" SET "status" = @pending, "error" = '', "updated_at" = @now
-            WHERE "id" = @id AND "user_id" = @userId AND "status" = @failed
+            UPDATE "resources" SET "status" = @pending, "error" = '', "updatedAt" = @now
+            WHERE "id" = @id AND "userId" = @userId AND "status" = @failed
             """,
             new
             {
@@ -163,7 +163,7 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE "user_daily_upload_usages" SET "bytes" = "bytes" + @size, "updated_at" = @now
+            UPDATE "userDailyUploadUsages" SET "bytes" = "bytes" + @size, "updatedAt" = @now
             WHERE "id" = @id AND "bytes" + @size < @limit
             """,
             new { id, size, limit, now = DateTime.UtcNow },
@@ -187,9 +187,9 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE "user_daily_upload_usages" SET
+            UPDATE "userDailyUploadUsages" SET
                 "bytes" = CASE WHEN "bytes" >= @size THEN "bytes" - @size ELSE 0 END,
-                "updated_at" = @now
+                "updatedAt" = @now
             WHERE "id" = @id
             """,
             new { id = userId + ":" + day, size, now = DateTime.UtcNow },

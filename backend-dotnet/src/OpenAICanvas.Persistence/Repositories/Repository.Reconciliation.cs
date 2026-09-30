@@ -31,8 +31,8 @@ public sealed partial class Repository
         PaymentReconciliationRun? current = await FirstOrDefaultAsync<PaymentReconciliationRun>(
             connection,
             $"""
-            SELECT {SqlBuilder.Projection<PaymentReconciliationRun>()} FROM payment_reconciliation_runs
-            WHERE provider_id = @providerId AND bill_date = @billDate
+            SELECT {SqlBuilder.Projection<PaymentReconciliationRun>()} FROM "paymentReconciliationRuns"
+            WHERE "providerId" = @providerId AND "billDate" = @billDate
             {Dialect.ForUpdate()}
             """,
             new { providerId = run.ProviderID, billDate = run.BillDate },
@@ -46,7 +46,7 @@ public sealed partial class Repository
             int created = await ExecuteAsync(
                 connection,
                 SqlBuilder.Insert<PaymentReconciliationRun>()
-                    + Dialect.OnConflictDoNothing("\"provider_id\", \"bill_date\""),
+                    + Dialect.OnConflictDoNothing("\"providerId\", \"billDate\""),
                 run,
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -61,8 +61,8 @@ public sealed partial class Repository
             current = await FirstOrDefaultAsync<PaymentReconciliationRun>(
                 connection,
                 $"""
-                SELECT {SqlBuilder.Projection<PaymentReconciliationRun>()} FROM payment_reconciliation_runs
-                WHERE provider_id = @providerId AND bill_date = @billDate
+                SELECT {SqlBuilder.Projection<PaymentReconciliationRun>()} FROM "paymentReconciliationRuns"
+                WHERE "providerId" = @providerId AND "billDate" = @billDate
                 {Dialect.ForUpdate()}
                 """,
                 new { providerId = run.ProviderID, billDate = run.BillDate },
@@ -82,7 +82,7 @@ public sealed partial class Repository
         // 重跑前清掉旧明细，避免新旧结果混在一起。
         await ExecuteAsync(
             connection,
-            "DELETE FROM payment_reconciliation_items WHERE run_id = @runId",
+            "DELETE FROM \"paymentReconciliationItems\" WHERE \"runId\" = @runId",
             new { runId = current.ID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -91,11 +91,11 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_reconciliation_runs SET
-                config_id = @configId, status = @running,
-                total_items = 0, match_items = 0, recovered_items = 0, error_items = 0,
-                error = '', started_by = @startedBy, started_at = @now, completed_at = NULL,
-                updated_at = @now
+            UPDATE "paymentReconciliationRuns" SET
+                "configId" = @configId, status = @running,
+                "totalItems" = 0, "matchItems" = 0, "recoveredItems" = 0, "errorItems" = 0,
+                error = '', "startedBy" = @startedBy, "startedAt" = @now, "completedAt" = NULL,
+                "updatedAt" = @now
             WHERE id = @id
             """,
             new
@@ -150,10 +150,10 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE payment_reconciliation_runs SET
-                status = @completed, total_items = @totalItems,
-                match_items = @matched, recovered_items = @recovered, error_items = @failed,
-                error = '', completed_at = @now, updated_at = @now
+            UPDATE "paymentReconciliationRuns" SET
+                status = @completed, "totalItems" = @totalItems,
+                "matchItems" = @matched, "recoveredItems" = @recovered, "errorItems" = @failed,
+                error = '', "completedAt" = @now, "updatedAt" = @now
             WHERE id = @id AND status = @running
             """,
             new
@@ -189,8 +189,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_reconciliation_runs SET
-                status = @failed, error = @message, completed_at = @now, updated_at = @now
+            UPDATE "paymentReconciliationRuns" SET
+                status = @failed, error = @message, "completedAt" = @now, "updatedAt" = @now
             WHERE id = @id
             """,
             new
@@ -223,7 +223,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<PaymentReconciliationRun>(
             connection,
             SqlBuilder.Select<PaymentReconciliationRun>(
-                "provider_id = @providerId AND bill_date = @billDate", limitOffset: " LIMIT 1"),
+                "\"providerId\" = @providerId AND \"billDate\" = @billDate", limitOffset: " LIMIT 1"),
             new { providerId = providerId.Trim(), billDate = billDate.Trim() },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -240,7 +240,7 @@ public sealed partial class Repository
         string normalizedProvider = providerId.Trim();
         if (normalizedProvider.Length > 0 && normalizedProvider != "all")
         {
-            conditions.Add("provider_id = @providerId");
+            conditions.Add("\"providerId\" = @providerId");
             parameters.Add("providerId", normalizedProvider);
         }
 
@@ -254,14 +254,14 @@ public sealed partial class Repository
         string where = conditions.Count == 0 ? "" : " WHERE " + string.Join(" AND ", conditions);
 
         long total = await ScalarAsync<long>(
-            connection, $"SELECT COUNT(*) FROM payment_reconciliation_runs{where}", parameters,
+            connection, $"SELECT COUNT(*) FROM \"paymentReconciliationRuns\"{where}", parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<PaymentReconciliationRun> runs = await QueryAsync<PaymentReconciliationRun>(
             connection,
             $"""
-            SELECT {SqlBuilder.Projection<PaymentReconciliationRun>()} FROM payment_reconciliation_runs{where}
-            ORDER BY bill_date DESC, started_at DESC
+            SELECT {SqlBuilder.Projection<PaymentReconciliationRun>()} FROM "paymentReconciliationRuns"{where}
+            ORDER BY "billDate" DESC, "startedAt" DESC
             {Dialect.LimitOffset(limit, offset)}
             """,
             parameters,
@@ -279,7 +279,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        List<string> conditions = ["run_id = @runId"];
+        List<string> conditions = ["\"runId\" = @runId"];
         DynamicParameters parameters = new();
         parameters.Add("runId", runId.Trim());
 
@@ -293,14 +293,14 @@ public sealed partial class Repository
         string where = " WHERE " + string.Join(" AND ", conditions);
 
         long total = await ScalarAsync<long>(
-            connection, $"SELECT COUNT(*) FROM payment_reconciliation_items{where}", parameters,
+            connection, $"SELECT COUNT(*) FROM \"paymentReconciliationItems\"{where}", parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<PaymentReconciliationItem> items = await QueryAsync<PaymentReconciliationItem>(
             connection,
             $"""
-            SELECT {SqlBuilder.Projection<PaymentReconciliationItem>()} FROM payment_reconciliation_items{where}
-            ORDER BY resolved ASC, created_at ASC
+            SELECT {SqlBuilder.Projection<PaymentReconciliationItem>()} FROM "paymentReconciliationItems"{where}
+            ORDER BY resolved ASC, "createdAt" ASC
             {Dialect.LimitOffset(limit, offset)}
             """,
             parameters,
@@ -320,8 +320,8 @@ public sealed partial class Repository
         return await QueryAsync<PaymentOrder>(
             connection,
             SqlBuilder.Select<PaymentOrder>(
-                "provider_id = @providerId AND status = @credited AND provider_paid_at >= @start AND provider_paid_at < @end",
-                orderBy: "provider_paid_at ASC"),
+                "\"providerId\" = @providerId AND status = @credited AND \"providerPaidAt\" >= @start AND \"providerPaidAt\" < @end",
+                orderBy: "\"providerPaidAt\" ASC"),
             new
             {
                 providerId = providerId.Trim(),
@@ -346,9 +346,9 @@ public sealed partial class Repository
         return await ScalarAsync<long>(
             connection,
             """
-            SELECT COUNT(*) FROM payment_orders
-            WHERE provider_id = @providerId AND status IN @statuses
-              AND created_at < @end AND expires_at >= @start
+            SELECT COUNT(*) FROM "paymentOrders"
+            WHERE "providerId" = @providerId AND status IN @statuses
+              AND "createdAt" < @end AND "expiresAt" >= @start
             """,
             new
             {

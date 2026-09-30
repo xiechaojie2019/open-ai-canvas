@@ -12,12 +12,12 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>PluginPlatformState</c>，数据库表 <c>plugin_platform_states</c>。
+/// 对应 Go <c>PluginPlatformState</c>，数据库表 <c>pluginPlatformStates</c>。
 /// 源文件：internal/model/models_plugin.go
 /// </summary>
 public class PluginPlatformState
 {
-    /// <summary>数据库列 <c>plugin_id</c>（maxLength=120，主键）</summary>
+    /// <summary>数据库列 <c>pluginId</c>（maxLength=120，主键）</summary>
     [JsonPropertyName("pluginId")]
     public string PluginID { get; set; } = string.Empty;
 
@@ -25,21 +25,21 @@ public class PluginPlatformState
     [JsonPropertyName("available")]
     public bool Available { get; set; }
 
-    /// <summary>数据库列 <c>updated_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>updatedBy</c>（maxLength=36）</summary>
     [JsonPropertyName("updatedBy")]
     public string UpdatedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>UserPluginState</c>，数据库表 <c>user_plugin_states</c>。
+/// 对应 Go <c>UserPluginState</c>，数据库表 <c>userPluginStates</c>。
 /// 源文件：internal/model/models_plugin.go
 /// </summary>
 public class UserPluginState
@@ -48,11 +48,11 @@ public class UserPluginState
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>plugin_id</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>pluginId</c>（maxLength=120）</summary>
     [JsonPropertyName("pluginId")]
     public string PluginID { get; set; } = string.Empty;
 
@@ -60,11 +60,11 @@ public class UserPluginState
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

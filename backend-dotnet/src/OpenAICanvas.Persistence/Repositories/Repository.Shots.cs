@@ -20,10 +20,10 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<AssetVersion>(
             connection,
             $"""
-            SELECT {SqlBuilder.Projection<AssetVersion>("asset_versions")}
-            FROM asset_versions
-            JOIN project_asset_links ON project_asset_links.asset_id = asset_versions.asset_id
-            WHERE project_asset_links.project_id = @projectId AND asset_versions.id = @versionId
+            SELECT {SqlBuilder.Projection<AssetVersion>("assetVersions")}
+            FROM "assetVersions"
+            JOIN "projectAssetLinks" ON "projectAssetLinks"."assetId" = "assetVersions"."assetId"
+            WHERE "projectAssetLinks"."projectId" = @projectId AND "assetVersions".id = @versionId
             LIMIT 1
             """,
             new { projectId, versionId },
@@ -37,7 +37,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<Shot>(
             connection,
-            SqlBuilder.Select<Shot>("id = @shotId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Shot>("id = @shotId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { shotId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -50,7 +50,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ShotRevision>(
             connection,
             SqlBuilder.Select<ShotRevision>(
-                "id = @revisionId AND shot_id = @shotId", limitOffset: " LIMIT 1"),
+                "id = @revisionId AND \"shotId\" = @shotId", limitOffset: " LIMIT 1"),
             new { shotId, revisionId }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -62,7 +62,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ProjectAssetCandidate>(
             connection,
             SqlBuilder.Select<ProjectAssetCandidate>(
-                "id = @candidateId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+                "id = @candidateId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { candidateId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -74,7 +74,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ProjectAssetCandidate>(
             connection,
-            SqlBuilder.Select<ProjectAssetCandidate>("project_id = @projectId", "created_at ASC"),
+            SqlBuilder.Select<ProjectAssetCandidate>("\"projectId\" = @projectId", "\"createdAt\" ASC"),
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -98,10 +98,10 @@ public sealed partial class Repository
         string projectId, long page, long pageSize, string unitId, string status, string category, string query,
         CancellationToken cancellationToken = default)
     {
-        var conditions = new List<string> { "project_id = @projectId" };
+        var conditions = new List<string> { "\"projectId\" = @projectId" };
         if (!string.IsNullOrWhiteSpace(unitId))
         {
-            conditions.Add("unit_id = @unitId");
+            conditions.Add("\"unitId\" = @unitId");
         }
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -120,7 +120,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long total = await ScalarAsync<long>(
             connection,
-            $"SELECT COUNT(*) FROM \"project_asset_candidates\" WHERE {where}",
+            $"SELECT COUNT(*) FROM \"projectAssetCandidates\" WHERE {where}",
             new
             {
                 projectId,
@@ -132,7 +132,7 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
         IReadOnlyList<ProjectAssetCandidate> candidates = await QueryAsync<ProjectAssetCandidate>(
             connection,
-            SqlBuilder.Select<ProjectAssetCandidate>(where, "created_at DESC")
+            SqlBuilder.Select<ProjectAssetCandidate>(where, "\"createdAt\" DESC")
             + " LIMIT @limit OFFSET @offset",
             new
             {
@@ -169,9 +169,9 @@ public sealed partial class Repository
                 connection,
                 """
                 UPDATE shots SET
-                    unit_id = @UnitID, title = @Title, description = @Description, position = @Position,
-                    duration_ms = @DurationMs, status = @Status, updated_at = @UpdatedAt
-                WHERE id = @ID AND project_id = @ProjectID
+                    "unitId" = @UnitID, title = @Title, description = @Description, position = @Position,
+                    "durationMs" = @DurationMs, status = @Status, "updatedAt" = @UpdatedAt
+                WHERE id = @ID AND "projectId" = @ProjectID
                 """,
                 shot,
                 transaction,
@@ -185,7 +185,7 @@ public sealed partial class Repository
 
         long currentVersion = await ScalarAsync<long>(
             connection,
-            "SELECT COALESCE(MAX(\"version\"), 0) FROM \"shot_revisions\" WHERE \"shot_id\" = @shotId",
+            "SELECT COALESCE(MAX(\"version\"), 0) FROM \"shotRevisions\" WHERE \"shotId\" = @shotId",
             new { shotId = shot.ID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -197,9 +197,9 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE shots SET current_revision_id = @CurrentRevisionID, description = @Description,
-              duration_ms = @DurationMs, status = @Status, updated_at = @UpdatedAt
-            WHERE id = @ID AND project_id = @ProjectID
+            UPDATE shots SET "currentRevisionId" = @CurrentRevisionID, description = @Description,
+              "durationMs" = @DurationMs, status = @Status, "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "projectId" = @ProjectID
             """,
             shot,
             transaction,
@@ -216,7 +216,7 @@ public sealed partial class Repository
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt = shot.UpdatedAt, projectId = shot.ProjectID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -244,7 +244,7 @@ public sealed partial class Repository
         {
             IReadOnlyList<string> currentShotIds = await QueryAsync<string>(
                 connection,
-                "SELECT \"id\" FROM \"shots\" WHERE \"project_id\" = @projectId AND \"unit_id\" = @unitId ORDER BY \"id\" ASC",
+                "SELECT \"id\" FROM \"shots\" WHERE \"projectId\" = @projectId AND \"unitId\" = @unitId ORDER BY \"id\" ASC",
                 new { projectId, unitId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -259,15 +259,15 @@ public sealed partial class Repository
 
         await ExecuteAsync(
             connection,
-            "DELETE FROM shot_artifacts WHERE project_id = @projectId AND unit_id = @unitId",
+            "DELETE FROM \"shotArtifacts\" WHERE \"projectId\" = @projectId AND \"unitId\" = @unitId",
             new { projectId, unitId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
             """
-            DELETE FROM shot_revisions WHERE shot_id IN (
-              SELECT id FROM shots WHERE project_id = @projectId AND unit_id = @unitId)
+            DELETE FROM "shotRevisions" WHERE "shotId" IN (
+              SELECT id FROM shots WHERE "projectId" = @projectId AND "unitId" = @unitId)
             """,
             new { projectId, unitId },
             transaction,
@@ -275,8 +275,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            DELETE FROM shot_asset_references WHERE shot_id IN (
-              SELECT id FROM shots WHERE project_id = @projectId AND unit_id = @unitId)
+            DELETE FROM "shotAssetReferences" WHERE "shotId" IN (
+              SELECT id FROM shots WHERE "projectId" = @projectId AND "unitId" = @unitId)
             """,
             new { projectId, unitId },
             transaction,
@@ -284,15 +284,15 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            DELETE FROM project_asset_candidates WHERE project_id = @projectId AND shot_id IN (
-              SELECT id FROM shots WHERE project_id = @projectId AND unit_id = @unitId)
+            DELETE FROM "projectAssetCandidates" WHERE "projectId" = @projectId AND "shotId" IN (
+              SELECT id FROM shots WHERE "projectId" = @projectId AND "unitId" = @unitId)
             """,
             new { projectId, unitId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM shots WHERE project_id = @projectId AND unit_id = @unitId",
+            "DELETE FROM shots WHERE \"projectId\" = @projectId AND \"unitId\" = @unitId",
             new { projectId, unitId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -318,7 +318,7 @@ public sealed partial class Repository
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @now WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @now WHERE id = @projectId",
             new { now = DateTime.UtcNow, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -335,7 +335,7 @@ public sealed partial class Repository
 
         Shot? shot = await FirstOrDefaultAsync<Shot>(
             connection,
-            SqlBuilder.Select<Shot>("id = @shotId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Shot>("id = @shotId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { shotId, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -347,37 +347,37 @@ public sealed partial class Repository
 
         await ExecuteAsync(
             connection,
-            "DELETE FROM production_task_links WHERE project_id = @projectId AND shot_id = @shotId",
+            "DELETE FROM \"productionTaskLinks\" WHERE \"projectId\" = @projectId AND \"shotId\" = @shotId",
             new { projectId, shotId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM shot_artifacts WHERE project_id = @projectId AND shot_id = @shotId",
+            "DELETE FROM \"shotArtifacts\" WHERE \"projectId\" = @projectId AND \"shotId\" = @shotId",
             new { projectId, shotId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM shot_revisions WHERE shot_id = @shotId",
+            "DELETE FROM \"shotRevisions\" WHERE \"shotId\" = @shotId",
             new { shotId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM shot_asset_references WHERE shot_id = @shotId",
+            "DELETE FROM \"shotAssetReferences\" WHERE \"shotId\" = @shotId",
             new { shotId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM project_asset_candidates WHERE project_id = @projectId AND shot_id = @shotId",
+            "DELETE FROM \"projectAssetCandidates\" WHERE \"projectId\" = @projectId AND \"shotId\" = @shotId",
             new { projectId, shotId },
             transaction,
             cancellationToken).ConfigureAwait(false);
         int deleted = await ExecuteAsync(
             connection,
-            "DELETE FROM shots WHERE id = @shotId AND project_id = @projectId",
+            "DELETE FROM shots WHERE id = @shotId AND \"projectId\" = @projectId",
             new { shotId, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -389,7 +389,7 @@ public sealed partial class Repository
 
         IReadOnlyList<Shot> remaining = await QueryAsync<Shot>(
             connection,
-            "SELECT \"id\", \"position\" FROM \"shots\" WHERE \"project_id\" = @projectId AND \"unit_id\" = @unitId ORDER BY \"position\" ASC, \"created_at\" ASC, \"id\" ASC",
+            "SELECT \"id\", \"position\" FROM \"shots\" WHERE \"projectId\" = @projectId AND \"unitId\" = @unitId ORDER BY \"position\" ASC, \"createdAt\" ASC, \"id\" ASC",
             new { projectId, unitId = shot.UnitID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -402,7 +402,7 @@ public sealed partial class Repository
 
             await ExecuteAsync(
                 connection,
-                "UPDATE shots SET position = @position WHERE id = @id AND project_id = @projectId",
+                "UPDATE shots SET position = @position WHERE id = @id AND \"projectId\" = @projectId",
                 new { position, id = remaining[position].ID, projectId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -412,7 +412,7 @@ public sealed partial class Repository
             connection, transaction, projectId, shot.UnitID, "storyboard", updatedAt, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -430,8 +430,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE shot_asset_references SET status = @Status
-            WHERE shot_id = @ShotID AND asset_version_id = @AssetVersionID AND role = @Role
+            UPDATE "shotAssetReferences" SET status = @Status
+            WHERE "shotId" = @ShotID AND "assetVersionId" = @AssetVersionID AND role = @Role
             """,
             reference,
             transaction,
@@ -447,7 +447,7 @@ public sealed partial class Repository
 
         Shot? shot = await FirstOrDefaultAsync<Shot>(
             connection,
-            SqlBuilder.Select<Shot>("id = @shotId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Shot>("id = @shotId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { shotId = reference.ShotID, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -461,7 +461,7 @@ public sealed partial class Repository
             connection, transaction, projectId, shot.UnitID, "storyboard", updatedAt, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -478,7 +478,7 @@ public sealed partial class Repository
 
         int deleted = await ExecuteAsync(
             connection,
-            "DELETE FROM shot_asset_references WHERE id = @referenceId AND shot_id = @shotId",
+            "DELETE FROM \"shotAssetReferences\" WHERE id = @referenceId AND \"shotId\" = @shotId",
             new { referenceId, shotId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -492,7 +492,7 @@ public sealed partial class Repository
 
         Shot? shot = await FirstOrDefaultAsync<Shot>(
             connection,
-            SqlBuilder.Select<Shot>("id = @shotId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Shot>("id = @shotId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { shotId, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -506,7 +506,7 @@ public sealed partial class Repository
             connection, transaction, projectId, shot.UnitID, "storyboard", updatedAt, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -541,7 +541,7 @@ public sealed partial class Repository
         {
             long existing = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM assets WHERE id = @id AND user_id = @userId",
+                "SELECT COUNT(*) FROM assets WHERE id = @id AND \"userId\" = @userId",
                 new { id = asset.ID, userId = asset.UserID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -554,7 +554,7 @@ public sealed partial class Repository
 
         long linkExisting = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM project_asset_links WHERE project_id = @projectId AND asset_id = @assetId",
+            "SELECT COUNT(*) FROM \"projectAssetLinks\" WHERE \"projectId\" = @projectId AND \"assetId\" = @assetId",
             new { projectId = link.ProjectID, assetId = link.AssetID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -568,7 +568,7 @@ public sealed partial class Repository
             connection, transaction, candidate, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt = candidate.UpdatedAt, projectId = candidate.ProjectID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -608,9 +608,9 @@ public sealed partial class Repository
             """
             UPDATE assets SET
                 kind = @Kind, category = @Category, status = @Status,
-                primary_version_id = @PrimaryVersionID, title = @Title,
-                payload_json = @PayloadJSON, updated_at = @UpdatedAt
-            WHERE id = @ID AND user_id = @UserID
+                "primaryVersionId" = @PrimaryVersionID, title = @Title,
+                "payloadJson" = @PayloadJSON, "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "userId" = @UserID
             """,
             asset,
             transaction,
@@ -625,7 +625,7 @@ public sealed partial class Repository
             connection, transaction, candidate, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt = candidate.UpdatedAt, projectId = candidate.ProjectID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -640,9 +640,9 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE project_asset_candidates SET status = @Status, resolved_asset_id = @ResolvedAssetID,
-              updated_at = @UpdatedAt
-            WHERE id = @ID AND project_id = @ProjectID AND status = 'pending_confirmation'
+            UPDATE "projectAssetCandidates" SET status = @Status, "resolvedAssetId" = @ResolvedAssetID,
+              "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "projectId" = @ProjectID AND status = 'pending_confirmation'
             """,
             candidate,
             transaction,
@@ -665,8 +665,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE shot_artifacts SET status = 'stale', selected = @selected, updated_at = @updatedAt
-            WHERE shot_id = @shotId AND status NOT IN ('failed', 'stale')
+            UPDATE "shotArtifacts" SET status = 'stale', selected = @selected, "updatedAt" = @updatedAt
+            WHERE "shotId" = @shotId AND status NOT IN ('failed', 'stale')
             """,
             new { shotId, updatedAt, selected = Dialect.Boolean(false) },
             transaction,
@@ -693,7 +693,7 @@ public sealed partial class Repository
 
         IReadOnlyList<WorkflowInstance> instances = await QueryAsync<WorkflowInstance>(
             connection,
-            SqlBuilder.Select<WorkflowInstance>("project_id = @projectId AND unit_id = @unitId"),
+            SqlBuilder.Select<WorkflowInstance>("\"projectId\" = @projectId AND \"unitId\" = @unitId"),
             new { projectId, unitId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -702,7 +702,7 @@ public sealed partial class Repository
             IReadOnlyList<WorkflowStepInstance> steps = await QueryAsync<WorkflowStepInstance>(
                 connection,
                 SqlBuilder.Select<WorkflowStepInstance>(
-                    "workflow_instance_id = @instanceId", "position ASC"),
+                    "\"workflowInstanceId\" = @instanceId", "position ASC"),
                 new { instanceId = instance.ID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -734,9 +734,9 @@ public sealed partial class Repository
                 await ExecuteAsync(
                     connection,
                     """
-                    UPDATE workflow_step_instances SET status = @status, error = '', completed_at = NULL,
-                      updated_at = @updatedAt
-                    WHERE id = @id AND workflow_instance_id = @instanceId
+                    UPDATE "workflowStepInstances" SET status = @status, error = '', "completedAt" = NULL,
+                      "updatedAt" = @updatedAt
+                    WHERE id = @id AND "workflowInstanceId" = @instanceId
                     """,
                     new { status, updatedAt, id = step.ID, instanceId = instance.ID },
                     transaction,
@@ -746,7 +746,7 @@ public sealed partial class Repository
             await ExecuteAsync(
                 connection,
                 """
-                UPDATE workflow_instances SET status = 'active', revision = revision + 1, updated_at = @updatedAt
+                UPDATE "workflowInstances" SET status = 'active', revision = revision + 1, "updatedAt" = @updatedAt
                 WHERE id = @instanceId
                 """,
                 new { updatedAt, instanceId = instance.ID },

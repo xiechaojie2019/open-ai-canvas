@@ -57,7 +57,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM prompt_templates WHERE operation = @operation",
+            "SELECT COUNT(*) FROM \"promptTemplates\" WHERE operation = @operation",
             new { operation },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -69,7 +69,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long max = await ScalarAsync<long>(
             connection,
-            "SELECT COALESCE(MAX(version), 0) FROM prompt_templates WHERE operation = @operation",
+            "SELECT COALESCE(MAX(version), 0) FROM \"promptTemplates\" WHERE operation = @operation",
             new { operation },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -91,7 +91,7 @@ public sealed partial class Repository
             await ExecuteAsync(
                 connection,
                 """
-                UPDATE prompt_templates SET enabled = @disabled, updated_at = @now
+                UPDATE "promptTemplates" SET enabled = @disabled, "updatedAt" = @now
                 WHERE operation = @operation AND id <> @id
                 """,
                 new { disabled = false, now = DateTime.UtcNow, operation = template.Operation, id = template.ID },
@@ -120,7 +120,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM prompt_templates WHERE id = @id",
+            "DELETE FROM \"promptTemplates\" WHERE id = @id",
             new { id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

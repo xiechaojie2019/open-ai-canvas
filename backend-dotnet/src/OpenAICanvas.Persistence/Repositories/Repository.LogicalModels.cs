@@ -24,13 +24,13 @@ public sealed partial class Repository
         CancellationToken cancellationToken = default)
     {
         string condition = includeDisabled
-            ? "archived_at IS NULL"
-            : "archived_at IS NULL AND enabled = @enabled";
+            ? "\"archivedAt\" IS NULL"
+            : "\"archivedAt\" IS NULL AND enabled = @enabled";
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<LogicalModel>(
             connection,
-            SqlBuilder.Select<LogicalModel>(condition, "sort_order ASC, created_at ASC, id ASC"),
+            SqlBuilder.Select<LogicalModel>(condition, "\"sortOrder\" ASC, \"createdAt\" ASC, id ASC"),
             new { enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -119,8 +119,8 @@ public sealed partial class Repository
         if (routeRevisionIDs.Count > 0)
         {
             string routeCondition = includeDisabled
-                ? "logical_model_revision_id IN @ids"
-                : "logical_model_revision_id IN @ids AND enabled = @enabled AND weight > @weight";
+                ? "\"logicalModelRevisionId\" IN @ids"
+                : "\"logicalModelRevisionId\" IN @ids AND enabled = @enabled AND weight > @weight";
             object routeParameters = includeDisabled
                 ? (object)new { ids = UniqueStrings(routeRevisionIDs) }
                 : new { ids = UniqueStrings(routeRevisionIDs), enabled = Dialect.Boolean(true), weight = 0 };
@@ -129,7 +129,7 @@ public sealed partial class Repository
             List<string> channelModelIDs = [];
             foreach (LogicalModelRoute route in await QueryAsync<LogicalModelRoute>(
                          connection,
-                         SqlBuilder.Select<LogicalModelRoute>(routeCondition, "priority DESC, created_at ASC, id ASC"),
+                         SqlBuilder.Select<LogicalModelRoute>(routeCondition, "priority DESC, \"createdAt\" ASC, id ASC"),
                          routeParameters,
                          cancellationToken: cancellationToken).ConfigureAwait(false))
             {
@@ -188,7 +188,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<ChannelModel> items = await QueryAsync<ChannelModel>(
             connection,
-            SqlBuilder.Select<ChannelModel>(SoftDelete.Apply("channel_models", "id IN @ids")),
+            SqlBuilder.Select<ChannelModel>(SoftDelete.Apply("channelModels", "id IN @ids")),
             new { ids },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -218,7 +218,7 @@ public sealed partial class Repository
         return await QueryAsync<ModelChannel>(
             connection,
             SqlBuilder.Select<ModelChannel>(
-                SoftDelete.Apply("model_channels", condition)),
+                SoftDelete.Apply("modelChannels", condition)),
             new
             {
                 ids = UniqueStrings(ids),
@@ -248,8 +248,8 @@ public sealed partial class Repository
         IReadOnlyList<ChannelModelPriceTier> tiers = await QueryAsync<ChannelModelPriceTier>(
             connection,
             SqlBuilder.Select<ChannelModelPriceTier>(
-                SoftDelete.Apply("channel_model_price_tiers", "channel_model_id IN @ids"),
-                "selector_key ASC, created_at ASC, id ASC"),
+                SoftDelete.Apply("channelModelPriceTiers", "\"channelModelId\" IN @ids"),
+                "\"selectorKey\" ASC, \"createdAt\" ASC, id ASC"),
             new { ids },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 

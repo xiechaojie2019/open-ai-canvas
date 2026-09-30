@@ -20,10 +20,10 @@ public sealed partial class Repository
             $"""
             SELECT {SqlBuilder.Projection<TaskEntity>("tasks")}
             FROM tasks
-            WHERE user_id = @userId
-              AND (CASE WHEN @taskId <> '' THEN id = @taskId ELSE (created_at >= @from AND created_at <= @to
-                AND (@projectId = '' OR project_id = @projectId)) END)
-            ORDER BY created_at ASC
+            WHERE "userId" = @userId
+              AND (CASE WHEN @taskId <> '' THEN id = @taskId ELSE ("createdAt" >= @from AND "createdAt" <= @to
+                AND (@projectId = '' OR "projectId" = @projectId)) END)
+            ORDER BY "createdAt" ASC
             LIMIT 100
             """,
             new { userId, from, to, taskId = taskId.Trim(), projectId = projectId.Trim() },
@@ -39,11 +39,11 @@ public sealed partial class Repository
         return await QueryAsync<TaskLog>(
             connection,
             """
-            SELECT * FROM task_logs
-            WHERE user_id = @userId
-              AND (CASE WHEN @taskId <> '' THEN task_id = @taskId ELSE (created_at >= @from AND created_at <= @to
-                AND (@projectId = '' OR task_id IN (SELECT id FROM tasks WHERE user_id = @userId AND project_id = @projectId))) END)
-            ORDER BY created_at ASC
+            SELECT * FROM "taskLogs"
+            WHERE "userId" = @userId
+              AND (CASE WHEN @taskId <> '' THEN "taskId" = @taskId ELSE ("createdAt" >= @from AND "createdAt" <= @to
+                AND (@projectId = '' OR "taskId" IN (SELECT id FROM tasks WHERE "userId" = @userId AND "projectId" = @projectId))) END)
+            ORDER BY "createdAt" ASC
             LIMIT 2000
             """,
             new { userId, from, to, taskId = taskId.Trim(), projectId = projectId.Trim() },
@@ -59,17 +59,17 @@ public sealed partial class Repository
         return await QueryAsync<ApiCallLog>(
             connection,
             """
-            SELECT id, user_id, trace_id, request_id, channel_id, task_id, billing_order_id,
-              source, capability, operation, request_kind, billable, api_format, method, path, status,
-              status_code, error, error_code, model, usage_available, input_tokens, output_tokens,
-              cached_tokens, media_count, video_seconds, estimated_cost_micros, cost_available, currency,
-              provider_request_id, provider_status, poll_count, concurrency_limit, upstream_url,
-              request_content_type, started_at, duration_ms, created_at
-            FROM api_call_logs
-            WHERE user_id = @userId
-              AND (CASE WHEN @taskId <> '' THEN task_id = @taskId ELSE (created_at >= @from AND created_at <= @to
-                AND (@projectId = '' OR task_id IN (SELECT id FROM tasks WHERE user_id = @userId AND project_id = @projectId))) END)
-            ORDER BY created_at ASC
+            SELECT id, "userId", "traceId", "requestId", "channelId", "taskId", "billingOrderId",
+              source, capability, operation, "requestKind", billable, "apiFormat", method, path, status,
+              "statusCode", error, "errorCode", model, "usageAvailable", "inputTokens", "outputTokens",
+              "cachedTokens", "mediaCount", "videoSeconds", "estimatedCostMicros", "costAvailable", currency,
+              "providerRequestId", "providerStatus", "pollCount", "concurrencyLimit", "upstreamUrl",
+              "requestContentType", "startedAt", "durationMs", "createdAt"
+            FROM "apiCallLogs"
+            WHERE "userId" = @userId
+              AND (CASE WHEN @taskId <> '' THEN "taskId" = @taskId ELSE ("createdAt" >= @from AND "createdAt" <= @to
+                AND (@projectId = '' OR "taskId" IN (SELECT id FROM tasks WHERE "userId" = @userId AND "projectId" = @projectId))) END)
+            ORDER BY "createdAt" ASC
             LIMIT 1000
             """,
             new { userId, from, to, taskId = taskId.Trim(), projectId = projectId.Trim() },

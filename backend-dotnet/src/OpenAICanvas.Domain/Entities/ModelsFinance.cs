@@ -12,40 +12,40 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>BillingOrder</c>，数据库表 <c>billing_orders</c>。
+/// 对应 Go <c>BillingOrder</c>，数据库表 <c>billingOrders</c>。
 /// 源文件：internal/model/models_finance.go
 /// </summary>
 public class BillingOrder
 {
-    /// <summary>数据库列 <c>cost_configured</c>（not null）</summary>
+    /// <summary>数据库列 <c>costConfigured</c>（not null）</summary>
     [JsonIgnore]
     public bool CostConfigured { get; set; }
 
-    /// <summary>数据库列 <c>cost_unit_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costUnitPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostUnitPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_input_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costInputTokenPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostInputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_output_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costOutputTokenPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostOutputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_cached_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costCachedTokenPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostCachedTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_billing_mode</c>（maxLength=32，not null）</summary>
+    /// <summary>数据库列 <c>costBillingMode</c>（maxLength=32，not null）</summary>
     [JsonIgnore]
     public string CostBillingMode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>cost_quantity</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costQuantity</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostQuantity { get; set; }
 
-    /// <summary>数据库列 <c>cost_video_formula_tokens</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costVideoFormulaTokens</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostVideoFormulaTokens { get; set; }
 
@@ -53,37 +53,37 @@ public class BillingOrder
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>idempotency_key</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>idempotencyKey</c>（maxLength=160）</summary>
     [JsonPropertyName("idempotencyKey")]
     public string IdempotencyKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     [GoOmitEmpty]
     public string TaskID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelModelId")]
     public string ChannelModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>price_tier_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>priceTierId</c>（maxLength=36）</summary>
     [JsonPropertyName("priceTierId")]
     [GoOmitEmpty]
     public string PriceTierID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>price_tier_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>priceTierVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("priceTierVersion")]
     public long PriceTierVersion { get; set; }
 
-    /// <summary>数据库列 <c>price_selector_json</c></summary>
+    /// <summary>数据库列 <c>priceSelectorJson</c></summary>
     [JsonIgnore]
     public string PriceSelectorJSON { get; set; } = string.Empty;
 
@@ -99,19 +99,19 @@ public class BillingOrder
     [JsonPropertyName("scene")]
     public string Scene { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>billing_mode</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>billingMode</c>（maxLength=32）</summary>
     [JsonPropertyName("billingMode")]
     public string BillingMode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>price_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>priceVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("priceVersion")]
     public long PriceVersion { get; set; }
 
-    /// <summary>数据库列 <c>unit_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>unitPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("unitPriceMicrocredits")]
     public long UnitPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>multiplier_basis_points</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>multiplierBasisPoints</c>（maxLength=64）</summary>
     [JsonPropertyName("multiplierBasisPoints")]
     public long MultiplierBasisPoints { get; set; }
 
@@ -119,66 +119,66 @@ public class BillingOrder
     [JsonPropertyName("quantity")]
     public long Quantity { get; set; }
 
-    /// <summary>数据库列 <c>amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("amountMicrocredits")]
     public long AmountMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>reserved_amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>reservedAmountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("reservedAmountMicrocredits")]
     public long ReservedAmountMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>charge_limit_set</c>（not null）</summary>
+    /// <summary>数据库列 <c>chargeLimitSet</c>（not null）</summary>
     [JsonPropertyName("chargeLimitSet")]
     [GoOmitEmpty]
     public bool ChargeLimitSet { get; set; }
 
-    /// <summary>数据库列 <c>charge_limit_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>chargeLimitMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("chargeLimitMicrocredits")]
     [GoOmitEmpty]
     public long ChargeLimitMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>actual_amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>actualAmountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("actualAmountMicrocredits")]
     public long ActualAmountMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>refunded_amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>refundedAmountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("refundedAmountMicrocredits")]
     public long RefundedAmountMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>input_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("inputTokenPriceMicrocredits")]
     public long InputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>output_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("outputTokenPriceMicrocredits")]
     public long OutputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cached_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedTokenPriceMicrocredits")]
     public long CachedTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>input_tokens</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputTokens</c>（maxLength=64）</summary>
     [JsonPropertyName("inputTokens")]
     public long InputTokens { get; set; }
 
-    /// <summary>数据库列 <c>output_tokens</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputTokens</c>（maxLength=64）</summary>
     [JsonPropertyName("outputTokens")]
     public long OutputTokens { get; set; }
 
-    /// <summary>数据库列 <c>cached_tokens</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedTokens</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedTokens")]
     public long CachedTokens { get; set; }
 
-    /// <summary>数据库列 <c>video_formula_tokens</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>videoFormulaTokens</c>（maxLength=64，not null）</summary>
     [JsonPropertyName("videoFormulaTokens")]
     public long VideoFormulaTokens { get; set; }
 
-    /// <summary>数据库列 <c>usage_source</c>（maxLength=32，not null）</summary>
+    /// <summary>数据库列 <c>usageSource</c>（maxLength=32，not null）</summary>
     [JsonPropertyName("usageSource")]
     [GoOmitEmpty]
     public string UsageSource { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>usage_available</c></summary>
+    /// <summary>数据库列 <c>usageAvailable</c></summary>
     [JsonPropertyName("usageAvailable")]
     public bool UsageAvailable { get; set; }
 
@@ -186,7 +186,7 @@ public class BillingOrder
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_request_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>providerRequestId</c>（maxLength=160）</summary>
     [JsonPropertyName("providerRequestId")]
     [GoOmitEmpty]
     public string ProviderRequestID { get; set; } = string.Empty;
@@ -196,52 +196,52 @@ public class BillingOrder
     [GoOmitEmpty]
     public string Error { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>resolved_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>resolvedBy</c>（maxLength=36）</summary>
     [JsonPropertyName("resolvedBy")]
     [GoOmitEmpty]
     public string ResolvedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>resolution_note</c>（maxLength=500）</summary>
+    /// <summary>数据库列 <c>resolutionNote</c>（maxLength=500）</summary>
     [JsonPropertyName("resolutionNote")]
     [GoOmitEmpty]
     public string ResolutionNote { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>started_at</c></summary>
+    /// <summary>数据库列 <c>startedAt</c></summary>
     [JsonPropertyName("startedAt")]
     public DateTime? StartedAt { get; set; }
 
-    /// <summary>数据库列 <c>settled_at</c></summary>
+    /// <summary>数据库列 <c>settledAt</c></summary>
     [JsonPropertyName("settledAt")]
     public DateTime? SettledAt { get; set; }
 
-    /// <summary>数据库列 <c>refunded_at</c></summary>
+    /// <summary>数据库列 <c>refundedAt</c></summary>
     [JsonPropertyName("refundedAt")]
     public DateTime? RefundedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>CreditAccount</c>，数据库表 <c>credit_accounts</c>。
+/// 对应 Go <c>CreditAccount</c>，数据库表 <c>creditAccounts</c>。
 /// 源文件：internal/model/models_finance.go
 /// </summary>
 public class CreditAccount
 {
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36，主键）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>available_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>availableMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("availableMicrocredits")]
     public long AvailableMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>reserved_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>reservedMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("reservedMicrocredits")]
     public long ReservedMicrocredits { get; set; }
 
@@ -249,17 +249,17 @@ public class CreditAccount
     [JsonPropertyName("version")]
     public long Version { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>CreditLedgerEntry</c>，数据库表 <c>credit_ledger_entries</c>。
+/// 对应 Go <c>CreditLedgerEntry</c>，数据库表 <c>creditLedgerEntries</c>。
 /// 源文件：internal/model/models_finance.go
 /// </summary>
 public class CreditLedgerEntry
@@ -268,7 +268,7 @@ public class CreditLedgerEntry
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
@@ -276,42 +276,42 @@ public class CreditLedgerEntry
     [JsonPropertyName("type")]
     public string Type { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("amountMicrocredits")]
     public long AmountMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>available_delta_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>availableDeltaMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("availableDeltaMicrocredits")]
     public long AvailableDeltaMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>reserved_delta_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>reservedDeltaMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("reservedDeltaMicrocredits")]
     public long ReservedDeltaMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>available_after_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>availableAfterMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("availableAfterMicrocredits")]
     public long AvailableAfterMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>reserved_after_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>reservedAfterMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("reservedAfterMicrocredits")]
     public long ReservedAfterMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>billing_order_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>billingOrderId</c>（maxLength=36）</summary>
     [JsonPropertyName("billingOrderId")]
     [GoOmitEmpty]
     public string BillingOrderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>payment_order_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>paymentOrderId</c>（maxLength=36）</summary>
     [JsonPropertyName("paymentOrderId")]
     [GoOmitEmpty]
     public string PaymentOrderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>redeem_code_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>redeemCodeId</c>（maxLength=36）</summary>
     [JsonPropertyName("redeemCodeId")]
     [GoOmitEmpty]
     public string RedeemCodeID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>actor_user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>actorUserId</c>（maxLength=36）</summary>
     [JsonPropertyName("actorUserId")]
     [GoOmitEmpty]
     public string ActorUserID { get; set; } = string.Empty;
@@ -321,7 +321,7 @@ public class CreditLedgerEntry
     [GoOmitEmpty]
     public string Model { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     [GoOmitEmpty]
     public string ChannelID { get; set; } = string.Empty;
@@ -336,18 +336,18 @@ public class CreditLedgerEntry
     [GoOmitEmpty]
     public string Note { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>reference_key</c>（maxLength=180）</summary>
+    /// <summary>数据库列 <c>referenceKey</c>（maxLength=180）</summary>
     [JsonPropertyName("referenceKey")]
     [GoOmitEmpty]
     public string? ReferenceKey { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>ModelPricing</c>，数据库表 <c>model_pricings</c>。
+/// 对应 Go <c>ModelPricing</c>，数据库表 <c>modelPricings</c>。
 /// 源文件：internal/model/models_finance.go
 /// </summary>
 public class ModelPricing
@@ -356,7 +356,7 @@ public class ModelPricing
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
@@ -372,41 +372,41 @@ public class ModelPricing
     [JsonPropertyName("currency")]
     public string Currency { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>input_per_million_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputPerMillionMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("inputPerMillionMicros")]
     public long InputPerMillionMicros { get; set; }
 
-    /// <summary>数据库列 <c>output_per_million_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputPerMillionMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("outputPerMillionMicros")]
     public long OutputPerMillionMicros { get; set; }
 
-    /// <summary>数据库列 <c>cached_per_million_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedPerMillionMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedPerMillionMicros")]
     public long CachedPerMillionMicros { get; set; }
 
-    /// <summary>数据库列 <c>per_request_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>perRequestMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("perRequestMicros")]
     public long PerRequestMicros { get; set; }
 
-    /// <summary>数据库列 <c>per_media_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>perMediaMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("perMediaMicros")]
     public long PerMediaMicros { get; set; }
 
-    /// <summary>数据库列 <c>per_video_second_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>perVideoSecondMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("perVideoSecondMicros")]
     public long PerVideoSecondMicros { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>RedeemBatch</c>，数据库表 <c>redeem_batches</c>。
+/// 对应 Go <c>RedeemBatch</c>，数据库表 <c>redeemBatches</c>。
 /// 源文件：internal/model/models_finance.go
 /// </summary>
 public class RedeemBatch
@@ -415,7 +415,7 @@ public class RedeemBatch
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("amountMicrocredits")]
     public long AmountMicrocredits { get; set; }
 
@@ -427,19 +427,19 @@ public class RedeemBatch
     [JsonPropertyName("note")]
     public string Note { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>createdBy</c>（maxLength=36）</summary>
     [JsonPropertyName("createdBy")]
     public string CreatedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>codes_cipher</c></summary>
+    /// <summary>数据库列 <c>codesCipher</c></summary>
     [JsonIgnore]
     public string CodesCipher { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime? ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
@@ -461,7 +461,7 @@ public class RedeemBatch
 }
 
 /// <summary>
-/// 对应 Go <c>RedeemCode</c>，数据库表 <c>redeem_codes</c>。
+/// 对应 Go <c>RedeemCode</c>，数据库表 <c>redeemCodes</c>。
 /// 源文件：internal/model/models_finance.go
 /// </summary>
 public class RedeemCode
@@ -470,19 +470,19 @@ public class RedeemCode
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>batch_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>batchId</c>（maxLength=36）</summary>
     [JsonPropertyName("batchId")]
     public string BatchID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>code_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>codeHash</c>（maxLength=64）</summary>
     [JsonIgnore]
     public string CodeHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>code_suffix</c>（maxLength=4）</summary>
+    /// <summary>数据库列 <c>codeSuffix</c>（maxLength=4）</summary>
     [JsonPropertyName("codeSuffix")]
     public string CodeSuffix { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>amount_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("amountMicrocredits")]
     public long AmountMicrocredits { get; set; }
 
@@ -490,29 +490,29 @@ public class RedeemCode
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>redeemed_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>redeemedBy</c>（maxLength=36）</summary>
     [JsonPropertyName("redeemedBy")]
     [GoOmitEmpty]
     public string RedeemedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>redeemed_at</c></summary>
+    /// <summary>数据库列 <c>redeemedAt</c></summary>
     [JsonPropertyName("redeemedAt")]
     public DateTime? RedeemedAt { get; set; }
 
-    /// <summary>数据库列 <c>redeemed_ip</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>redeemedIp</c>（maxLength=64）</summary>
     [JsonPropertyName("redeemedIp")]
     [GoOmitEmpty]
     public string RedeemedIP { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime? ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

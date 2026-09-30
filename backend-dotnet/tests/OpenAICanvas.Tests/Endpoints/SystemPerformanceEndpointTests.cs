@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using OpenAICanvas.Persistence;
 using Xunit;
 
 namespace OpenAICanvas.Tests.Endpoints;
@@ -106,8 +107,12 @@ public sealed class SystemPerformanceEndpointTests : IDisposable
         Assert.True(data.GetProperty("disk").GetProperty("available").GetBoolean());
         Assert.Equal("sqlite", data.GetProperty("database").GetProperty("driver").GetString());
         Assert.True(data.GetProperty("database").GetProperty("connected").GetBoolean());
-        Assert.Equal(34, data.GetProperty("database").GetProperty("schema").GetProperty("expected").GetInt64());
-        Assert.Equal(34, data.GetProperty("database").GetProperty("schema").GetProperty("current").GetInt64());
+        Assert.Equal(
+            SchemaMigrationCatalog.CurrentSchemaVersion,
+            data.GetProperty("database").GetProperty("schema").GetProperty("expected").GetInt64());
+        Assert.Equal(
+            SchemaMigrationCatalog.CurrentSchemaVersion,
+            data.GetProperty("database").GetProperty("schema").GetProperty("current").GetInt64());
         JsonElement databasePool = data.GetProperty("database").GetProperty("pool");
         Assert.Equal(0, databasePool.GetProperty("maxOpenConnections").GetInt64());
         Assert.Equal(0, databasePool.GetProperty("openConnections").GetInt64());

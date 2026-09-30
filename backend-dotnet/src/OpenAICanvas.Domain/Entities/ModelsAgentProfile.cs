@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>AgentProfile</c>，数据库表 <c>agent_profiles</c>。
+/// 对应 Go <c>AgentProfile</c>，数据库表 <c>agentProfiles</c>。
 /// 源文件：internal/model/models_agent_profile.go
 /// </summary>
 public class AgentProfile
@@ -21,7 +21,7 @@ public class AgentProfile
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
@@ -29,12 +29,12 @@ public class AgentProfile
     [JsonPropertyName("scope")]
     public string Scope { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>project_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>projectId</c>（maxLength=36）</summary>
     [JsonPropertyName("projectId")]
     [GoOmitEmpty]
     public string ProjectID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>canvas_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>canvasId</c>（maxLength=80）</summary>
     [JsonPropertyName("canvasId")]
     [GoOmitEmpty]
     public string CanvasID { get; set; } = string.Empty;
@@ -51,11 +51,11 @@ public class AgentProfile
     [JsonPropertyName("hash")]
     public string Hash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

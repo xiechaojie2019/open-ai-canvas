@@ -32,12 +32,12 @@ public sealed partial class Repository
         // 未知事件直接返回，不落库（与 Go 的 default 分支一致）。
         (string column, bool isCounter) = @event switch
         {
-            "login" => ("login_count", true),
-            "task" => ("task_count", true),
-            "agent_message" => ("agent_message_count", true),
-            "canvas" => ("canvas_active", false),
-            "asset" => ("asset_count", true),
-            "resource" => ("resource_count", true),
+            "login" => ("loginCount", true),
+            "task" => ("taskCount", true),
+            "agent_message" => ("agentMessageCount", true),
+            "canvas" => ("canvasActive", false),
+            "asset" => ("assetCount", true),
+            "resource" => ("resourceCount", true),
             _ => ("", false),
         };
 
@@ -58,7 +58,7 @@ public sealed partial class Repository
         // DO UPDATE 右侧列引用必须带表名：目标行与 excluded 行都含同名列，
         // 裸列名在 PostgreSQL 下报 column reference is ambiguous（生产实测）。
         // 与 Go 的 gorm.Expr("user_daily_activities.login_count + ?", count) 一致。
-        string qualifiedColumn = "user_daily_activities." + Quote(column);
+        string qualifiedColumn = "\"userDailyActivities\"." + Quote(column);
         string setClause = isCounter
             ? $"{Quote(column)} = {qualifiedColumn} + @count"
             : $"{Quote(column)} = @activeValue";
@@ -66,20 +66,20 @@ public sealed partial class Repository
         // login 不计入活跃窗口（Go 只在非 login 事件里写 first/last_active_at）。
         if (@event != "login")
         {
-            setClause += $",\n                \"first_active_at\" = COALESCE(\"user_daily_activities\".\"first_active_at\", @now),\n                \"last_active_at\" = @now";
+            setClause += $",\n                \"firstActiveAt\" = COALESCE(\"userDailyActivities\".\"firstActiveAt\", @now),\n                \"lastActiveAt\" = @now";
         }
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await connection.ExecuteAsync(new CommandDefinition(
             $"""
-            INSERT INTO "user_daily_activities"
-                ("id", "day", "user_id", "login_count", "task_count", "agent_message_count",
-                 "canvas_active", "asset_count", "resource_count", "created_at", "updated_at")
+            INSERT INTO "userDailyActivities"
+                ("id", "day", "userId", "loginCount", "taskCount", "agentMessageCount",
+                 "canvasActive", "assetCount", "resourceCount", "createdAt", "updatedAt")
             VALUES
                 (@ID, @Day, @UserID, @initialLogin, 0, 0, @initialBoolean, 0, 0, @CreatedAt, @UpdatedAt)
-            ON CONFLICT ("day", "user_id") DO UPDATE SET
+            ON CONFLICT ("day", "userId") DO UPDATE SET
                 {setClause},
-                "updated_at" = @now
+                "updatedAt" = @now
             """,
             new
             {
@@ -99,5 +99,5 @@ public sealed partial class Repository
             cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
-    private static bool IsColumnBoolean(string column) => column == "canvas_active";
+    private static bool IsColumnBoolean(string column) => column == "canvasActive";
 }

@@ -18,7 +18,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -36,7 +36,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id IN @userIds"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" IN @userIds"),
             new { userIds },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -63,18 +63,18 @@ public sealed partial class Repository
         long offset,
         CancellationToken cancellationToken = default)
     {
-        string condition = "target_type = @targetType AND target_id = @targetId";
+        string condition = "\"targetType\" = @targetType AND \"targetId\" = @targetId";
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
         long total = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"admin_audit_events\" WHERE " + condition,
+            "SELECT COUNT(*) FROM \"adminAuditEvents\" WHERE " + condition,
             new { targetType, targetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<AdminAuditEvent> events = await QueryAsync<AdminAuditEvent>(
             connection,
-            SqlBuilder.Select<AdminAuditEvent>(condition, "created_at DESC", Dialect.LimitOffset(limit, offset)),
+            SqlBuilder.Select<AdminAuditEvent>(condition, "\"createdAt\" DESC", Dialect.LimitOffset(limit, offset)),
             new { targetType, targetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -139,15 +139,15 @@ public sealed partial class Repository
                 return (BulkDisableOutcome.RemovesLastActiveAdmin, (IReadOnlyList<User>)Array.Empty<User>());
             }
 
-            await ExecuteAsync(connection, "DELETE FROM \"auth_sessions\" WHERE user_id IN @userIds",
+            await ExecuteAsync(connection, "DELETE FROM \"authSessions\" WHERE \"userId\" IN @userIds",
                 new { userIds }, transaction, cancellationToken).ConfigureAwait(false);
 
-            await ExecuteAsync(connection, "DELETE FROM \"task_text_delta\" WHERE user_id IN @userIds",
+            await ExecuteAsync(connection, "DELETE FROM \"taskTextDelta\" WHERE \"userId\" IN @userIds",
                 new { userIds }, transaction, cancellationToken).ConfigureAwait(false);
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"users\" SET status = @status, updated_at = @now WHERE id IN @userIds",
+                "UPDATE \"users\" SET status = @status, \"updatedAt\" = @now WHERE id IN @userIds",
                 new { status = "disabled", now, userIds },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -176,7 +176,7 @@ public sealed partial class Repository
     public async Task DeleteUserTaskTextDeltasAsync(string userId, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DELETE FROM \"task_text_delta\" WHERE user_id = @userId",
+        await ExecuteAsync(connection, "DELETE FROM \"taskTextDelta\" WHERE \"userId\" = @userId",
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -186,19 +186,19 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
         long ledger = await ScalarAsync<long>(connection,
-            "SELECT COUNT(*) FROM \"credit_ledger_entries\" WHERE user_id = @userId",
+            "SELECT COUNT(*) FROM \"creditLedgerEntries\" WHERE \"userId\" = @userId",
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         long tasks = await ScalarAsync<long>(connection,
-            "SELECT COUNT(*) FROM \"tasks\" WHERE user_id = @userId",
+            "SELECT COUNT(*) FROM \"tasks\" WHERE \"userId\" = @userId",
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         long apiCalls = await ScalarAsync<long>(connection,
-            "SELECT COUNT(*) FROM \"api_call_logs\" WHERE user_id = @userId",
+            "SELECT COUNT(*) FROM \"apiCallLogs\" WHERE \"userId\" = @userId",
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         long audit = await ScalarAsync<long>(connection,
-            "SELECT COUNT(*) FROM \"admin_audit_events\" WHERE target_type = 'user' AND target_id = @userId",
+            "SELECT COUNT(*) FROM \"adminAuditEvents\" WHERE \"targetType\" = 'user' AND \"targetId\" = @userId",
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return new AdminUserCounts
@@ -225,19 +225,19 @@ public sealed partial class Repository
 
         string query = $"""
             SELECT
-                (SELECT COUNT(*) FROM assets WHERE user_id = @userId) AS asset_count,
-                (SELECT COALESCE(SUM({string.Format(lengthExpr, "payload_json")}), 0) FROM assets WHERE user_id = @userId) AS asset_bytes,
-                (SELECT COUNT(*) FROM canvas_projects WHERE user_id = @userId) AS canvas_count,
-                (SELECT COALESCE(SUM({string.Format(lengthExpr, "payload_json")}), 0) FROM canvas_projects WHERE user_id = @userId) AS canvas_bytes,
-                (SELECT COUNT(*) FROM tasks WHERE user_id = @userId) AS task_count,
+                (SELECT COUNT(*) FROM assets WHERE "userId" = @userId) AS "assetCount",
+                (SELECT COALESCE(SUM({string.Format(lengthExpr, "payloadJson")}), 0) FROM assets WHERE "userId" = @userId) AS asset_bytes,
+                (SELECT COUNT(*) FROM "canvasProjects" WHERE "userId" = @userId) AS canvas_count,
+                (SELECT COALESCE(SUM({string.Format(lengthExpr, "payloadJson")}), 0) FROM "canvasProjects" WHERE "userId" = @userId) AS canvas_bytes,
+                (SELECT COUNT(*) FROM tasks WHERE "userId" = @userId) AS "taskCount",
                 (
-                    (SELECT COALESCE(SUM({string.Format(lengthExpr, "prompt")} + {string.Format(lengthExpr, "input_json")} + {string.Format(lengthExpr, "result_json")} + {string.Format(lengthExpr, "text_draft")} + {string.Format(lengthExpr, "error")}), 0) FROM tasks WHERE user_id = @userId)
-                    + (SELECT COALESCE(SUM({string.Format(lengthExpr, "message")} + {string.Format(lengthExpr, "payload")}), 0) FROM task_logs WHERE user_id = @userId)
-                    + (SELECT COALESCE(SUM({string.Format(lengthExpr, "url")} + {string.Format(lengthExpr, "payload")}), 0) FROM results WHERE user_id = @userId)
-                    + (SELECT COALESCE(SUM(byte_count), 0) FROM task_text_delta WHERE user_id = @userId)
-                    + (SELECT COALESCE(SUM({string.Format(lengthExpr, "path")} + {string.Format(lengthExpr, "model")} + {string.Format(lengthExpr, "provider_request_id")} + {string.Format(lengthExpr, "error_code")} + {string.Format(lengthExpr, "error")} + {string.Format(lengthExpr, "upstream_url")} + {string.Format(lengthExpr, "request_body")} + {string.Format(lengthExpr, "response_body")}), 0) FROM api_call_logs WHERE user_id = @userId)
+                    (SELECT COALESCE(SUM({string.Format(lengthExpr, "prompt")} + {string.Format(lengthExpr, "inputJson")} + {string.Format(lengthExpr, "resultJson")} + {string.Format(lengthExpr, "textDraft")} + {string.Format(lengthExpr, "error")}), 0) FROM tasks WHERE "userId" = @userId)
+                    + (SELECT COALESCE(SUM({string.Format(lengthExpr, "message")} + {string.Format(lengthExpr, "payload")}), 0) FROM "taskLogs" WHERE "userId" = @userId)
+                    + (SELECT COALESCE(SUM({string.Format(lengthExpr, "url")} + {string.Format(lengthExpr, "payload")}), 0) FROM results WHERE "userId" = @userId)
+                    + (SELECT COALESCE(SUM("byteCount"), 0) FROM "taskTextDelta" WHERE "userId" = @userId)
+                    + (SELECT COALESCE(SUM({string.Format(lengthExpr, "path")} + {string.Format(lengthExpr, "model")} + {string.Format(lengthExpr, "providerRequestId")} + {string.Format(lengthExpr, "errorCode")} + {string.Format(lengthExpr, "error")} + {string.Format(lengthExpr, "upstreamUrl")} + {string.Format(lengthExpr, "requestBody")} + {string.Format(lengthExpr, "responseBody")}), 0) FROM "apiCallLogs" WHERE "userId" = @userId)
                 ) AS task_bytes,
-                (SELECT COUNT(*) FROM api_call_logs WHERE user_id = @userId) AS api_call_count
+                (SELECT COUNT(*) FROM "apiCallLogs" WHERE "userId" = @userId) AS api_call_count
             """;
 
         return await connection.QueryFirstOrDefaultAsync<UserStorageUsage>(
@@ -256,8 +256,8 @@ public sealed partial class Repository
                 FROM (
                     SELECT MAX(size) AS size
                     FROM resources
-                    WHERE user_id = @userId AND status = @status
-                    GROUP BY COALESCE(NULLIF(provider, ''), 'local'), endpoint, bucket, object_key
+                    WHERE "userId" = @userId AND status = @status
+                    GROUP BY COALESCE(NULLIF(provider, ''), 'local'), endpoint, bucket, "objectKey"
                 ) AS physical_resources
             ), 0)
             """;
@@ -273,8 +273,8 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
         const string query = """
-            SELECT COALESCE(bytes, 0) FROM user_daily_upload_usages
-            WHERE user_id = @userId AND day = @day
+            SELECT COALESCE(bytes, 0) FROM "userDailyUploadUsages"
+            WHERE "userId" = @userId AND day = @day
             LIMIT 1
             """;
 

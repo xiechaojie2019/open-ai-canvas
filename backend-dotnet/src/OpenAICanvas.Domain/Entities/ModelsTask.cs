@@ -21,11 +21,11 @@ public class Result
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     public string TaskID { get; set; } = string.Empty;
 
@@ -41,13 +41,13 @@ public class Result
     [JsonPropertyName("payload")]
     public string Payload { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>TaskLog</c>，数据库表 <c>task_logs</c>。
+/// 对应 Go <c>TaskLog</c>，数据库表 <c>taskLogs</c>。
 /// 源文件：internal/model/models_task.go
 /// </summary>
 public class TaskLog
@@ -56,19 +56,19 @@ public class TaskLog
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     public string TaskID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>trace_id</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>traceId</c>（maxLength=96）</summary>
     [JsonIgnore]
     public string TraceID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_id</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>requestId</c>（maxLength=96）</summary>
     [JsonIgnore]
     public string RequestID { get; set; } = string.Empty;
 
@@ -84,13 +84,13 @@ public class TaskLog
     [JsonPropertyName("payload")]
     public string Payload { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>TaskTextDelta</c>，数据库表 <c>task_text_delta</c>。
+/// 对应 Go <c>TaskTextDelta</c>，数据库表 <c>taskTextDelta</c>。
 /// 源文件：internal/model/models_task.go
 /// </summary>
 public class TaskTextDelta
@@ -99,11 +99,11 @@ public class TaskTextDelta
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     public string TaskID { get; set; } = string.Empty;
 
@@ -115,15 +115,15 @@ public class TaskTextDelta
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>byte_count</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>byteCount</c>（maxLength=64）</summary>
     [JsonPropertyName("byteCount")]
     public long ByteCount { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime ExpiresAt { get; set; }
 }
@@ -134,46 +134,46 @@ public class TaskTextDelta
 /// </summary>
 public class Task
 {
-    /// <summary>数据库列 <c>agent_run_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>agentRunId</c>（maxLength=36）</summary>
     [JsonPropertyName("agentRunId")]
     [GoOmitEmpty]
     public string AgentRunID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>generation_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>generationId</c>（maxLength=36）</summary>
     [JsonPropertyName("generationId")]
     [GoOmitEmpty]
     public string GenerationID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>approval_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>approvalId</c>（maxLength=160）</summary>
     [JsonPropertyName("approvalId")]
     [GoOmitEmpty]
     public string ApprovalID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>authorized_charge_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>authorizedChargeMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("authorizedChargeMicrocredits")]
     [GoOmitEmpty]
     public long AuthorizedChargeMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>execution_diagnostic_json</c></summary>
+    /// <summary>数据库列 <c>executionDiagnosticJson</c></summary>
     [JsonIgnore]
     public string ExecutionDiagnosticJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>cancellation_source</c>（maxLength=40）</summary>
+    /// <summary>数据库列 <c>cancellationSource</c>（maxLength=40）</summary>
     [JsonPropertyName("cancellationSource")]
     [GoOmitEmpty]
     public string CancellationSource { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>cancellation_actor_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>cancellationActorId</c>（maxLength=36）</summary>
     [JsonPropertyName("cancellationActorId")]
     [GoOmitEmpty]
     public string CancellationActorID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>cancellation_requested_at</c></summary>
+    /// <summary>数据库列 <c>cancellationRequestedAt</c></summary>
     [JsonPropertyName("cancellationRequestedAt")]
     [GoOmitEmpty]
     public DateTime? CancellationRequestedAt { get; set; }
 
-    /// <summary>数据库列 <c>creation_submission_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>creationSubmissionId</c>（maxLength=36）</summary>
     [JsonPropertyName("creationSubmissionId")]
     [GoOmitEmpty]
     public string? CreationSubmissionID { get; set; }
@@ -182,19 +182,19 @@ public class Task
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>trace_id</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>traceId</c>（maxLength=96）</summary>
     [JsonIgnore]
     public string TraceID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_id</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>requestId</c>（maxLength=96）</summary>
     [JsonIgnore]
     public string RequestID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>project_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>projectId</c>（maxLength=80）</summary>
     [JsonPropertyName("projectId")]
     public string ProjectID { get; set; } = string.Empty;
 
@@ -230,106 +230,106 @@ public class Task
     [JsonPropertyName("model")]
     public string Model { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>logical_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelId")]
     [GoOmitEmpty]
     public string LogicalModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>logical_model_revision_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelRevisionId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelRevisionId")]
     [GoOmitEmpty]
     public string LogicalModelRevisionID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>route_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>routeId</c>（maxLength=36）</summary>
     [JsonPropertyName("routeId")]
     [GoOmitEmpty]
     public string RouteID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelModelId")]
     [GoOmitEmpty]
     public string ChannelModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>route_run</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>routeRun</c>（maxLength=64）</summary>
     [JsonIgnore]
     public long RouteRun { get; set; }
 
-    /// <summary>数据库列 <c>billing_order_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>billingOrderId</c>（maxLength=36）</summary>
     [JsonPropertyName("billingOrderId")]
     [GoOmitEmpty]
     public string BillingOrderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_request_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>providerRequestId</c>（maxLength=160）</summary>
     [JsonPropertyName("providerRequestId")]
     [GoOmitEmpty]
     public string ProviderRequestID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_cancel_status</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>providerCancelStatus</c>（maxLength=24）</summary>
     [JsonPropertyName("providerCancelStatus")]
     [GoOmitEmpty]
     public string ProviderCancelStatus { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_cancel_error</c></summary>
+    /// <summary>数据库列 <c>providerCancelError</c></summary>
     [JsonPropertyName("providerCancelError")]
     [GoOmitEmpty]
     public string ProviderCancelError { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_cancel_attempts</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>providerCancelAttempts</c>（maxLength=64）</summary>
     [JsonPropertyName("providerCancelAttempts")]
     [GoOmitEmpty]
     public long ProviderCancelAttempts { get; set; }
 
-    /// <summary>数据库列 <c>provider_cancel_requested_at</c></summary>
+    /// <summary>数据库列 <c>providerCancelRequestedAt</c></summary>
     [JsonPropertyName("providerCancelRequestedAt")]
     [GoOmitEmpty]
     public DateTime? ProviderCancelRequestedAt { get; set; }
 
-    /// <summary>数据库列 <c>provider_cancelled_at</c></summary>
+    /// <summary>数据库列 <c>providerCancelledAt</c></summary>
     [JsonPropertyName("providerCancelledAt")]
     [GoOmitEmpty]
     public DateTime? ProviderCancelledAt { get; set; }
 
-    /// <summary>数据库列 <c>provider_cancel_next_check_at</c></summary>
+    /// <summary>数据库列 <c>providerCancelNextCheckAt</c></summary>
     [JsonPropertyName("providerCancelNextCheckAt")]
     [GoOmitEmpty]
     public DateTime? ProviderCancelNextCheckAt { get; set; }
 
-    /// <summary>数据库列 <c>poll_stage</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>pollStage</c>（maxLength=32）</summary>
     [JsonPropertyName("pollStage")]
     [GoOmitEmpty]
     public string PollStage { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>next_poll_at</c></summary>
+    /// <summary>数据库列 <c>nextPollAt</c></summary>
     [JsonPropertyName("nextPollAt")]
     [GoOmitEmpty]
     public DateTime? NextPollAt { get; set; }
 
-    /// <summary>数据库列 <c>lease_owner</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>leaseOwner</c>（maxLength=120）</summary>
     [JsonIgnore]
     public string LeaseOwner { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>lease_expires_at</c></summary>
+    /// <summary>数据库列 <c>leaseExpiresAt</c></summary>
     [JsonIgnore]
     public DateTime? LeaseExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>input_json</c></summary>
+    /// <summary>数据库列 <c>inputJson</c></summary>
     [JsonPropertyName("inputJson")]
     public string InputJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>result_json</c></summary>
+    /// <summary>数据库列 <c>resultJson</c></summary>
     [JsonPropertyName("resultJson")]
     public string ResultJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>media_recovery_json</c></summary>
+    /// <summary>数据库列 <c>mediaRecoveryJson</c></summary>
     [JsonIgnore]
     public string MediaRecoveryJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>media_stage</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>mediaStage</c>（maxLength=24）</summary>
     [JsonPropertyName("mediaStage")]
     [GoOmitEmpty]
     public string MediaStage { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>text_draft</c></summary>
+    /// <summary>数据库列 <c>textDraft</c></summary>
     [JsonPropertyName("textDraft")]
     [GoOmitEmpty]
     public string TextDraft { get; set; } = string.Empty;
@@ -342,19 +342,19 @@ public class Task
     [JsonPropertyName("attempts")]
     public long Attempts { get; set; }
 
-    /// <summary>数据库列 <c>started_at</c></summary>
+    /// <summary>数据库列 <c>startedAt</c></summary>
     [JsonPropertyName("startedAt")]
     public DateTime? StartedAt { get; set; }
 
-    /// <summary>数据库列 <c>completed_at</c></summary>
+    /// <summary>数据库列 <c>completedAt</c></summary>
     [JsonPropertyName("completedAt")]
     public DateTime? CompletedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 

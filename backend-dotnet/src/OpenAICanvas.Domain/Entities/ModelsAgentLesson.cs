@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>AgentLesson</c>，数据库表 <c>agent_lessons</c>。
+/// 对应 Go <c>AgentLesson</c>，数据库表 <c>agentLessons</c>。
 /// 源文件：internal/model/models_agent_lesson.go
 /// </summary>
 public class AgentLesson
@@ -41,7 +41,7 @@ public class AgentLesson
     [JsonPropertyName("source")]
     public string Source { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>steps_json</c></summary>
+    /// <summary>数据库列 <c>stepsJson</c></summary>
     [JsonIgnore]
     public string StepsJSON { get; set; } = string.Empty;
 
@@ -49,7 +49,7 @@ public class AgentLesson
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>author_user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>authorUserId</c>（maxLength=36）</summary>
     [JsonIgnore]
     public string AuthorUserID { get; set; } = string.Empty;
 
@@ -61,16 +61,16 @@ public class AgentLesson
     [JsonPropertyName("injected")]
     public long Injected { get; set; }
 
-    /// <summary>数据库列 <c>last_verified_at</c></summary>
+    /// <summary>数据库列 <c>lastVerifiedAt</c></summary>
     [JsonPropertyName("lastVerifiedAt")]
     [GoOmitEmpty]
     public DateTime? LastVerifiedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

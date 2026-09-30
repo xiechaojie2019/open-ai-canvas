@@ -22,15 +22,15 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM creation_runs WHERE user_id = @userId",
+            "SELECT COUNT(*) FROM \"creationRuns\" WHERE \"userId\" = @userId",
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         long bytes = await ScalarAsync<long>(
             connection,
             """
             SELECT
-              (SELECT COALESCE(SUM(length(COALESCE(state_json, '')) + length(COALESCE(approved_operations_json, '')) + length(COALESCE(approved_canvas_json, ''))), 0) FROM creation_runs WHERE user_id = @userId)
-              + (SELECT COALESCE(SUM(length(COALESCE(request_json, '')) + length(COALESCE(quote_json, '')) + length(COALESCE(price_signature, ''))), 0) FROM creation_submissions WHERE user_id = @userId)
+              (SELECT COALESCE(SUM(length(COALESCE("stateJson", '')) + length(COALESCE("approvedOperationsJson", '')) + length(COALESCE("approvedCanvasJson", ''))), 0) FROM "creationRuns" WHERE "userId" = @userId)
+              + (SELECT COALESCE(SUM(length(COALESCE("requestJson", '')) + length(COALESCE("quoteJson", '')) + length(COALESCE("priceSignature", ''))), 0) FROM "creationSubmissions" WHERE "userId" = @userId)
             """,
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -44,7 +44,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<CreationRun>(
             connection,
-            SqlBuilder.Select<CreationRun>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreationRun>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -57,7 +57,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CreationRun>(
             connection,
             SqlBuilder.Select<CreationRun>(
-                "user_id = @userId AND client_key = @clientKey", limitOffset: " LIMIT 1"),
+                "\"userId\" = @userId AND \"clientKey\" = @clientKey", limitOffset: " LIMIT 1"),
             new { userId, clientKey },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -69,7 +69,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<CreationRun>(
             connection,
-            SqlBuilder.Select<CreationRun>("user_id = @userId", "updated_at DESC") + " LIMIT 100",
+            SqlBuilder.Select<CreationRun>("\"userId\" = @userId", "\"updatedAt\" DESC") + " LIMIT 100",
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -122,7 +122,7 @@ public sealed partial class Repository
 
         int touched = await ExecuteAsync(
             connection,
-            "UPDATE creation_runs SET revision = revision WHERE id = @id AND user_id = @userId",
+            "UPDATE \"creationRuns\" SET revision = revision WHERE id = @id AND \"userId\" = @userId",
             new { id, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -134,7 +134,7 @@ public sealed partial class Repository
 
         CreationRun? run = await FirstOrDefaultAsync<CreationRun>(
             connection,
-            SqlBuilder.Select<CreationRun>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreationRun>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -150,17 +150,17 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE creation_runs SET
-              state_json = @StateJSON, status = @Status, revision = @Revision,
-              canvas_id = @CanvasID,
-              execution_epoch = @ExecutionEpoch, execution_owner = @ExecutionOwner,
-              lease_expires_at = @LeaseExpiresAt,
-              approved_proposal_version = @ApprovedProposalVersion,
-              approved_proposal_hash = @ApprovedProposalHash,
-              approved_operations_json = @ApprovedOperationsJSON,
-              approved_canvas_json = @ApprovedCanvasJSON,
-              approved_at = @ApprovedAt, updated_at = @UpdatedAt
-            WHERE id = @ID AND user_id = @UserID
+            UPDATE "creationRuns" SET
+              "stateJson" = @StateJSON, status = @Status, revision = @Revision,
+              "canvasId" = @CanvasID,
+              "executionEpoch" = @ExecutionEpoch, "executionOwner" = @ExecutionOwner,
+              "leaseExpiresAt" = @LeaseExpiresAt,
+              "approvedProposalVersion" = @ApprovedProposalVersion,
+              "approvedProposalHash" = @ApprovedProposalHash,
+              "approvedOperationsJson" = @ApprovedOperationsJSON,
+              "approvedCanvasJson" = @ApprovedCanvasJSON,
+              "approvedAt" = @ApprovedAt, "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "userId" = @UserID
             """,
             run,
             transaction,
@@ -178,7 +178,7 @@ public sealed partial class Repository
         return await QueryAsync<CreationSubmission>(
             connection,
             SqlBuilder.Select<CreationSubmission>(
-                "user_id = @userId AND run_id = @runId", "created_at ASC"),
+                "\"userId\" = @userId AND \"runId\" = @runId", "\"createdAt\" ASC"),
             new { userId, runId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -191,7 +191,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CreationSubmission>(
             connection,
             SqlBuilder.Select<CreationSubmission>(
-                "id = @id AND user_id = @userId AND run_id = @runId", limitOffset: " LIMIT 1"),
+                "id = @id AND \"userId\" = @userId AND \"runId\" = @runId", limitOffset: " LIMIT 1"),
             new { id, userId, runId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -205,12 +205,12 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE creation_submissions SET
-              proposal_version = @ProposalVersion, proposal_hash = @ProposalHash,
-              request_json = @RequestJSON, request_hash = @RequestHash,
-              quote_json = @QuoteJSON, price_signature = @PriceSignature,
-              expires_at = @ExpiresAt, approved_at = @ApprovedAt, revoked_at = @RevokedAt,
-              task_id = @TaskID, updated_at = @UpdatedAt
+            UPDATE "creationSubmissions" SET
+              "proposalVersion" = @ProposalVersion, "proposalHash" = @ProposalHash,
+              "requestJson" = @RequestJSON, "requestHash" = @RequestHash,
+              "quoteJson" = @QuoteJSON, "priceSignature" = @PriceSignature,
+              "expiresAt" = @ExpiresAt, "approvedAt" = @ApprovedAt, "revokedAt" = @RevokedAt,
+              "taskId" = @TaskID, "updatedAt" = @UpdatedAt
             WHERE id = @ID
             """,
             item,
@@ -233,8 +233,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE creation_submissions SET revoked_at = @now
-            WHERE run_id = @runId AND task_id IS NULL AND revoked_at IS NULL
+            UPDATE "creationSubmissions" SET "revokedAt" = @now
+            WHERE "runId" = @runId AND "taskId" IS NULL AND "revokedAt" IS NULL
             """,
             new { runId, now = DateTime.UtcNow },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -249,7 +249,7 @@ public sealed partial class Repository
         var item = await FirstOrDefaultAsync<CreationSubmission>(
             conn,
             SqlBuilder.Select<CreationSubmission>(
-                "id = @id AND user_id = @userId AND run_id = @runId", limitOffset: " LIMIT 1"),
+                "id = @id AND \"userId\" = @userId AND \"runId\" = @runId", limitOffset: " LIMIT 1"),
             new { id, userId, runId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -263,7 +263,7 @@ public sealed partial class Repository
         return await QueryAsync<CreationSubmission>(
             connection,
             SqlBuilder.Select<CreationSubmission>(
-                "user_id = @userId AND run_id = @runId", "created_at ASC"),
+                "\"userId\" = @userId AND \"runId\" = @runId", "\"createdAt\" ASC"),
             new { userId, runId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -275,7 +275,7 @@ public sealed partial class Repository
     {
         return await FirstOrDefaultAsync<Resource>(
             connection,
-            SqlBuilder.Select<Resource>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Resource>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -306,7 +306,7 @@ public sealed partial class Repository
             cm = await FirstOrDefaultAsync<ChannelModel>(
                 connection,
                 SqlBuilder.Select<ChannelModel>(
-                    "channel_id = @channelId AND model_key = @modelKey", limitOffset: " LIMIT 1"),
+                    "\"channelId\" = @channelId AND \"modelKey\" = @modelKey", limitOffset: " LIMIT 1"),
                 new { channelId, modelKey },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
@@ -325,7 +325,7 @@ public sealed partial class Repository
         }
         IReadOnlyList<ChannelModelPriceTier> tiers = await QueryAsync<ChannelModelPriceTier>(
             connection,
-            SqlBuilder.Select<ChannelModelPriceTier>("channel_model_id = @id", "id ASC"),
+            SqlBuilder.Select<ChannelModelPriceTier>("\"channelModelId\" = @id", "id ASC"),
             new { id = cm.ID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -360,7 +360,7 @@ public sealed partial class Repository
         }
         IReadOnlyList<SystemSetting> settings = await QueryAsync<SystemSetting>(
             connection,
-            "SELECT * FROM system_settings WHERE key IN ('credit_policy', 'feature_availability') ORDER BY key",
+            "SELECT * FROM \"systemSettings\" WHERE key IN ('credit_policy', 'feature_availability') ORDER BY key",
             new { },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         values["pricingSettings"] = settings;
@@ -476,12 +476,12 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE creation_submissions SET
-              proposal_version = @ProposalVersion, proposal_hash = @ProposalHash,
-              request_json = @RequestJSON, request_hash = @RequestHash,
-              quote_json = @QuoteJSON, price_signature = @PriceSignature,
-              expires_at = @ExpiresAt, approved_at = @ApprovedAt, revoked_at = @RevokedAt,
-              task_id = @TaskID, updated_at = @UpdatedAt
+            UPDATE "creationSubmissions" SET
+              "proposalVersion" = @ProposalVersion, "proposalHash" = @ProposalHash,
+              "requestJson" = @RequestJSON, "requestHash" = @RequestHash,
+              "quoteJson" = @QuoteJSON, "priceSignature" = @PriceSignature,
+              "expiresAt" = @ExpiresAt, "approvedAt" = @ApprovedAt, "revokedAt" = @RevokedAt,
+              "taskId" = @TaskID, "updatedAt" = @UpdatedAt
             WHERE id = @ID
             """,
             item,
@@ -502,8 +502,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE creation_submissions SET revoked_at = @now
-            WHERE run_id = @runId AND task_id IS NULL AND revoked_at IS NULL
+            UPDATE "creationSubmissions" SET "revokedAt" = @now
+            WHERE "runId" = @runId AND "taskId" IS NULL AND "revokedAt" IS NULL
             """,
             new { runId, now = DateTime.UtcNow },
             transaction,
@@ -529,7 +529,7 @@ public sealed partial class Repository
             cm = await FirstOrDefaultAsync<ChannelModel>(
                 connection,
                 SqlBuilder.Select<ChannelModel>(
-                    "channel_id = @channelId AND model_key = @modelKey", limitOffset: " LIMIT 1"),
+                    "\"channelId\" = @channelId AND \"modelKey\" = @modelKey", limitOffset: " LIMIT 1"),
                 new { channelId, modelKey },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -547,7 +547,7 @@ public sealed partial class Repository
             ?? throw new InvalidOperationException("record not found");
         IReadOnlyList<ChannelModelPriceTier> tiers = await QueryAsync<ChannelModelPriceTier>(
             connection,
-            SqlBuilder.Select<ChannelModelPriceTier>("channel_model_id = @id", "id ASC"),
+            SqlBuilder.Select<ChannelModelPriceTier>("\"channelModelId\" = @id", "id ASC"),
             new { id = cm.ID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -585,7 +585,7 @@ public sealed partial class Repository
         }
         IReadOnlyList<SystemSetting> settings = await QueryAsync<SystemSetting>(
             connection,
-            "SELECT * FROM system_settings WHERE key IN ('credit_policy', 'feature_availability') ORDER BY key",
+            "SELECT * FROM \"systemSettings\" WHERE key IN ('credit_policy', 'feature_availability') ORDER BY key",
             new { },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -601,7 +601,7 @@ public sealed partial class Repository
         {
             long active = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM logical_models WHERE id = @id AND enabled = 1 AND archived_at IS NULL AND active_revision_id = @revision",
+                "SELECT COUNT(*) FROM \"logicalModels\" WHERE id = @id AND enabled = 1 AND \"archivedAt\" IS NULL AND \"activeRevisionId\" = @revision",
                 new { id = task.LogicalModelID, revision = task.LogicalModelRevisionID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -612,7 +612,7 @@ public sealed partial class Repository
         }
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM tasks WHERE user_id = @userId AND status IN ('queued', 'running')",
+            "SELECT COUNT(*) FROM tasks WHERE \"userId\" = @userId AND status IN ('queued', 'running')",
             new { userId = task.UserID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -637,8 +637,8 @@ public sealed partial class Repository
             connection,
             """
             SELECT
-              (SELECT COALESCE(SUM(length(COALESCE(state_json, '')) + length(COALESCE(approved_operations_json, '')) + length(COALESCE(approved_canvas_json, ''))), 0) FROM creation_runs WHERE user_id = @userId)
-              + (SELECT COALESCE(SUM(length(COALESCE(request_json, '')) + length(COALESCE(quote_json, '')) + length(COALESCE(price_signature, ''))), 0) FROM creation_submissions WHERE user_id = @userId)
+              (SELECT COALESCE(SUM(length(COALESCE("stateJson", '')) + length(COALESCE("approvedOperationsJson", '')) + length(COALESCE("approvedCanvasJson", ''))), 0) FROM "creationRuns" WHERE "userId" = @userId)
+              + (SELECT COALESCE(SUM(length(COALESCE("requestJson", '')) + length(COALESCE("quoteJson", '')) + length(COALESCE("priceSignature", ''))), 0) FROM "creationSubmissions" WHERE "userId" = @userId)
             """,
             new { userId },
             transaction,
@@ -667,8 +667,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now, revision = revision + 1
-            WHERE id = @ID AND user_id = @UserID AND payload_json = @previous
+            UPDATE "canvasProjects" SET "payloadJson" = @PayloadJSON, title = @Title, "updatedAt" = @now, revision = revision + 1
+            WHERE id = @ID AND "userId" = @UserID AND "payloadJson" = @previous
             """,
             new { canvas.PayloadJSON, canvas.Title, now = DateTime.UtcNow, canvas.ID, canvas.UserID, previous },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -686,7 +686,7 @@ public sealed partial class Repository
     {
         return await FirstOrDefaultAsync<TaskEntity>(
             connection,
-            SqlBuilder.Select<TaskEntity>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<TaskEntity>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id = taskId, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -698,25 +698,25 @@ public sealed partial class Repository
         string userId, CancellationToken cancellationToken = default)
     {
         long taskCount = await ScalarAsync<long>(
-            connection, "SELECT COUNT(*) FROM tasks WHERE user_id = @userId",
+            connection, "SELECT COUNT(*) FROM tasks WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         long taskBytes = await ScalarAsync<long>(
-            connection, "SELECT COALESCE(SUM(length(prompt) + length(COALESCE(input_json, '')) + length(COALESCE(error, ''))), 0) FROM tasks WHERE user_id = @userId",
+            connection, "SELECT COALESCE(SUM(length(prompt) + length(COALESCE(\"inputJson\", '')) + length(COALESCE(error, ''))), 0) FROM tasks WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         long assetCount = await ScalarAsync<long>(
-            connection, "SELECT COUNT(*) FROM assets WHERE user_id = @userId",
+            connection, "SELECT COUNT(*) FROM assets WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         long assetBytes = await ScalarAsync<long>(
-            connection, "SELECT COALESCE(SUM(length(COALESCE(payload_json, ''))), 0) FROM assets WHERE user_id = @userId",
+            connection, "SELECT COALESCE(SUM(length(COALESCE(\"payloadJson\", ''))), 0) FROM assets WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         long canvasCount = await ScalarAsync<long>(
-            connection, "SELECT COUNT(*) FROM canvas_projects WHERE user_id = @userId",
+            connection, "SELECT COUNT(*) FROM \"canvasProjects\" WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         long canvasBytes = await ScalarAsync<long>(
-            connection, "SELECT COALESCE(SUM(length(COALESCE(payload_json, ''))), 0) FROM canvas_projects WHERE user_id = @userId",
+            connection, "SELECT COALESCE(SUM(length(COALESCE(\"payloadJson\", ''))), 0) FROM \"canvasProjects\" WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         long apiCallCount = await ScalarAsync<long>(
-            connection, "SELECT COUNT(*) FROM api_call_logs WHERE user_id = @userId",
+            connection, "SELECT COUNT(*) FROM \"apiCallLogs\" WHERE \"userId\" = @userId",
             new { userId }, transaction, cancellationToken).ConfigureAwait(false);
         return new UserStorageUsage
         {
@@ -733,7 +733,7 @@ public sealed partial class Repository
     {
         return await FirstOrDefaultAsync<CanvasProject>(
             connection,
-            SqlBuilder.Select<CanvasProject>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CanvasProject>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -758,8 +758,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE canvas_projects SET payload_json = @PayloadJSON, title = @Title, updated_at = @now, revision = revision + 1
-            WHERE id = @ID AND user_id = @UserID AND payload_json = @previous
+            UPDATE "canvasProjects" SET "payloadJson" = @PayloadJSON, title = @Title, "updatedAt" = @now, revision = revision + 1
+            WHERE id = @ID AND "userId" = @UserID AND "payloadJson" = @previous
             """,
             new { canvas.PayloadJSON, canvas.Title, now = DateTime.UtcNow, canvas.ID, canvas.UserID, previous },
             transaction,

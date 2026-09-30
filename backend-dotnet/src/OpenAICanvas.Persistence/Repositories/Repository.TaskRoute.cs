@@ -67,9 +67,9 @@ public sealed partial class Repository
         {
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE \"tasks\" SET \"route_id\" = @routeID, \"channel_model_id\" = @channelModelID, "
-                + "\"input_json\" = @inputJSON, \"updated_at\" = @now "
-                + "WHERE \"id\" = @taskId AND \"status\" = 'running' AND \"route_id\" = @expectedRouteID",
+                "UPDATE \"tasks\" SET \"routeId\" = @routeID, \"channelModelId\" = @channelModelID, "
+                + "\"inputJson\" = @inputJSON, \"updatedAt\" = @now "
+                + "WHERE \"id\" = @taskId AND \"status\" = 'running' AND \"routeId\" = @expectedRouteID",
                 new { routeID, channelModelID, inputJSON, now = DateTime.UtcNow, taskId, expectedRouteID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -84,7 +84,7 @@ public sealed partial class Repository
             BillingOrder? order = await QueryFirstOrDefaultAsync<BillingOrder>(
                 connection,
                 SqlBuilder.Select<BillingOrder>(
-                    "\"id\" = @billingOrderID AND \"task_id\" = @taskId "
+                    "\"id\" = @billingOrderID AND \"taskId\" = @taskId "
                     + "AND \"status\" IN ('reserved', 'running')",
                     limitOffset: " LIMIT 1"),
                 new { billingOrderID, taskId },
@@ -97,17 +97,17 @@ public sealed partial class Repository
             DateTime now = DateTime.UtcNow;
             var updates = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["channel_id"] = channelID,
-                ["channel_model_id"] = channelModelID,
-                ["updated_at"] = now,
-                ["cost_configured"] = cost.CostConfigured,
-                ["cost_unit_price_microcredits"] = cost.CostUnitPriceMicrocredits,
-                ["cost_input_token_price_microcredits"] = cost.CostInputTokenPriceMicrocredits,
-                ["cost_output_token_price_microcredits"] = cost.CostOutputTokenPriceMicrocredits,
-                ["cost_cached_token_price_microcredits"] = cost.CostCachedTokenPriceMicrocredits,
-                ["cost_billing_mode"] = cost.CostBillingMode,
-                ["cost_quantity"] = cost.CostQuantity,
-                ["cost_video_formula_tokens"] = cost.CostVideoFormulaTokens,
+                ["channelId"] = channelID,
+                ["channelModelId"] = channelModelID,
+                ["updatedAt"] = now,
+                ["costConfigured"] = cost.CostConfigured,
+                ["costUnitPriceMicrocredits"] = cost.CostUnitPriceMicrocredits,
+                ["costInputTokenPriceMicrocredits"] = cost.CostInputTokenPriceMicrocredits,
+                ["costOutputTokenPriceMicrocredits"] = cost.CostOutputTokenPriceMicrocredits,
+                ["costCachedTokenPriceMicrocredits"] = cost.CostCachedTokenPriceMicrocredits,
+                ["costBillingMode"] = cost.CostBillingMode,
+                ["costQuantity"] = cost.CostQuantity,
+                ["costVideoFormulaTokens"] = cost.CostVideoFormulaTokens,
             };
             if (replacement is not null)
             {
@@ -131,17 +131,17 @@ public sealed partial class Repository
                 if (delta != 0)
                 {
                     string accountUpdate = delta > 0
-                        ? " SET \"version\" = \"version\" + 1, \"updated_at\" = @now, "
-                            + "\"available_microcredits\" = \"available_microcredits\" - @delta, "
-                            + "\"reserved_microcredits\" = \"reserved_microcredits\" + @delta "
-                            + "WHERE \"user_id\" = @userID AND \"available_microcredits\" >= @delta"
-                        : " SET \"version\" = \"version\" + 1, \"updated_at\" = @now, "
-                            + "\"available_microcredits\" = \"available_microcredits\" + @release, "
-                            + "\"reserved_microcredits\" = \"reserved_microcredits\" - @release "
-                            + "WHERE \"user_id\" = @userID AND \"reserved_microcredits\" >= @release";
+                        ? " SET \"version\" = \"version\" + 1, \"updatedAt\" = @now, "
+                            + "\"availableMicrocredits\" = \"availableMicrocredits\" - @delta, "
+                            + "\"reservedMicrocredits\" = \"reservedMicrocredits\" + @delta "
+                            + "WHERE \"userId\" = @userID AND \"availableMicrocredits\" >= @delta"
+                        : " SET \"version\" = \"version\" + 1, \"updatedAt\" = @now, "
+                            + "\"availableMicrocredits\" = \"availableMicrocredits\" + @release, "
+                            + "\"reservedMicrocredits\" = \"reservedMicrocredits\" - @release "
+                            + "WHERE \"userId\" = @userID AND \"reservedMicrocredits\" >= @release";
                     int accountUpdated = await ExecuteAsync(
                         connection,
-                        "UPDATE \"credit_accounts\"" + accountUpdate,
+                        "UPDATE \"creditAccounts\"" + accountUpdate,
                         new { now, userID = order.UserID, delta = Math.Abs(delta), release = Math.Abs(delta) },
                         transaction,
                         cancellationToken).ConfigureAwait(false);
@@ -156,7 +156,7 @@ public sealed partial class Repository
                     }
                     CreditAccount? account = await QueryFirstOrDefaultAsync<CreditAccount>(
                         connection,
-                        SqlBuilder.Select<CreditAccount>("\"user_id\" = @userID", limitOffset: " LIMIT 1"),
+                        SqlBuilder.Select<CreditAccount>("\"userId\" = @userID", limitOffset: " LIMIT 1"),
                         new { userID = order.UserID },
                         transaction,
                         cancellationToken).ConfigureAwait(false);
@@ -185,28 +185,28 @@ public sealed partial class Repository
                         CreatedAt = now,
                     }, cancellationToken).ConfigureAwait(false);
                 }
-                updates["billing_mode"] = replacement.BillingMode;
-                updates["price_version"] = replacement.PriceVersion;
-                updates["price_tier_id"] = replacement.PriceTierID;
-                updates["price_tier_version"] = replacement.PriceTierVersion;
-                updates["unit_price_microcredits"] = replacement.UnitPriceMicrocredits;
-                updates["multiplier_basis_points"] = replacement.MultiplierBasisPoints;
+                updates["billingMode"] = replacement.BillingMode;
+                updates["priceVersion"] = replacement.PriceVersion;
+                updates["priceTierId"] = replacement.PriceTierID;
+                updates["priceTierVersion"] = replacement.PriceTierVersion;
+                updates["unitPriceMicrocredits"] = replacement.UnitPriceMicrocredits;
+                updates["multiplierBasisPoints"] = replacement.MultiplierBasisPoints;
                 updates["quantity"] = replacement.Quantity;
-                updates["amount_microcredits"] = replacement.AmountMicrocredits;
-                updates["reserved_amount_microcredits"] = replacement.AmountMicrocredits;
-                updates["input_token_price_microcredits"] = replacement.InputTokenPriceMicrocredits;
-                updates["output_token_price_microcredits"] = replacement.OutputTokenPriceMicrocredits;
-                updates["cached_token_price_microcredits"] = replacement.CachedTokenPriceMicrocredits;
+                updates["amountMicrocredits"] = replacement.AmountMicrocredits;
+                updates["reservedAmountMicrocredits"] = replacement.AmountMicrocredits;
+                updates["inputTokenPriceMicrocredits"] = replacement.InputTokenPriceMicrocredits;
+                updates["outputTokenPriceMicrocredits"] = replacement.OutputTokenPriceMicrocredits;
+                updates["cachedTokenPriceMicrocredits"] = replacement.CachedTokenPriceMicrocredits;
             }
             var parameters = new DynamicParameters(updates);
             parameters.Add("billingOrderID", billingOrderID);
             parameters.Add("taskId", taskId);
             int billingUpdated = await ExecuteAsync(
                 connection,
-                "UPDATE \"billing_orders\" SET "
+                "UPDATE \"billingOrders\" SET "
                 + string.Join(", ", updates.Keys.Select(key =>
                     $"\"{SqlIdentifier(key)}\" = @{key}"))
-                + " WHERE \"id\" = @billingOrderID AND \"task_id\" = @taskId "
+                + " WHERE \"id\" = @billingOrderID AND \"taskId\" = @taskId "
                 + "AND \"status\" IN ('reserved', 'running')",
                 parameters,
                 transaction,
@@ -280,7 +280,7 @@ public sealed partial class Repository
         items.AddRange(await QueryAsync<RouteAttempt>(
             connection,
             SqlBuilder.Select<RouteAttempt>(
-                "\"task_id\" = @taskId AND \"route_run\" = @routeRun", "attempt_number ASC"),
+                "\"taskId\" = @taskId AND \"routeRun\" = @routeRun", "\"attemptNumber\" ASC"),
             new { taskId, routeRun },
             cancellationToken: cancellationToken).ConfigureAwait(false));
         return items;
@@ -306,8 +306,8 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"route_attempts\" SET \"status\" = 'dispatching', \"dispatch_state\" = 'submission_unknown' "
-            + "WHERE \"id\" = @id AND \"dispatch_state\" = 'not_sent'",
+            "UPDATE \"routeAttempts\" SET \"status\" = 'dispatching', \"dispatchState\" = 'submission_unknown' "
+            + "WHERE \"id\" = @id AND \"dispatchState\" = 'not_sent'",
             new { id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (updated != 1)

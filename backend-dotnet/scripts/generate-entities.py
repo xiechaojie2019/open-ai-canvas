@@ -24,6 +24,12 @@ ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 GO_MODEL_DIR = REPO / "backend" / "internal" / "model"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# 物理名规则由 schema_identifiers 统一提供，与 rename-schema-identifiers.py 共用，
+# 避免生成器输出与改名计划错配。
+from schema_identifiers import physical_column, physical_table  # noqa: E402
+
 DOMAIN_ENTITIES = ROOT / "src" / "OpenAICanvas.Domain" / "Entities"
 
 # Go 内建/外部类型 → C# 类型
@@ -205,7 +211,7 @@ def build_entity_block(table: dict, file_map: dict[str, str]) -> tuple[str, str,
         if column["goType"] == "gorm.DeletedAt":
             has_soft_delete = True
 
-        doc = f'数据库列 <c>{column["name"]}</c>'
+        doc = f'数据库列 <c>{physical_column(table_name, column["name"])}</c>'
         details = []
         if column["size"]:
             details.append(f"maxLength={column['size']}")
@@ -247,7 +253,7 @@ def build_entity_block(table: dict, file_map: dict[str, str]) -> tuple[str, str,
         entity_lines.append("")
 
     entity = f"""/// <summary>
-/// 对应 Go <c>{table['goName']}</c>，数据库表 <c>{table_name}</c>。
+/// 对应 Go <c>{table['goName']}</c>，数据库表 <c>{physical_table(table_name)}</c>。
 /// 源文件：{source_file}
 /// </summary>
 public class {struct}
@@ -342,12 +348,12 @@ def generate_entity_metadata(tables: list[dict]) -> int:
             # Go gorm serializer:json 列的编解码由仓储手写 SQL 负责，
             # 通用 INSERT/UPDATE/SELECT 构造必须跳过（CustomSql=true）。
             flag = ", true" if "serializer:json" in (c.get("gormTag") or "") else ""
-            return f'            new ColumnMap("{column_property(c)}", "{c["name"]}"{flag})'
+            return f'            new ColumnMap("{column_property(c)}", "{physical_column(table["table"], c["name"])}"{flag})'
 
         rows = ",\n".join(column_map_row(c) for c in columns)
         blocks.append(
             f'        [typeof({struct})] = new EntityMap(\n'
-            f'            "{table["table"]}",\n'
+            f'            "{physical_table(table["table"])}",\n'
             f'            {("\"" + key + "\"") if key else "null"},\n'
             f'            new ColumnMap[]\n'
             f'            {{\n{rows},\n'

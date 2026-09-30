@@ -15,10 +15,10 @@ public sealed partial class Repository
     public async Task<IReadOnlyList<TaskEntity>> AnalyticsTasksAsync(
         AnalyticsFilter filter, CancellationToken cancellationToken = default)
     {
-        var conditions = new List<string> { "created_at >= @From", "created_at < @To" };
+        var conditions = new List<string> { "\"createdAt\" >= @From", "\"createdAt\" < @To" };
         if (filter.UserID.Length > 0)
         {
-            conditions.Add("user_id = @UserID");
+            conditions.Add("\"userId\" = @UserID");
         }
         if (filter.Model.Length > 0)
         {
@@ -55,10 +55,10 @@ public sealed partial class Repository
     public async Task<IReadOnlyList<ApiCallLog>> AnalyticsApiCallLogsAsync(
         AnalyticsFilter filter, CancellationToken cancellationToken = default)
     {
-        var conditions = new List<string> { "created_at >= @From", "created_at < @To" };
+        var conditions = new List<string> { "\"createdAt\" >= @From", "\"createdAt\" < @To" };
         if (filter.UserID.Length > 0)
         {
-            conditions.Add("user_id = @UserID");
+            conditions.Add("\"userId\" = @UserID");
         }
         if (filter.Model.Length > 0)
         {
@@ -66,7 +66,7 @@ public sealed partial class Repository
         }
         if (filter.ChannelID.Length > 0)
         {
-            conditions.Add("channel_id = @ChannelID");
+            conditions.Add("\"channelId\" = @ChannelID");
         }
         if (filter.Capability.Length > 0)
         {
@@ -75,17 +75,17 @@ public sealed partial class Repository
 
         // 原始报文不进分析聚合（对应 GORM Omit("RequestBody","ResponseBody")）。
         string columns = """
-            id, user_id, trace_id, request_id, channel_id, task_id, billing_order_id,
-            source, capability, operation, request_kind, billable, api_format, method, path, status,
-            status_code, error, error_code, model, usage_available, input_tokens, output_tokens,
-            cached_tokens, media_count, video_seconds, estimated_cost_micros, cost_available, currency,
-            provider_request_id, provider_status, poll_count, concurrency_limit, upstream_url,
-            request_content_type, started_at, duration_ms, created_at
+            id, "userId", "traceId", "requestId", "channelId", "taskId", "billingOrderId",
+            source, capability, operation, "requestKind", billable, "apiFormat", method, path, status,
+            "statusCode", error, "errorCode", model, "usageAvailable", "inputTokens", "outputTokens",
+            "cachedTokens", "mediaCount", "videoSeconds", "estimatedCostMicros", "costAvailable", currency,
+            "providerRequestId", "providerStatus", "pollCount", "concurrencyLimit", "upstreamUrl",
+            "requestContentType", "startedAt", "durationMs", "createdAt"
             """;
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ApiCallLog>(
             connection,
-            $"SELECT {columns} FROM api_call_logs WHERE {string.Join(" AND ", conditions)}",
+            $"SELECT {columns} FROM \"apiCallLogs\" WHERE {string.Join(" AND ", conditions)}",
             new
             {
                 filter.From,
@@ -106,7 +106,7 @@ public sealed partial class Repository
         return await QueryAsync<UserDailyActivity>(
             connection,
             SqlBuilder.Select<UserDailyActivity>("day >= @From AND day < @To"
-                + (filter.UserID.Length > 0 ? " AND user_id = @UserID" : "")),
+                + (filter.UserID.Length > 0 ? " AND \"userId\" = @UserID" : "")),
             new { filter.From, filter.To, filter.UserID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -141,12 +141,12 @@ public sealed partial class Repository
         string orderBy = "";
         if (channelID.Length > 0)
         {
-            where += " AND channel_id IN @channelIds";
-            orderBy = " ORDER BY channel_id DESC LIMIT 1";
+            where += " AND \"channelId\" IN @channelIds";
+            orderBy = " ORDER BY \"channelId\" DESC LIMIT 1";
         }
         else
         {
-            where += " AND channel_id = '' LIMIT 1";
+            where += " AND \"channelId\" = '' LIMIT 1";
         }
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -180,7 +180,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ModelPricing>(
             connection,
             SqlBuilder.Select<ModelPricing>(
-                "channel_id = @channelID AND model = @model AND capability = @capability",
+                "\"channelId\" = @channelID AND model = @model AND capability = @capability",
                 limitOffset: " LIMIT 1"),
             new { channelID, model, capability },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -195,12 +195,12 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE model_pricings SET
-              channel_id = @ChannelID, model = @Model, capability = @Capability, currency = @Currency,
-              input_per_million_micros = @InputPerMillionMicros, output_per_million_micros = @OutputPerMillionMicros,
-              cached_per_million_micros = @CachedPerMillionMicros, per_request_micros = @PerRequestMicros,
-              per_media_micros = @PerMediaMicros, per_video_second_micros = @PerVideoSecondMicros,
-              updated_at = @UpdatedAt
+            UPDATE "modelPricings" SET
+              "channelId" = @ChannelID, model = @Model, capability = @Capability, currency = @Currency,
+              "inputPerMillionMicros" = @InputPerMillionMicros, "outputPerMillionMicros" = @OutputPerMillionMicros,
+              "cachedPerMillionMicros" = @CachedPerMillionMicros, "perRequestMicros" = @PerRequestMicros,
+              "perMediaMicros" = @PerMediaMicros, "perVideoSecondMicros" = @PerVideoSecondMicros,
+              "updatedAt" = @UpdatedAt
             WHERE id = @ID
             """,
             pricing,
@@ -220,7 +220,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM model_pricings WHERE id = @id",
+            "DELETE FROM \"modelPricings\" WHERE id = @id",
             new { id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

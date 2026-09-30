@@ -48,7 +48,7 @@ public sealed partial class Repository
         IReadOnlyList<Asset> assets = await QueryAsync<Asset>(
             connection,
             SqlBuilder.Select<Asset>(
-                where, "updated_at DESC, id DESC", Dialect.LimitOffset(pageSize, (page - 1) * pageSize)),
+                where, "\"updatedAt\" DESC, id DESC", Dialect.LimitOffset(pageSize, (page - 1) * pageSize)),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return (assets, total);
@@ -74,14 +74,14 @@ public sealed partial class Repository
 
         List<UserAssetFacetRow> kind = await FacetAsync("\"kind\"").ConfigureAwait(false);
         List<UserAssetFacetRow> category = await FacetAsync("\"category\"").ConfigureAwait(false);
-        List<UserAssetFacetRow> folder = await FacetAsync("\"folder_id\"").ConfigureAwait(false);
+        List<UserAssetFacetRow> folder = await FacetAsync("\"folderId\"").ConfigureAwait(false);
         return (kind, category, folder);
     }
 
     private (string Where, DynamicParameters Parameters) BuildAssetFilter(
         string userId, UserAssetPageFilter filter, bool includeSearch)
     {
-        List<string> conditions = ["user_id = @userId"];
+        List<string> conditions = ["\"userId\" = @userId"];
         DynamicParameters parameters = new();
         parameters.Add("userId", userId);
 
@@ -97,11 +97,11 @@ public sealed partial class Repository
         }
         if (filter.Uncategorized)
         {
-            conditions.Add("folder_id = ''");
+            conditions.Add("\"folderId\" = ''");
         }
         else if (filter.FolderID is not null)
         {
-            conditions.Add("folder_id = @folderId");
+            conditions.Add("\"folderId\" = @folderId");
             parameters.Add("folderId", filter.FolderID.Trim());
         }
         switch (filter.Status?.Trim())
@@ -127,7 +127,7 @@ public sealed partial class Repository
             string query = filter.Query.Trim().ToLowerInvariant();
             if (query.Length > 0)
             {
-                conditions.Add("(LOWER(title) LIKE @pattern OR LOWER(payload_json) LIKE @pattern)");
+                conditions.Add("(LOWER(title) LIKE @pattern OR LOWER(\"payloadJson\") LIKE @pattern)");
                 parameters.Add("pattern", "%" + query + "%");
             }
         }
@@ -140,7 +140,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<Asset>(
             connection,
-            SqlBuilder.Select<Asset>("user_id = @userId", "updated_at DESC"),
+            SqlBuilder.Select<Asset>("\"userId\" = @userId", "\"updatedAt\" DESC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -154,8 +154,8 @@ public sealed partial class Repository
             connection,
             SqlBuilder.SelectColumns<Asset>(
                 ["ID", "FolderID", "Kind", "Category", "Status", "PrimaryVersionID", "Title", "CreatedAt", "UpdatedAt"],
-                "user_id = @userId",
-                "updated_at DESC"),
+                "\"userId\" = @userId",
+                "\"updatedAt\" DESC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -166,7 +166,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<Asset>(
             connection,
-            SqlBuilder.Select<Asset>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Asset>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -177,7 +177,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"assets\" SET \"folder_id\" = @FolderID, \"kind\" = @Kind, \"category\" = @Category, \"status\" = @Status, \"primary_version_id\" = @PrimaryVersionID, \"title\" = @Title, \"payload_json\" = @PayloadJSON, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID AND \"user_id\" = @UserID",
+            "UPDATE \"assets\" SET \"folderId\" = @FolderID, \"kind\" = @Kind, \"category\" = @Category, \"status\" = @Status, \"primaryVersionId\" = @PrimaryVersionID, \"title\" = @Title, \"payloadJson\" = @PayloadJSON, \"updatedAt\" = @UpdatedAt WHERE \"id\" = @ID AND \"userId\" = @UserID",
             asset,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (updated > 0)
@@ -199,7 +199,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<AssetFolder>(
             connection,
-            SqlBuilder.Select<AssetFolder>("user_id = @userId", "position ASC, created_at ASC"),
+            SqlBuilder.Select<AssetFolder>("\"userId\" = @userId", "position ASC, \"createdAt\" ASC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -211,7 +211,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<AssetFolder>(
             connection,
-            SqlBuilder.Select<AssetFolder>("id = @folderId AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<AssetFolder>("id = @folderId AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { folderId, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -220,7 +220,7 @@ public sealed partial class Repository
     public async Task<bool> AssetFolderNameExistsAsync(
         string userId, string nameKey, string excludeId, CancellationToken cancellationToken = default)
     {
-        string condition = "user_id = @userId AND name_key = @nameKey";
+        string condition = "\"userId\" = @userId AND \"nameKey\" = @nameKey";
         if (excludeId.Length > 0)
         {
             condition += " AND id <> @excludeId";
@@ -228,7 +228,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"asset_folders\" WHERE " + condition,
+            "SELECT COUNT(*) FROM \"assetFolders\" WHERE " + condition,
             new { userId, nameKey, excludeId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return count > 0;
@@ -240,7 +240,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long? maximum = await ScalarAsync<long?>(
             connection,
-            "SELECT COALESCE(MAX(\"position\"), -1) FROM \"asset_folders\" WHERE \"user_id\" = @userId",
+            "SELECT COALESCE(MAX(\"position\"), -1) FROM \"assetFolders\" WHERE \"userId\" = @userId",
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return (maximum ?? -1) + 1;
@@ -264,7 +264,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"asset_folders\" SET \"name\" = @Name, \"name_key\" = @NameKey, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID AND \"user_id\" = @UserID",
+            "UPDATE \"assetFolders\" SET \"name\" = @Name, \"nameKey\" = @NameKey, \"updatedAt\" = @UpdatedAt WHERE \"id\" = @ID AND \"userId\" = @UserID",
             folder,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (updated != 1)
@@ -284,7 +284,7 @@ public sealed partial class Repository
         {
             AssetFolder? folder = await FirstOrDefaultAsync<AssetFolder>(
                 connection,
-                SqlBuilder.Select<AssetFolder>("id = @folderId AND user_id = @userId", limitOffset: " LIMIT 1"),
+                SqlBuilder.Select<AssetFolder>("id = @folderId AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
                 new { folderId, userId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -295,7 +295,7 @@ public sealed partial class Repository
 
             IReadOnlyList<Asset> assets = await QueryAsync<Asset>(
                 connection,
-                SqlBuilder.Select<Asset>("user_id = @userId AND folder_id = @folderId"),
+                SqlBuilder.Select<Asset>("\"userId\" = @userId AND \"folderId\" = @folderId"),
                 new { userId, folderId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -305,7 +305,7 @@ public sealed partial class Repository
 
             int deleted = await ExecuteAsync(
                 connection,
-                "DELETE FROM \"asset_folders\" WHERE \"id\" = @folderId AND \"user_id\" = @userId",
+                "DELETE FROM \"assetFolders\" WHERE \"id\" = @folderId AND \"userId\" = @userId",
                 new { folderId, userId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -352,7 +352,7 @@ public sealed partial class Repository
         }
         List<Asset> assets = (await QueryAsync<Asset>(
             connection,
-            SqlBuilder.Select<Asset>("user_id = @userId AND id IN @ids"),
+            SqlBuilder.Select<Asset>("\"userId\" = @userId AND id IN @ids"),
             new { userId, ids = assetIds },
             transaction,
             cancellationToken).ConfigureAwait(false)).ToList();
@@ -365,7 +365,7 @@ public sealed partial class Repository
             string payloadJSON = AssetPayloadWithFolder(asset.PayloadJSON, folderId, now);
             await ExecuteAsync(
                 connection,
-                "UPDATE \"assets\" SET \"folder_id\" = @folderId, \"payload_json\" = @payloadJSON, \"updated_at\" = @now WHERE \"id\" = @id AND \"user_id\" = @userId",
+                "UPDATE \"assets\" SET \"folderId\" = @folderId, \"payloadJson\" = @payloadJSON, \"updatedAt\" = @now WHERE \"id\" = @id AND \"userId\" = @userId",
                 new { folderId, payloadJSON, now, id = asset.ID, userId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);

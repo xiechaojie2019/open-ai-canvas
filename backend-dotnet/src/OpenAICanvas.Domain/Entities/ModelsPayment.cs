@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>PaymentNotification</c>，数据库表 <c>payment_notifications</c>。
+/// 对应 Go <c>PaymentNotification</c>，数据库表 <c>paymentNotifications</c>。
 /// 源文件：internal/model/models_payment.go
 /// </summary>
 public class PaymentNotification
@@ -21,37 +21,37 @@ public class PaymentNotification
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>providerId</c>（maxLength=80）</summary>
     [JsonPropertyName("providerId")]
     public string ProviderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_event_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>providerEventId</c>（maxLength=160）</summary>
     [JsonPropertyName("providerEventId")]
     public string ProviderEventID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_config_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>providerConfigId</c>（maxLength=36）</summary>
     [JsonPropertyName("providerConfigId")]
     public string ProviderConfigID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>merchant_order_no</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>merchantOrderNo</c>（maxLength=32）</summary>
     [JsonPropertyName("merchantOrderNo")]
     [GoOmitEmpty]
     public string MerchantOrderNo { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>payment_order_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>paymentOrderId</c>（maxLength=36）</summary>
     [JsonPropertyName("paymentOrderId")]
     [GoOmitEmpty]
     public string PaymentOrderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>payload_digest</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>payloadDigest</c>（maxLength=64）</summary>
     [JsonPropertyName("payloadDigest")]
     public string PayloadDigest { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>payload_cipher</c></summary>
+    /// <summary>数据库列 <c>payloadCipher</c></summary>
     [JsonIgnore]
     public string PayloadCipher { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>normalized_json</c></summary>
+    /// <summary>数据库列 <c>normalizedJson</c></summary>
     [JsonIgnore]
     public string NormalizedJSON { get; set; } = string.Empty;
 
@@ -63,31 +63,31 @@ public class PaymentNotification
     [JsonPropertyName("attempts")]
     public long Attempts { get; set; }
 
-    /// <summary>数据库列 <c>last_error</c>（maxLength=1000）</summary>
+    /// <summary>数据库列 <c>lastError</c>（maxLength=1000）</summary>
     [JsonPropertyName("lastError")]
     [GoOmitEmpty]
     public string LastError { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>next_attempt_at</c></summary>
+    /// <summary>数据库列 <c>nextAttemptAt</c></summary>
     [JsonPropertyName("nextAttemptAt")]
     public DateTime NextAttemptAt { get; set; }
 
-    /// <summary>数据库列 <c>processed_at</c></summary>
+    /// <summary>数据库列 <c>processedAt</c></summary>
     [JsonPropertyName("processedAt")]
     [GoOmitEmpty]
     public DateTime? ProcessedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>PaymentOrder</c>，数据库表 <c>payment_orders</c>。
+/// 对应 Go <c>PaymentOrder</c>，数据库表 <c>paymentOrders</c>。
 /// 源文件：internal/model/models_payment.go
 /// </summary>
 public class PaymentOrder
@@ -96,47 +96,47 @@ public class PaymentOrder
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>idempotency_key</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>idempotencyKey</c>（maxLength=120）</summary>
     [JsonPropertyName("idempotencyKey")]
     public string IdempotencyKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>merchant_order_no</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>merchantOrderNo</c>（maxLength=32）</summary>
     [JsonPropertyName("merchantOrderNo")]
     public string MerchantOrderNo { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>product_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>productId</c>（maxLength=36）</summary>
     [JsonPropertyName("productId")]
     public string ProductID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>product_name</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>productName</c>（maxLength=120）</summary>
     [JsonPropertyName("productName")]
     public string ProductName { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>providerId</c>（maxLength=80）</summary>
     [JsonPropertyName("providerId")]
     public string ProviderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>plugin_id</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>pluginId</c>（maxLength=120）</summary>
     [JsonPropertyName("pluginId")]
     public string PluginID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>plugin_version</c>（maxLength=40）</summary>
+    /// <summary>数据库列 <c>pluginVersion</c>（maxLength=40）</summary>
     [JsonPropertyName("pluginVersion")]
     public string PluginVersion { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_config_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>providerConfigId</c>（maxLength=36）</summary>
     [JsonPropertyName("providerConfigId")]
     public string ProviderConfigID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_config_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>providerConfigVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("providerConfigVersion")]
     public long ProviderConfigVersion { get; set; }
 
-    /// <summary>数据库列 <c>amount_fen</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountFen</c>（maxLength=64）</summary>
     [JsonPropertyName("amountFen")]
     public long AmountFen { get; set; }
 
@@ -144,7 +144,7 @@ public class PaymentOrder
     [JsonPropertyName("currency")]
     public string Currency { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>credits_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>creditsMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("creditsMicrocredits")]
     public long CreditsMicrocredits { get; set; }
 
@@ -152,70 +152,70 @@ public class PaymentOrder
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_trade_no</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>providerTradeNo</c>（maxLength=96）</summary>
     [JsonPropertyName("providerTradeNo")]
     [GoOmitEmpty]
     public string? ProviderTradeNo { get; set; }
 
-    /// <summary>数据库列 <c>provider_status</c>（maxLength=40）</summary>
+    /// <summary>数据库列 <c>providerStatus</c>（maxLength=40）</summary>
     [JsonPropertyName("providerStatus")]
     [GoOmitEmpty]
     public string ProviderStatus { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>checkout_mode</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>checkoutMode</c>（maxLength=24）</summary>
     [JsonPropertyName("checkoutMode")]
     [GoOmitEmpty]
     public string CheckoutMode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>checkout_value</c></summary>
+    /// <summary>数据库列 <c>checkoutValue</c></summary>
     [JsonIgnore]
     public string CheckoutValue { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>checkout_expires_at</c></summary>
+    /// <summary>数据库列 <c>checkoutExpiresAt</c></summary>
     [JsonPropertyName("checkoutExpiresAt")]
     [GoOmitEmpty]
     public DateTime? CheckoutExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>provider_paid_at</c></summary>
+    /// <summary>数据库列 <c>providerPaidAt</c></summary>
     [JsonPropertyName("providerPaidAt")]
     [GoOmitEmpty]
     public DateTime? ProviderPaidAt { get; set; }
 
-    /// <summary>数据库列 <c>credited_at</c></summary>
+    /// <summary>数据库列 <c>creditedAt</c></summary>
     [JsonPropertyName("creditedAt")]
     [GoOmitEmpty]
     public DateTime? CreditedAt { get; set; }
 
-    /// <summary>数据库列 <c>closed_at</c></summary>
+    /// <summary>数据库列 <c>closedAt</c></summary>
     [JsonPropertyName("closedAt")]
     [GoOmitEmpty]
     public DateTime? ClosedAt { get; set; }
 
-    /// <summary>数据库列 <c>last_queried_at</c></summary>
+    /// <summary>数据库列 <c>lastQueriedAt</c></summary>
     [JsonPropertyName("lastQueriedAt")]
     [GoOmitEmpty]
     public DateTime? LastQueriedAt { get; set; }
 
-    /// <summary>数据库列 <c>last_error</c>（maxLength=1000）</summary>
+    /// <summary>数据库列 <c>lastError</c>（maxLength=1000）</summary>
     [JsonPropertyName("lastError")]
     [GoOmitEmpty]
     public string LastError { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>PaymentProviderConfig</c>，数据库表 <c>payment_provider_configs</c>。
+/// 对应 Go <c>PaymentProviderConfig</c>，数据库表 <c>paymentProviderConfigs</c>。
 /// 源文件：internal/model/models_payment.go
 /// </summary>
 public class PaymentProviderConfig
@@ -224,15 +224,15 @@ public class PaymentProviderConfig
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>providerId</c>（maxLength=80）</summary>
     [JsonPropertyName("providerId")]
     public string ProviderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>plugin_id</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>pluginId</c>（maxLength=120）</summary>
     [JsonPropertyName("pluginId")]
     public string PluginID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>plugin_version</c>（maxLength=40）</summary>
+    /// <summary>数据库列 <c>pluginVersion</c>（maxLength=40）</summary>
     [JsonPropertyName("pluginVersion")]
     public string PluginVersion { get; set; } = string.Empty;
 
@@ -244,29 +244,29 @@ public class PaymentProviderConfig
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
-    /// <summary>数据库列 <c>close_after_minutes</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>closeAfterMinutes</c>（maxLength=64）</summary>
     [JsonPropertyName("closeAfterMinutes")]
     public long CloseAfterMinutes { get; set; }
 
-    /// <summary>数据库列 <c>config_cipher</c></summary>
+    /// <summary>数据库列 <c>configCipher</c></summary>
     [JsonIgnore]
     public string ConfigCipher { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>config_digest</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>configDigest</c>（maxLength=64）</summary>
     [JsonPropertyName("configDigest")]
     public string ConfigDigest { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>createdBy</c>（maxLength=36）</summary>
     [JsonPropertyName("createdBy")]
     public string CreatedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>PaymentReconciliationItem</c>，数据库表 <c>payment_reconciliation_items</c>。
+/// 对应 Go <c>PaymentReconciliationItem</c>，数据库表 <c>paymentReconciliationItems</c>。
 /// 源文件：internal/model/models_payment.go
 /// </summary>
 public class PaymentReconciliationItem
@@ -275,29 +275,29 @@ public class PaymentReconciliationItem
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>run_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>runId</c>（maxLength=36）</summary>
     [JsonPropertyName("runId")]
     public string RunID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>providerId</c>（maxLength=80）</summary>
     [JsonPropertyName("providerId")]
     public string ProviderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>payment_order_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>paymentOrderId</c>（maxLength=36）</summary>
     [JsonPropertyName("paymentOrderId")]
     [GoOmitEmpty]
     public string PaymentOrderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>merchant_order_no</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>merchantOrderNo</c>（maxLength=32）</summary>
     [JsonPropertyName("merchantOrderNo")]
     public string MerchantOrderNo { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_trade_no</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>providerTradeNo</c>（maxLength=96）</summary>
     [JsonPropertyName("providerTradeNo")]
     [GoOmitEmpty]
     public string ProviderTradeNo { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>amount_fen</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountFen</c>（maxLength=64）</summary>
     [JsonPropertyName("amountFen")]
     public long AmountFen { get; set; }
 
@@ -318,13 +318,13 @@ public class PaymentReconciliationItem
     [GoOmitEmpty]
     public string Detail { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>PaymentReconciliationRun</c>，数据库表 <c>payment_reconciliation_runs</c>。
+/// 对应 Go <c>PaymentReconciliationRun</c>，数据库表 <c>paymentReconciliationRuns</c>。
 /// 源文件：internal/model/models_payment.go
 /// </summary>
 public class PaymentReconciliationRun
@@ -333,15 +333,15 @@ public class PaymentReconciliationRun
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>providerId</c>（maxLength=80）</summary>
     [JsonPropertyName("providerId")]
     public string ProviderID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>config_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>configId</c>（maxLength=36）</summary>
     [JsonPropertyName("configId")]
     public string ConfigID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>bill_date</c>（maxLength=10）</summary>
+    /// <summary>数据库列 <c>billDate</c>（maxLength=10）</summary>
     [JsonPropertyName("billDate")]
     public string BillDate { get; set; } = string.Empty;
 
@@ -349,19 +349,19 @@ public class PaymentReconciliationRun
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>total_items</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>totalItems</c>（maxLength=64）</summary>
     [JsonPropertyName("totalItems")]
     public long TotalItems { get; set; }
 
-    /// <summary>数据库列 <c>match_items</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>matchItems</c>（maxLength=64）</summary>
     [JsonPropertyName("matchItems")]
     public long MatchItems { get; set; }
 
-    /// <summary>数据库列 <c>recovered_items</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>recoveredItems</c>（maxLength=64）</summary>
     [JsonPropertyName("recoveredItems")]
     public long RecoveredItems { get; set; }
 
-    /// <summary>数据库列 <c>error_items</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>errorItems</c>（maxLength=64）</summary>
     [JsonPropertyName("errorItems")]
     public long ErrorItems { get; set; }
 
@@ -370,31 +370,31 @@ public class PaymentReconciliationRun
     [GoOmitEmpty]
     public string Error { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>started_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>startedBy</c>（maxLength=36）</summary>
     [JsonPropertyName("startedBy")]
     [GoOmitEmpty]
     public string StartedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>started_at</c></summary>
+    /// <summary>数据库列 <c>startedAt</c></summary>
     [JsonPropertyName("startedAt")]
     public DateTime StartedAt { get; set; }
 
-    /// <summary>数据库列 <c>completed_at</c></summary>
+    /// <summary>数据库列 <c>completedAt</c></summary>
     [JsonPropertyName("completedAt")]
     [GoOmitEmpty]
     public DateTime? CompletedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>TopupProduct</c>，数据库表 <c>topup_products</c>。
+/// 对应 Go <c>TopupProduct</c>，数据库表 <c>topupProducts</c>。
 /// 源文件：internal/model/models_payment.go
 /// </summary>
 public class TopupProduct
@@ -412,11 +412,11 @@ public class TopupProduct
     [GoOmitEmpty]
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>amount_fen</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>amountFen</c>（maxLength=64）</summary>
     [JsonPropertyName("amountFen")]
     public long AmountFen { get; set; }
 
-    /// <summary>数据库列 <c>credits_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>creditsMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("creditsMicrocredits")]
     public long CreditsMicrocredits { get; set; }
 
@@ -424,23 +424,23 @@ public class TopupProduct
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
-    /// <summary>数据库列 <c>sort_order</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>sortOrder</c>（maxLength=64）</summary>
     [JsonPropertyName("sortOrder")]
     public long SortOrder { get; set; }
 
-    /// <summary>数据库列 <c>created_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>createdBy</c>（maxLength=36）</summary>
     [JsonPropertyName("createdBy")]
     public string CreatedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>updated_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>updatedBy</c>（maxLength=36）</summary>
     [JsonPropertyName("updatedBy")]
     public string UpdatedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>CreationRun</c>，数据库表 <c>creation_runs</c>。
+/// 对应 Go <c>CreationRun</c>，数据库表 <c>creationRuns</c>。
 /// 源文件：internal/model/models_creation.go
 /// </summary>
 public class CreationRun
@@ -21,19 +21,19 @@ public class CreationRun
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>client_key</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>clientKey</c>（maxLength=120）</summary>
     [JsonIgnore]
     public string ClientKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>create_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>createHash</c>（maxLength=64）</summary>
     [JsonIgnore]
     public string CreateHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>canvas_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>canvasId</c>（maxLength=80）</summary>
     [JsonPropertyName("canvasId")]
     [GoOmitEmpty]
     public string CanvasID { get; set; } = string.Empty;
@@ -42,15 +42,15 @@ public class CreationRun
     [JsonPropertyName("revision")]
     public long Revision { get; set; }
 
-    /// <summary>数据库列 <c>execution_epoch</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>executionEpoch</c>（maxLength=64）</summary>
     [JsonPropertyName("executionEpoch")]
     public long ExecutionEpoch { get; set; }
 
-    /// <summary>数据库列 <c>execution_owner</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>executionOwner</c>（maxLength=120）</summary>
     [JsonPropertyName("executionOwner")]
     public string ExecutionOwner { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>lease_expires_at</c></summary>
+    /// <summary>数据库列 <c>leaseExpiresAt</c></summary>
     [JsonPropertyName("leaseExpiresAt")]
     [GoOmitEmpty]
     public DateTime? LeaseExpiresAt { get; set; }
@@ -59,43 +59,43 @@ public class CreationRun
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>state_json</c></summary>
+    /// <summary>数据库列 <c>stateJson</c></summary>
     [JsonIgnore]
     public string StateJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>approved_proposal_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>approvedProposalVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("approvedProposalVersion")]
     [GoOmitEmpty]
     public long ApprovedProposalVersion { get; set; }
 
-    /// <summary>数据库列 <c>approved_proposal_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>approvedProposalHash</c>（maxLength=64）</summary>
     [JsonPropertyName("approvedProposalHash")]
     [GoOmitEmpty]
     public string ApprovedProposalHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>approved_operations_json</c></summary>
+    /// <summary>数据库列 <c>approvedOperationsJson</c></summary>
     [JsonIgnore]
     public string ApprovedOperationsJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>approved_canvas_json</c></summary>
+    /// <summary>数据库列 <c>approvedCanvasJson</c></summary>
     [JsonIgnore]
     public string ApprovedCanvasJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>approved_at</c></summary>
+    /// <summary>数据库列 <c>approvedAt</c></summary>
     [JsonIgnore]
     public DateTime? ApprovedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>CreationSubmission</c>，数据库表 <c>creation_submissions</c>。
+/// 对应 Go <c>CreationSubmission</c>，数据库表 <c>creationSubmissions</c>。
 /// 源文件：internal/model/models_creation.go
 /// </summary>
 public class CreationSubmission
@@ -104,66 +104,66 @@ public class CreationSubmission
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonIgnore]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>run_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>runId</c>（maxLength=36）</summary>
     [JsonPropertyName("runId")]
     public string RunID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>item_key</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>itemKey</c>（maxLength=160）</summary>
     [JsonPropertyName("itemKey")]
     public string ItemKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>proposal_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>proposalVersion</c>（maxLength=64）</summary>
     [JsonIgnore]
     public long ProposalVersion { get; set; }
 
-    /// <summary>数据库列 <c>proposal_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>proposalHash</c>（maxLength=64）</summary>
     [JsonIgnore]
     public string ProposalHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_json</c></summary>
+    /// <summary>数据库列 <c>requestJson</c></summary>
     [JsonIgnore]
     public string RequestJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>requestHash</c>（maxLength=64）</summary>
     [JsonPropertyName("requestHash")]
     public string RequestHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>quote_json</c></summary>
+    /// <summary>数据库列 <c>quoteJson</c></summary>
     [JsonIgnore]
     public string QuoteJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>price_signature</c></summary>
+    /// <summary>数据库列 <c>priceSignature</c></summary>
     [JsonIgnore]
     public string PriceSignature { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonIgnore]
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>approved_at</c></summary>
+    /// <summary>数据库列 <c>approvedAt</c></summary>
     [JsonPropertyName("approvedAt")]
     [GoOmitEmpty]
     public DateTime? ApprovedAt { get; set; }
 
-    /// <summary>数据库列 <c>revoked_at</c></summary>
+    /// <summary>数据库列 <c>revokedAt</c></summary>
     [JsonPropertyName("revokedAt")]
     [GoOmitEmpty]
     public DateTime? RevokedAt { get; set; }
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     [GoOmitEmpty]
     public string? TaskID { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonIgnore]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonIgnore]
     public DateTime UpdatedAt { get; set; }
 }

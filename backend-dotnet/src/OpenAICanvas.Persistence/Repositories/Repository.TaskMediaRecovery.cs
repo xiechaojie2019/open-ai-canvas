@@ -26,10 +26,10 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE "tasks" SET "media_recovery_json" = @encrypted, "media_stage" = @stage,
-                "stage" = '作品已生成，正在保存', "updated_at" = @now
-            WHERE "id" = @id AND "user_id" = @userID AND "status" = @running
-                AND "route_run" = @routeRun AND "lease_owner" = @leaseOwner
+            UPDATE "tasks" SET "mediaRecoveryJson" = @encrypted, "mediaStage" = @stage,
+                "stage" = '作品已生成，正在保存', "updatedAt" = @now
+            WHERE "id" = @id AND "userId" = @userID AND "status" = @running
+                AND "routeRun" = @routeRun AND "leaseOwner" = @leaseOwner
             """,
             new
             {
@@ -64,12 +64,12 @@ public sealed partial class Repository
             connection,
             """
             UPDATE "tasks" SET "status" = @queued, "stage" = '等待恢复作品保存', "error" = '',
-                "completed_at" = NULL, "next_poll_at" = NULL,
-                "lease_owner" = '', "lease_expires_at" = NULL,
-                "media_recovery_json" = @encrypted, "updated_at" = @now
-            WHERE "id" = @id AND "user_id" = @userID AND "status" = @failed
-                AND "media_recovery_json" = @previous
-                AND ("lease_expires_at" IS NULL OR "lease_expires_at" <= @now)
+                "completedAt" = NULL, "nextPollAt" = NULL,
+                "leaseOwner" = '', "leaseExpiresAt" = NULL,
+                "mediaRecoveryJson" = @encrypted, "updatedAt" = @now
+            WHERE "id" = @id AND "userId" = @userID AND "status" = @failed
+                AND "mediaRecoveryJson" = @previous
+                AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt" <= @now)
             """,
             new
             {

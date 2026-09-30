@@ -27,7 +27,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<SkillFile>(
             connection,
-            SqlBuilder.Select<SkillFile>("skill_version_id = @versionId", "path ASC"),
+            SqlBuilder.Select<SkillFile>("\"skillVersionId\" = @versionId", "path ASC"),
             new { versionId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

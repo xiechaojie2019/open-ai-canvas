@@ -60,7 +60,7 @@ public sealed partial class Repository
 
         int created = await ExecuteAsync(
             connection,
-            SqlBuilder.Insert<CreditLedgerEntry>() + Dialect.OnConflictDoNothing("\"reference_key\""),
+            SqlBuilder.Insert<CreditLedgerEntry>() + Dialect.OnConflictDoNothing("\"referenceKey\""),
             entry,
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -70,7 +70,7 @@ public sealed partial class Repository
             // 已发放过：返回当前账户，granted = false。
             CreditAccount? existing = await QuerySingleOrDefaultAsync<CreditAccount>(
                 connection,
-                SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+                SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
                 new { userId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -82,11 +82,11 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE credit_accounts SET
-                available_microcredits = available_microcredits + @amount,
+            UPDATE "creditAccounts" SET
+                "availableMicrocredits" = "availableMicrocredits" + @amount,
                 version = version + 1,
-                updated_at = @now
-            WHERE user_id = @userId
+                "updatedAt" = @now
+            WHERE "userId" = @userId
             """,
             new { amount, now = DateTime.UtcNow, userId },
             transaction,
@@ -94,7 +94,7 @@ public sealed partial class Repository
 
         CreditAccount account = await QuerySingleOrDefaultAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { userId },
             transaction,
             cancellationToken).ConfigureAwait(false) ?? new CreditAccount { UserID = userId };
@@ -103,10 +103,10 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE credit_ledger_entries SET
-                available_delta_microcredits = @amount,
-                available_after_microcredits = @availableAfter,
-                reserved_after_microcredits = @reservedAfter
+            UPDATE "creditLedgerEntries" SET
+                "availableDeltaMicrocredits" = @amount,
+                "availableAfterMicrocredits" = @availableAfter,
+                "reservedAfterMicrocredits" = @reservedAfter
             WHERE id = @id
             """,
             new
@@ -153,15 +153,15 @@ public sealed partial class Repository
             cancellationToken).ConfigureAwait(false);
 
         // 扣减时附带余额下限条件：命中 0 行说明余额不足。
-        string guard = amount < 0 ? " AND available_microcredits + @amount >= 0" : "";
+        string guard = amount < 0 ? " AND \"availableMicrocredits\" + @amount >= 0" : "";
         int affected = await ExecuteAsync(
             connection,
             $"""
-            UPDATE credit_accounts SET
-                available_microcredits = available_microcredits + @amount,
+            UPDATE "creditAccounts" SET
+                "availableMicrocredits" = "availableMicrocredits" + @amount,
                 version = version + 1,
-                updated_at = @now
-            WHERE user_id = @userId{guard}
+                "updatedAt" = @now
+            WHERE "userId" = @userId{guard}
             """,
             new { amount, now = DateTime.UtcNow, userId },
             transaction,
@@ -175,7 +175,7 @@ public sealed partial class Repository
 
         CreditAccount account = await QuerySingleOrDefaultAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { userId },
             transaction,
             cancellationToken).ConfigureAwait(false) ?? new CreditAccount { UserID = userId };
@@ -250,19 +250,19 @@ public sealed partial class Repository
         string trimmed = keyword.Trim();
         if (trimmed.Length > 0)
         {
-            conditions.Add("(lower(note) LIKE @pattern OR CAST(amount_microcredits AS TEXT) LIKE @pattern OR CAST(count AS TEXT) LIKE @pattern)");
+            conditions.Add("(lower(note) LIKE @pattern OR CAST(\"amountMicrocredits\" AS TEXT) LIKE @pattern OR CAST(count AS TEXT) LIKE @pattern)");
             parameters.Add("pattern", "%" + trimmed.ToLowerInvariant() + "%");
         }
 
         DateTime now = DateTime.UtcNow;
         if (validity == "active")
         {
-            conditions.Add("(expires_at IS NULL OR expires_at > @validityNow)");
+            conditions.Add("(\"expiresAt\" IS NULL OR \"expiresAt\" > @validityNow)");
             parameters.Add("validityNow", now);
         }
         else if (validity == "expired")
         {
-            conditions.Add("(expires_at IS NOT NULL AND expires_at <= @validityNow)");
+            conditions.Add("(\"expiresAt\" IS NOT NULL AND \"expiresAt\" <= @validityNow)");
             parameters.Add("validityNow", now);
         }
 
@@ -270,7 +270,7 @@ public sealed partial class Repository
 
         long total = await ScalarAsync<long>(
             connection,
-            $"SELECT COUNT(*) FROM redeem_batches{where}",
+            $"SELECT COUNT(*) FROM \"redeemBatches\"{where}",
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -278,13 +278,13 @@ public sealed partial class Repository
         parameters.Add("now", now);
         string sql = $"""
             SELECT
-                {SqlBuilder.Projection<RedeemBatch>("redeem_batches")},
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'unused' AND (rc.expires_at IS NULL OR rc.expires_at > @now)) AS "AvailableCount",
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'redeemed') AS "RedeemedCount",
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'disabled') AS "DisabledCount",
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'unused' AND rc.expires_at IS NOT NULL AND rc.expires_at <= @now) AS "ExpiredCount"
-            FROM redeem_batches{where}
-            ORDER BY created_at DESC
+                {SqlBuilder.Projection<RedeemBatch>("redeemBatches")},
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'unused' AND (rc."expiresAt" IS NULL OR rc."expiresAt" > @now)) AS "AvailableCount",
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'redeemed') AS "RedeemedCount",
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'disabled') AS "DisabledCount",
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'unused' AND rc."expiresAt" IS NOT NULL AND rc."expiresAt" <= @now) AS "ExpiredCount"
+            FROM "redeemBatches"{where}
+            ORDER BY "createdAt" DESC
             {Dialect.LimitOffset(limit, offset)}
             """;
 
@@ -302,13 +302,13 @@ public sealed partial class Repository
 
         string sql = $"""
             SELECT
-                {SqlBuilder.Projection<RedeemBatch>("redeem_batches")},
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'unused' AND (rc.expires_at IS NULL OR rc.expires_at > @now)) AS "AvailableCount",
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'redeemed') AS "RedeemedCount",
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'disabled') AS "DisabledCount",
-                (SELECT COUNT(*) FROM redeem_codes rc WHERE rc.batch_id = redeem_batches.id AND rc.status = 'unused' AND rc.expires_at IS NOT NULL AND rc.expires_at <= @now) AS "ExpiredCount"
-            FROM redeem_batches
-            WHERE redeem_batches.id = @id
+                {SqlBuilder.Projection<RedeemBatch>("redeemBatches")},
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'unused' AND (rc."expiresAt" IS NULL OR rc."expiresAt" > @now)) AS "AvailableCount",
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'redeemed') AS "RedeemedCount",
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'disabled') AS "DisabledCount",
+                (SELECT COUNT(*) FROM "redeemCodes" rc WHERE rc."batchId" = "redeemBatches".id AND rc.status = 'unused' AND rc."expiresAt" IS NOT NULL AND rc."expiresAt" <= @now) AS "ExpiredCount"
+            FROM "redeemBatches"
+            WHERE "redeemBatches".id = @id
             LIMIT 1
             """;
 
@@ -329,7 +329,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        List<string> conditions = ["redeem_codes.batch_id = @batchId"];
+        List<string> conditions = ["\"redeemCodes\".\"batchId\" = @batchId"];
         DynamicParameters parameters = new();
         parameters.Add("batchId", batchId);
         DateTime now = DateTime.UtcNow;
@@ -338,19 +338,19 @@ public sealed partial class Repository
         switch (status)
         {
             case "available":
-                conditions.Add("(redeem_codes.status = @unused AND (redeem_codes.expires_at IS NULL OR redeem_codes.expires_at > @now))");
+                conditions.Add("(\"redeemCodes\".status = @unused AND (\"redeemCodes\".\"expiresAt\" IS NULL OR \"redeemCodes\".\"expiresAt\" > @now))");
                 parameters.Add("unused", RedeemCodeStatus.RedeemCodeUnused);
                 break;
             case "redeemed":
-                conditions.Add("redeem_codes.status = @redeemed");
+                conditions.Add("\"redeemCodes\".status = @redeemed");
                 parameters.Add("redeemed", RedeemCodeStatus.RedeemCodeRedeemed);
                 break;
             case "disabled":
-                conditions.Add("redeem_codes.status = @disabled");
+                conditions.Add("\"redeemCodes\".status = @disabled");
                 parameters.Add("disabled", RedeemCodeStatus.RedeemCodeDisabled);
                 break;
             case "expired":
-                conditions.Add("(redeem_codes.status = @unused AND redeem_codes.expires_at IS NOT NULL AND redeem_codes.expires_at <= @now)");
+                conditions.Add("(\"redeemCodes\".status = @unused AND \"redeemCodes\".\"expiresAt\" IS NOT NULL AND \"redeemCodes\".\"expiresAt\" <= @now)");
                 parameters.Add("unused", RedeemCodeStatus.RedeemCodeUnused);
                 break;
         }
@@ -359,18 +359,18 @@ public sealed partial class Repository
 
         long total = await ScalarAsync<long>(
             connection,
-            $"SELECT COUNT(*) FROM redeem_codes{where}",
+            $"SELECT COUNT(*) FROM \"redeemCodes\"{where}",
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         string sql = $"""
             SELECT
-                {SqlBuilder.Projection<RedeemCode>("redeem_codes")},
-                users.username AS "RedeemedUsername", users.display_name AS "RedeemedDisplayName"
-            FROM redeem_codes
-            LEFT JOIN users ON users.id = redeem_codes.redeemed_by
+                {SqlBuilder.Projection<RedeemCode>("redeemCodes")},
+                users.username AS "RedeemedUsername", users."displayName" AS "RedeemedDisplayName"
+            FROM "redeemCodes"
+            LEFT JOIN users ON users.id = "redeemCodes"."redeemedBy"
             {where}
-            ORDER BY redeem_codes.created_at ASC, redeem_codes.id ASC
+            ORDER BY "redeemCodes"."createdAt" ASC, "redeemCodes".id ASC
             {Dialect.LimitOffset(limit, offset)}
             """;
 
@@ -395,7 +395,7 @@ public sealed partial class Repository
 
         RedeemCode? code = await FirstOrDefaultAsync<RedeemCode>(
             connection,
-            SqlBuilder.Select<RedeemCode>("code_hash = @codeHash", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<RedeemCode>("\"codeHash\" = @codeHash", limitOffset: " LIMIT 1"),
             new { codeHash },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -407,13 +407,13 @@ public sealed partial class Repository
         }
 
         DateTime now = DateTime.UtcNow;
-        string expiryGuard = code.ExpiresAt is not null ? " AND expires_at > @now" : "";
+        string expiryGuard = code.ExpiresAt is not null ? " AND \"expiresAt\" > @now" : "";
         int affected = await ExecuteAsync(
             connection,
             $"""
-            UPDATE redeem_codes SET
-                status = @redeemed, redeemed_by = @userId, redeemed_at = @now,
-                redeemed_ip = @redeemedIp, updated_at = @now
+            UPDATE "redeemCodes" SET
+                status = @redeemed, "redeemedBy" = @userId, "redeemedAt" = @now,
+                "redeemedIp" = @redeemedIp, "updatedAt" = @now
             WHERE id = @id AND status = @unused{expiryGuard}
             """,
             new
@@ -452,11 +452,11 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE credit_accounts SET
-                available_microcredits = available_microcredits + @amount,
+            UPDATE "creditAccounts" SET
+                "availableMicrocredits" = "availableMicrocredits" + @amount,
                 version = version + 1,
-                updated_at = @now
-            WHERE user_id = @userId
+                "updatedAt" = @now
+            WHERE "userId" = @userId
             """,
             new { amount = code.AmountMicrocredits, now, userId },
             transaction,
@@ -464,7 +464,7 @@ public sealed partial class Repository
 
         CreditAccount account = await QuerySingleOrDefaultAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { userId },
             transaction,
             cancellationToken).ConfigureAwait(false) ?? new CreditAccount { UserID = userId };
@@ -500,9 +500,9 @@ public sealed partial class Repository
         return await ExecuteAsync(
             connection,
             """
-            UPDATE redeem_codes SET status = @disabled, updated_at = @now
-            WHERE batch_id = @batchId AND status = @unused
-              AND (expires_at IS NULL OR expires_at > @now)
+            UPDATE "redeemCodes" SET status = @disabled, "updatedAt" = @now
+            WHERE "batchId" = @batchId AND status = @unused
+              AND ("expiresAt" IS NULL OR "expiresAt" > @now)
             """,
             new
             {
@@ -522,9 +522,9 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE redeem_codes SET status = @disabled, updated_at = @now
-            WHERE id = @codeId AND batch_id = @batchId AND status = @unused
-              AND (expires_at IS NULL OR expires_at > @now)
+            UPDATE "redeemCodes" SET status = @disabled, "updatedAt" = @now
+            WHERE id = @codeId AND "batchId" = @batchId AND status = @unused
+              AND ("expiresAt" IS NULL OR "expiresAt" > @now)
             """,
             new
             {
@@ -562,11 +562,11 @@ public sealed partial class Repository
         if (status == "review")
         {
             // 待核对：明确 uncertain，或 running 超时，或 reserved 但任务已终结。
-            joins.Add("LEFT JOIN tasks ON tasks.id = billing_orders.task_id");
+            joins.Add("LEFT JOIN tasks ON tasks.id = \"billingOrders\".\"taskId\"");
             conditions.Add("""
-                (billing_orders.status = @uncertain
-                 OR (billing_orders.status = @running AND billing_orders.updated_at < @staleBefore)
-                 OR (billing_orders.status = @reserved AND tasks.status IN @terminalStatuses))
+                ("billingOrders".status = @uncertain
+                 OR ("billingOrders".status = @running AND "billingOrders"."updatedAt" < @staleBefore)
+                 OR ("billingOrders".status = @reserved AND tasks.status IN @terminalStatuses))
                 """);
             parameters.Add("uncertain", BillingStatus.BillingStatusUncertain);
             parameters.Add("running", BillingStatus.BillingStatusRunning);
@@ -582,20 +582,20 @@ public sealed partial class Repository
         }
         else if (status.Length > 0 && status != "all")
         {
-            conditions.Add("billing_orders.status = @status");
+            conditions.Add("\"billingOrders\".status = @status");
             parameters.Add("status", status);
         }
 
         string trimmed = keyword.Trim();
         if (trimmed.Length > 0)
         {
-            joins.Add("LEFT JOIN users ON users.id = billing_orders.user_id");
+            joins.Add("LEFT JOIN users ON users.id = \"billingOrders\".\"userId\"");
             conditions.Add("""
-                (lower(billing_orders.model) LIKE @pattern
-                 OR lower(billing_orders.scene) LIKE @pattern
-                 OR lower(billing_orders.provider_request_id) LIKE @pattern
+                (lower("billingOrders".model) LIKE @pattern
+                 OR lower("billingOrders".scene) LIKE @pattern
+                 OR lower("billingOrders"."providerRequestId") LIKE @pattern
                  OR lower(users.username) LIKE @pattern
-                 OR lower(users.display_name) LIKE @pattern)
+                 OR lower(users."displayName") LIKE @pattern)
                 """);
             parameters.Add("pattern", "%" + trimmed.ToLowerInvariant() + "%");
         }
@@ -605,13 +605,13 @@ public sealed partial class Repository
 
         long total = await ScalarAsync<long>(
             connection,
-            $"SELECT COUNT(*) FROM billing_orders{joinSql}{whereSql}",
+            $"SELECT COUNT(*) FROM \"billingOrders\"{joinSql}{whereSql}",
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         string sql = $"""
-            SELECT {SqlBuilder.Projection<BillingOrder>("billing_orders")} FROM billing_orders{joinSql}{whereSql}
-            ORDER BY billing_orders.created_at DESC
+            SELECT {SqlBuilder.Projection<BillingOrder>("billingOrders")} FROM "billingOrders"{joinSql}{whereSql}
+            ORDER BY "billingOrders"."createdAt" DESC
             {Dialect.LimitOffset(limit, offset)}
             """;
 

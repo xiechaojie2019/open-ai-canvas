@@ -17,7 +17,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<UserPromptCustomization>(
             connection,
-            SqlBuilder.Select<UserPromptCustomization>("user_id = @userId", "operation ASC"),
+            SqlBuilder.Select<UserPromptCustomization>("\"userId\" = @userId", "operation ASC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -30,7 +30,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<UserPromptCustomization>(
             connection,
             SqlBuilder.Select<UserPromptCustomization>(
-                "user_id = @userId AND operation = @operation", limitOffset: " LIMIT 1"),
+                "\"userId\" = @userId AND operation = @operation", limitOffset: " LIMIT 1"),
             new { userId, operation },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -44,8 +44,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE user_prompt_customizations SET mode = @Mode, content = @Content,
-              base_template_id = @BaseTemplateID, updated_at = @UpdatedAt
+            UPDATE "userPromptCustomizations" SET mode = @Mode, content = @Content,
+              "baseTemplateId" = @BaseTemplateID, "updatedAt" = @UpdatedAt
             WHERE id = @ID
             """,
             customization,
@@ -67,7 +67,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM user_prompt_customizations WHERE user_id = @userId AND operation = @operation",
+            "DELETE FROM \"userPromptCustomizations\" WHERE \"userId\" = @userId AND operation = @operation",
             new { userId, operation },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

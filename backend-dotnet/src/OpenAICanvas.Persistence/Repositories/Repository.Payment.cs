@@ -33,7 +33,7 @@ public sealed partial class Repository
             connection,
             SqlBuilder.Select<TopupProduct>(
                 includeDisabled ? null : "enabled = @enabled",
-                orderBy: "sort_order ASC, amount_fen ASC, created_at ASC"),
+                orderBy: "\"sortOrder\" ASC, \"amountFen\" ASC, \"createdAt\" ASC"),
             new { enabled = true },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -64,10 +64,10 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE topup_products SET
-                name = @Name, description = @Description, amount_fen = @AmountFen,
-                credits_microcredits = @CreditsMicrocredits, enabled = @Enabled,
-                sort_order = @SortOrder, updated_by = @UpdatedBy, updated_at = @now
+            UPDATE "topupProducts" SET
+                name = @Name, description = @Description, "amountFen" = @AmountFen,
+                "creditsMicrocredits" = @CreditsMicrocredits, enabled = @Enabled,
+                "sortOrder" = @SortOrder, "updatedBy" = @UpdatedBy, "updatedAt" = @now
             WHERE id = @ID
             """,
             new
@@ -98,7 +98,7 @@ public sealed partial class Repository
 
         long latest = await ScalarAsync<long>(
             connection,
-            "SELECT COALESCE(MAX(version), 0) FROM payment_provider_configs WHERE provider_id = @providerId",
+            "SELECT COALESCE(MAX(version), 0) FROM \"paymentProviderConfigs\" WHERE \"providerId\" = @providerId",
             new { providerId = config.ProviderID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -117,7 +117,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<PaymentProviderConfig>(
             connection,
-            SqlBuilder.Select<PaymentProviderConfig>("provider_id = @providerId", orderBy: "version DESC", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<PaymentProviderConfig>("\"providerId\" = @providerId", orderBy: "version DESC", limitOffset: " LIMIT 1"),
             new { providerId = providerId.Trim() },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -147,7 +147,7 @@ public sealed partial class Repository
 
         int affected = await ExecuteAsync(
             connection,
-            SqlBuilder.Insert<PaymentOrder>() + Dialect.OnConflictDoNothing("\"user_id\", \"idempotency_key\""),
+            SqlBuilder.Insert<PaymentOrder>() + Dialect.OnConflictDoNothing("\"userId\", \"idempotencyKey\""),
             order,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -158,7 +158,7 @@ public sealed partial class Repository
 
         PaymentOrder? existing = await FirstOrDefaultAsync<PaymentOrder>(
             connection,
-            SqlBuilder.Select<PaymentOrder>("user_id = @userId AND idempotency_key = @idempotencyKey", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<PaymentOrder>("\"userId\" = @userId AND \"idempotencyKey\" = @idempotencyKey", limitOffset: " LIMIT 1"),
             new { userId = order.UserID, idempotencyKey = order.IdempotencyKey },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -176,9 +176,9 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE payment_orders SET
-                status = @pending, checkout_mode = @checkoutMode, checkout_value = @checkoutValue,
-                checkout_expires_at = @checkoutExpiresAt, last_error = '', updated_at = @now
+            UPDATE "paymentOrders" SET
+                status = @pending, "checkoutMode" = @checkoutMode, "checkoutValue" = @checkoutValue,
+                "checkoutExpiresAt" = @checkoutExpiresAt, "lastError" = '', "updatedAt" = @now
             WHERE id = @id AND status IN @openStatuses
             """,
             new
@@ -212,7 +212,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_orders SET status = @failed, last_error = @message, updated_at = @now
+            UPDATE "paymentOrders" SET status = @failed, "lastError" = @message, "updatedAt" = @now
             WHERE id = @id AND status = @created
             """,
             new
@@ -233,7 +233,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<PaymentOrder>(
             connection,
-            SqlBuilder.Select<PaymentOrder>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<PaymentOrder>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id = id.Trim(), userId = userId.Trim() },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -245,7 +245,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<PaymentOrder>(
             connection,
-            SqlBuilder.Select<PaymentOrder>("user_id = @userId AND idempotency_key = @idempotencyKey", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<PaymentOrder>("\"userId\" = @userId AND \"idempotencyKey\" = @idempotencyKey", limitOffset: " LIMIT 1"),
             new { userId = userId.Trim(), idempotencyKey = idempotencyKey.Trim() },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -269,7 +269,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<PaymentOrder>(
             connection,
             SqlBuilder.Select<PaymentOrder>(
-                "provider_id = @providerId AND merchant_order_no = @merchantOrderNo", limitOffset: " LIMIT 1"),
+                "\"providerId\" = @providerId AND \"merchantOrderNo\" = @merchantOrderNo", limitOffset: " LIMIT 1"),
             new { providerId, merchantOrderNo },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -281,7 +281,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM payment_orders WHERE user_id = @userId AND status IN @statuses",
+            "SELECT COUNT(*) FROM \"paymentOrders\" WHERE \"userId\" = @userId AND status IN @statuses",
             new
             {
                 userId,
@@ -304,8 +304,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_orders SET
-                provider_status = @providerStatus, last_queried_at = @now, updated_at = @now
+            UPDATE "paymentOrders" SET
+                "providerStatus" = @providerStatus, "lastQueriedAt" = @now, "updatedAt" = @now
             WHERE id = @id
             """,
             new { providerStatus, now, id },
@@ -321,8 +321,8 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE payment_orders SET
-                status = @closed, provider_status = @providerStatus, closed_at = @now, updated_at = @now
+            UPDATE "paymentOrders" SET
+                status = @closed, "providerStatus" = @providerStatus, "closedAt" = @now, "updatedAt" = @now
             WHERE id = @id AND status IN @openStatuses
             """,
             new
@@ -354,7 +354,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_orders SET status = @pending, last_error = @message, updated_at = @now
+            UPDATE "paymentOrders" SET status = @pending, "lastError" = @message, "updatedAt" = @now
             WHERE id = @id AND status = @closing
             """,
             new
@@ -391,13 +391,13 @@ public sealed partial class Repository
         if (normalizedKeyword.Length > 0)
         {
             conditions.Add("""
-                (merchant_order_no LIKE @like
-                 OR provider_trade_no LIKE @like
-                 OR user_id = @keyword
-                 OR user_id IN (
+                ("merchantOrderNo" LIKE @like
+                 OR "providerTradeNo" LIKE @like
+                 OR "userId" = @keyword
+                 OR "userId" IN (
                      SELECT id FROM users
                      WHERE LOWER(username) LIKE @lowerLike
-                        OR LOWER(display_name) LIKE @lowerLike
+                        OR LOWER("displayName") LIKE @lowerLike
                         OR LOWER(email) LIKE @lowerLike))
                 """);
             parameters.Add("like", "%" + normalizedKeyword + "%");
@@ -408,14 +408,14 @@ public sealed partial class Repository
         string where = conditions.Count == 0 ? "" : " WHERE " + string.Join(" AND ", conditions);
 
         long total = await ScalarAsync<long>(
-            connection, $"SELECT COUNT(*) FROM payment_orders{where}", parameters,
+            connection, $"SELECT COUNT(*) FROM \"paymentOrders\"{where}", parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<PaymentOrder> orders = await QueryAsync<PaymentOrder>(
             connection,
             $"""
-            SELECT {SqlBuilder.Projection<PaymentOrder>()} FROM payment_orders{where}
-            ORDER BY created_at DESC
+            SELECT {SqlBuilder.Projection<PaymentOrder>()} FROM "paymentOrders"{where}
+            ORDER BY "createdAt" DESC
             {Dialect.LimitOffset(limit, offset)}
             """,
             parameters,
@@ -437,7 +437,7 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             SqlBuilder.Insert<PaymentNotification>()
-                + Dialect.OnConflictDoNothing("\"provider_id\", \"provider_event_id\""),
+                + Dialect.OnConflictDoNothing("\"providerId\", \"providerEventId\""),
             notification,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -452,8 +452,8 @@ public sealed partial class Repository
         return await QueryAsync<PaymentNotification>(
             connection,
             SqlBuilder.Select<PaymentNotification>(
-                "status = @pending AND next_attempt_at <= @now",
-                orderBy: "created_at ASC",
+                "status = @pending AND \"nextAttemptAt\" <= @now",
+                orderBy: "\"createdAt\" ASC",
                 limitOffset: Dialect.LimitOffset(limit, 0)),
             new { pending = PaymentNotificationStatus.PaymentNotificationPending, now = DateTime.UtcNow },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -467,8 +467,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_notifications SET
-                status = @processed, processed_at = @now, updated_at = @now
+            UPDATE "paymentNotifications" SET
+                status = @processed, "processedAt" = @now, "updatedAt" = @now
             WHERE id = @id
             """,
             new { processed = PaymentNotificationStatus.PaymentNotificationProcessed, now, id },
@@ -483,9 +483,9 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE payment_notifications SET
+            UPDATE "paymentNotifications" SET
                 status = @failed, attempts = attempts + 1,
-                last_error = @message, next_attempt_at = @next, updated_at = @now
+                "lastError" = @message, "nextAttemptAt" = @next, "updatedAt" = @now
             WHERE id = @id
             """,
             new
@@ -518,8 +518,8 @@ public sealed partial class Repository
         PaymentOrder order = await FirstOrDefaultAsync<PaymentOrder>(
             connection,
             $"""
-            SELECT {SqlBuilder.Projection<PaymentOrder>()} FROM payment_orders
-            WHERE provider_id = @providerId AND merchant_order_no = @merchantOrderNo
+            SELECT {SqlBuilder.Projection<PaymentOrder>()} FROM "paymentOrders"
+            WHERE "providerId" = @providerId AND "merchantOrderNo" = @merchantOrderNo
             {Dialect.ForUpdate()}
             """,
             new { providerId, merchantOrderNo },
@@ -559,8 +559,8 @@ public sealed partial class Repository
         long duplicate = await ScalarAsync<long>(
             connection,
             """
-            SELECT COUNT(*) FROM payment_orders
-            WHERE provider_id = @providerId AND provider_trade_no = @tradeNo AND id <> @id
+            SELECT COUNT(*) FROM "paymentOrders"
+            WHERE "providerId" = @providerId AND "providerTradeNo" = @tradeNo AND id <> @id
             """,
             new { providerId, tradeNo = evidence.ProviderTradeNo, id = order.ID },
             transaction,
@@ -587,7 +587,7 @@ public sealed partial class Repository
 
         int ledgerCreated = await ExecuteAsync(
             connection,
-            SqlBuilder.Insert<CreditLedgerEntry>() + Dialect.OnConflictDoNothing("\"reference_key\""),
+            SqlBuilder.Insert<CreditLedgerEntry>() + Dialect.OnConflictDoNothing("\"referenceKey\""),
             entry,
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -619,10 +619,10 @@ public sealed partial class Repository
         int accountAffected = await ExecuteAsync(
             connection,
             """
-            UPDATE credit_accounts SET
-                available_microcredits = available_microcredits + @credits,
-                version = version + 1, updated_at = @now
-            WHERE user_id = @userId AND available_microcredits <= @ceiling
+            UPDATE "creditAccounts" SET
+                "availableMicrocredits" = "availableMicrocredits" + @credits,
+                version = version + 1, "updatedAt" = @now
+            WHERE "userId" = @userId AND "availableMicrocredits" <= @ceiling
             """,
             new
             {
@@ -642,7 +642,7 @@ public sealed partial class Repository
 
         CreditAccount account = await FirstOrDefaultAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { userId = order.UserID },
             transaction,
             cancellationToken).ConfigureAwait(false) ?? throw new PaymentStateConflictException();
@@ -650,10 +650,10 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE credit_ledger_entries SET
-                available_delta_microcredits = @credits,
-                available_after_microcredits = @availableAfter,
-                reserved_after_microcredits = @reservedAfter
+            UPDATE "creditLedgerEntries" SET
+                "availableDeltaMicrocredits" = @credits,
+                "availableAfterMicrocredits" = @availableAfter,
+                "reservedAfterMicrocredits" = @reservedAfter
             WHERE id = @id
             """,
             new
@@ -670,10 +670,10 @@ public sealed partial class Repository
         int orderAffected = await ExecuteAsync(
             connection,
             """
-            UPDATE payment_orders SET
-                status = @credited, provider_trade_no = @tradeNo,
-                provider_status = @providerStatus, provider_paid_at = @paidAt,
-                credited_at = @now, last_error = '', updated_at = @now
+            UPDATE "paymentOrders" SET
+                status = @credited, "providerTradeNo" = @tradeNo,
+                "providerStatus" = @providerStatus, "providerPaidAt" = @paidAt,
+                "creditedAt" = @now, "lastError" = '', "updatedAt" = @now
             WHERE id = @id AND status <> @credited
             """,
             new

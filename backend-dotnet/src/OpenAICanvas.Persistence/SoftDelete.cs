@@ -5,7 +5,7 @@ namespace OpenAICanvas.Persistence;
 /// </summary>
 /// <remarks>
 /// Go 侧只有 3 张表使用 <c>gorm.DeletedAt</c>，GORM 会在<b>每条</b>查询上自动追加
-/// <c>deleted_at IS NULL</c>。改用 Dapper 后这个行为会消失，而这 3 张表在代码里被引用
+/// <c>"deletedAt" IS NULL</c>。改用 Dapper 后这个行为会消失，而这 3 张表在代码里被引用
 /// 76 处——漏写一处就会把已删除的渠道/逻辑模型泄漏到前台。
 /// <para>
 /// 因此这里把过滤做成<b>默认行为</b>：<see cref="Apply"/> 自动追加过滤，
@@ -17,13 +17,13 @@ public static class SoftDelete
     /// <summary>使用 <c>gorm.DeletedAt</c> 的表。来源：internal/model 的 3 个 gorm.DeletedAt 字段。</summary>
     public static readonly IReadOnlySet<string> Tables = new HashSet<string>(StringComparer.Ordinal)
     {
-        "channel_model_price_tiers",
-        "channel_models",
-        "model_channels",
+        "channelModelPriceTiers",
+        "channelModels",
+        "modelChannels",
     };
 
-    /// <summary>软删除列名。GORM 固定为 <c>deleted_at</c>。</summary>
-    public const string Column = "deleted_at";
+    /// <summary>软删除列名。GORM 固定为 <c>deleted_at</c>，v35 改名为 <c>deletedAt</c>（裸名，由本类加引号）。</summary>
+    public const string Column = "deletedAt";
 
     /// <summary>该表是否启用软删除。</summary>
     public static bool Applies(string table) => Tables.Contains(table);
@@ -41,7 +41,7 @@ public static class SoftDelete
         }
 
         string prefix = string.IsNullOrEmpty(alias) ? string.Empty : alias + ".";
-        return $"{prefix}{Column} IS NULL";
+        return $"{prefix}{SqlBuilder.Quote(Column)} IS NULL";
     }
 
     /// <summary>
@@ -85,17 +85,17 @@ public static class SoftDelete
     }
 
     /// <summary>
-    /// 软删除：把 <c>deleted_at</c> 置为当前时间。
+    /// 软删除：把 <c>deletedAt</c> 置为当前时间。
     /// 对应 GORM 的 <c>Delete()</c>——它执行 UPDATE 而不是 DELETE。
     /// </summary>
     public static string SoftDeleteStatement(string table, string keyColumn) =>
-        $"UPDATE {table} SET {Column} = @deletedAt WHERE {keyColumn} = @id";
+        $"UPDATE {SqlBuilder.Quote(table)} SET {SqlBuilder.Quote(Column)} = @deletedAt WHERE {SqlBuilder.Quote(keyColumn)} = @id";
 
     /// <summary>物理删除。对应 GORM 的 <c>Unscoped().Delete()</c>。</summary>
     public static string HardDeleteStatement(string table, string keyColumn) =>
-        $"DELETE FROM {table} WHERE {keyColumn} = @id";
+        $"DELETE FROM {SqlBuilder.Quote(table)} WHERE {SqlBuilder.Quote(keyColumn)} = @id";
 
-    /// <summary>恢复软删除记录。对应 GORM 的 <c>Unscoped().Update("deleted_at", nil)</c>。</summary>
+    /// <summary>恢复软删除记录。对应 GORM 的 <c>Unscoped().Update("deletedAt", nil)</c>。</summary>
     public static string RestoreStatement(string table, string keyColumn) =>
-        $"UPDATE {table} SET {Column} = NULL WHERE {keyColumn} = @id";
+        $"UPDATE {SqlBuilder.Quote(table)} SET {SqlBuilder.Quote(Column)} = NULL WHERE {SqlBuilder.Quote(keyColumn)} = @id";
 }

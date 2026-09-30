@@ -28,7 +28,7 @@ public sealed partial class Repository
         long offset,
         CancellationToken cancellationToken = default)
     {
-        string condition = "user_id = @userId AND type <> @reserve";
+        string condition = "\"userId\" = @userId AND type <> @reserve";
         DynamicParameters parameters = new();
         parameters.Add("userId", userId);
         parameters.Add("reserve", CreditLedgerType.CreditLedgerReserve);
@@ -68,7 +68,7 @@ public sealed partial class Repository
 
         long total = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"credit_ledger_entries\" WHERE " + condition,
+            "SELECT COUNT(*) FROM \"creditLedgerEntries\" WHERE " + condition,
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -84,7 +84,7 @@ public sealed partial class Repository
 
         IReadOnlyList<CreditLedgerEntry> entries = await QueryAsync<CreditLedgerEntry>(
             connection,
-            SqlBuilder.Select<CreditLedgerEntry>(condition, "created_at DESC", Dialect.LimitOffset(limit, offset)),
+            SqlBuilder.Select<CreditLedgerEntry>(condition, "\"createdAt\" DESC", Dialect.LimitOffset(limit, offset)),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -102,7 +102,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"credit_ledger_entries\" WHERE reference_key = @referenceKey",
+            "SELECT COUNT(*) FROM \"creditLedgerEntries\" WHERE \"referenceKey\" = @referenceKey",
             new { referenceKey },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return count > 0;
@@ -122,7 +122,7 @@ public sealed partial class Repository
 
         long total = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"tasks\" WHERE user_id = @userId",
+            "SELECT COUNT(*) FROM \"tasks\" WHERE \"userId\" = @userId",
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -134,8 +134,8 @@ public sealed partial class Repository
                     "Provider", "Model", "BillingOrderID", "ProviderRequestID", "PollStage",
                     "Attempts", "StartedAt", "CompletedAt", "CreatedAt", "UpdatedAt",
                 ],
-                "user_id = @userId",
-                "created_at DESC",
+                "\"userId\" = @userId",
+                "\"createdAt\" DESC",
                 Dialect.LimitOffset(limit, offset)),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);

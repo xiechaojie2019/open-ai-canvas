@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>AdminAuditEvent</c>，数据库表 <c>admin_audit_events</c>。
+/// 对应 Go <c>AdminAuditEvent</c>，数据库表 <c>adminAuditEvents</c>。
 /// 源文件：internal/model/models.go
 /// </summary>
 public class AdminAuditEvent
@@ -21,7 +21,7 @@ public class AdminAuditEvent
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>actor_user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>actorUserId</c>（maxLength=36）</summary>
     [JsonPropertyName("actorUserId")]
     public string ActorUserID { get; set; } = string.Empty;
 
@@ -29,11 +29,11 @@ public class AdminAuditEvent
     [JsonPropertyName("action")]
     public string Action { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>target_type</c>（maxLength=40）</summary>
+    /// <summary>数据库列 <c>targetType</c>（maxLength=40）</summary>
     [JsonPropertyName("targetType")]
     public string TargetType { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>target_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>targetId</c>（maxLength=160）</summary>
     [JsonPropertyName("targetId")]
     public string TargetID { get; set; } = string.Empty;
 
@@ -41,11 +41,11 @@ public class AdminAuditEvent
     [JsonPropertyName("summary")]
     public string Summary { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>metadata_json</c></summary>
+    /// <summary>数据库列 <c>metadataJson</c></summary>
     [JsonPropertyName("metadataJson")]
     public string MetadataJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }

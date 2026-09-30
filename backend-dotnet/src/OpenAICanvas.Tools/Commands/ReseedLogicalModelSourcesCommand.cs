@@ -103,7 +103,7 @@ internal static class ReseedLogicalModelSourcesCommand
         if (uniqueIds.Length == 0) return;
         await using DbConnection connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
         long active = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
-            "SELECT COUNT(*) FROM tasks WHERE logical_model_id IN @ids AND status IN @statuses",
+            "SELECT COUNT(*) FROM tasks WHERE \"logicalModelId\" IN @ids AND status IN @statuses",
             new { ids = uniqueIds, statuses = new[] { OpenAICanvas.Domain.Entities.TaskStatus.TaskStatusQueued, OpenAICanvas.Domain.Entities.TaskStatus.TaskStatusRunning } },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (active > 0) throw new InvalidOperationException($"存在 {active} 个 queued 或 running 前台模型任务，拒绝刷新");

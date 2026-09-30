@@ -31,7 +31,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
             connection,
-            SqlBuilder.Select<CloudAgentExecution>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CloudAgentExecution>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (run is not null)
@@ -49,7 +49,7 @@ public sealed partial class Repository
         CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
             connection,
             SqlBuilder.Select<CloudAgentExecution>(
-                "user_id = @userId AND active_task_id = @taskId AND status IN ('running', 'queued')",
+                "\"userId\" = @userId AND \"activeTaskId\" = @taskId AND status IN ('running', 'queued')",
                 limitOffset: " LIMIT 1"),
             new { userId, taskId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -68,8 +68,8 @@ public sealed partial class Repository
         return await QueryAsync<TaskEntity>(
             connection,
             SqlBuilder.Select<TaskEntity>(
-                "operation = 'cloud_agent' AND id NOT IN (SELECT id FROM cloud_agent_executions)",
-                limitOffset: " ORDER BY created_at LIMIT 50"),
+                "operation = 'cloud_agent' AND id NOT IN (SELECT id FROM \"cloudAgentExecutions\")",
+                limitOffset: " ORDER BY \"createdAt\" LIMIT 50"),
             new { },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -86,7 +86,7 @@ public sealed partial class Repository
         List<CloudAgentExecution> runs = (await QueryAsync<CloudAgentExecution>(
             connection,
             SqlBuilder.Select<CloudAgentExecution>(
-                "(status IN ('running', 'queued') OR cleanup_pending = @cleanup) AND id > @after",
+                "(status IN ('running', 'queued') OR \"cleanupPending\" = @cleanup) AND id > @after",
                 limitOffset: " ORDER BY id LIMIT @limit"),
             new { cleanup = true, after, limit },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
@@ -106,7 +106,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await connection.ExecuteScalarAsync<long?>(new CommandDefinition(
-            "SELECT \"revision\" FROM \"cloud_agent_executions\" WHERE \"id\" = @id AND \"user_id\" = @userId",
+            "SELECT \"revision\" FROM \"cloudAgentExecutions\" WHERE \"id\" = @id AND \"userId\" = @userId",
             new { id, userId },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
@@ -127,7 +127,7 @@ public sealed partial class Repository
         {
             int claimed = await ExecuteAsync(
                 connection,
-                "UPDATE \"cloud_agent_executions\" SET \"revision\" = \"revision\" + 1 WHERE \"id\" = @id AND \"user_id\" = @userId AND \"revision\" = @revision",
+                "UPDATE \"cloudAgentExecutions\" SET \"revision\" = \"revision\" + 1 WHERE \"id\" = @id AND \"userId\" = @userId AND \"revision\" = @revision",
                 new { id, userId, revision },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -137,7 +137,7 @@ public sealed partial class Repository
             }
             CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
                 connection,
-                SqlBuilder.Select<CloudAgentExecution>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+                SqlBuilder.Select<CloudAgentExecution>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
                 new { id, userId },
                 transaction,
                 cancellationToken).ConfigureAwait(false)
@@ -171,7 +171,7 @@ public sealed partial class Repository
     {
         CloudAgentExecution? run = await FirstOrDefaultAsync<CloudAgentExecution>(
             connection,
-            SqlBuilder.Select<CloudAgentExecution>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CloudAgentExecution>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -212,7 +212,7 @@ public sealed partial class Repository
         {
             CloudAgentExecution? baseline = await FirstOrDefaultAsync<CloudAgentExecution>(
                 connection,
-                "SELECT \"event_count\" AS \"EventCount\" FROM \"cloud_agent_executions\" WHERE \"id\" = @id AND \"user_id\" = @userId LIMIT 1",
+                "SELECT \"eventCount\" AS \"EventCount\" FROM \"cloudAgentExecutions\" WHERE \"id\" = @id AND \"userId\" = @userId LIMIT 1",
                 new { id = run.ID, userId = run.UserID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -222,8 +222,8 @@ public sealed partial class Repository
             }
             foreach (CloudAgentEventRecord record in await QueryAsync<CloudAgentEventRecord>(
                 connection,
-                "SELECT \"sequence\" AS \"Sequence\", \"event_json\" AS \"EventJSON\" FROM \"cloud_agent_event_records\" " +
-                "WHERE \"run_id\" = @runID AND \"user_id\" = @userID",
+                "SELECT \"sequence\" AS \"Sequence\", \"eventJson\" AS \"EventJSON\" FROM \"cloudAgentEventRecords\" " +
+                "WHERE \"runId\" = @runID AND \"userId\" = @userID",
                 new { runID = run.ID, userID = run.UserID },
                 transaction,
                 cancellationToken).ConfigureAwait(false))
@@ -232,8 +232,8 @@ public sealed partial class Repository
             }
             foreach (CloudAgentMessageRecord message in await QueryAsync<CloudAgentMessageRecord>(
                 connection,
-                "SELECT \"run_id\" AS \"RunID\", \"kind\" AS \"Kind\", \"sequence\" AS \"Sequence\", \"message_json\" AS \"MessageJSON\" " +
-                "FROM \"cloud_agent_message_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID",
+                "SELECT \"runId\" AS \"RunID\", \"kind\" AS \"Kind\", \"sequence\" AS \"Sequence\", \"messageJson\" AS \"MessageJSON\" " +
+                "FROM \"cloudAgentMessageRecords\" WHERE \"runId\" = @runID AND \"userId\" = @userID",
                 new { runID = run.ID, userID = run.UserID },
                 transaction,
                 cancellationToken).ConfigureAwait(false))
@@ -299,10 +299,10 @@ public sealed partial class Repository
             await ExecuteAsync(
                 connection,
                 """
-                INSERT INTO "cloud_agent_message_records" ("run_id", "kind", "sequence", "user_id", "message_json")
+                INSERT INTO "cloudAgentMessageRecords" ("runId", "kind", "sequence", "userId", "messageJson")
                 VALUES (@RunID, @Kind, @Sequence, @UserID, @MessageJSON)
-                ON CONFLICT ("run_id", "kind", "sequence")
-                DO UPDATE SET "message_json" = excluded."message_json"
+                ON CONFLICT ("runId", "kind", "sequence")
+                DO UPDATE SET "messageJson" = excluded."messageJson"
                 """,
                 SqlBuilder.Parameters(message),
                 transaction,
@@ -313,7 +313,7 @@ public sealed partial class Repository
             long count = run.Transcript.Count(message => message.Kind == kind);
             await ExecuteAsync(
                 connection,
-                "DELETE FROM \"cloud_agent_message_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID " +
+                "DELETE FROM \"cloudAgentMessageRecords\" WHERE \"runId\" = @runID AND \"userId\" = @userID " +
                 "AND \"kind\" = @kind AND \"sequence\" > @count",
                 new { runID = run.ID, userID = run.UserID, kind, count },
                 transaction,
@@ -335,8 +335,8 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         List<string> runIDs = (await QueryAsync<string>(
             connection,
-            "SELECT \"id\" FROM \"cloud_agent_executions\" WHERE \"user_id\" = @userID " +
-            "ORDER BY \"created_at\" DESC LIMIT @runLimit",
+            "SELECT \"id\" FROM \"cloudAgentExecutions\" WHERE \"userId\" = @userID " +
+            "ORDER BY \"createdAt\" DESC LIMIT @runLimit",
             new { userID, runLimit },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         if (runIDs.Count == 0)
@@ -345,8 +345,8 @@ public sealed partial class Repository
         }
         List<CloudAgentEventRecord> records = (await QueryAsync<CloudAgentEventRecord>(
             connection,
-            "SELECT \"run_id\" AS \"RunID\", \"sequence\" AS \"Sequence\", \"event_json\" AS \"EventJSON\", \"created_at\" AS \"CreatedAt\" " +
-            "FROM \"cloud_agent_event_records\" WHERE \"user_id\" = @userID AND \"run_id\" IN @runIDs ORDER BY \"created_at\"",
+            "SELECT \"runId\" AS \"RunID\", \"sequence\" AS \"Sequence\", \"eventJson\" AS \"EventJSON\", \"createdAt\" AS \"CreatedAt\" " +
+            "FROM \"cloudAgentEventRecords\" WHERE \"userId\" = @userID AND \"runId\" IN @runIDs ORDER BY \"createdAt\"",
             new { userID, runIDs },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         return records;
@@ -363,15 +363,15 @@ public sealed partial class Repository
         }
         run.Journal = (await QueryAsync<CloudAgentEventRecord>(
             connection,
-            "SELECT \"run_id\" AS \"RunID\", \"sequence\" AS \"Sequence\", \"event_json\" AS \"EventJSON\", \"created_at\" AS \"CreatedAt\" " +
-            "FROM \"cloud_agent_event_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID ORDER BY \"sequence\"",
+            "SELECT \"runId\" AS \"RunID\", \"sequence\" AS \"Sequence\", \"eventJson\" AS \"EventJSON\", \"createdAt\" AS \"CreatedAt\" " +
+            "FROM \"cloudAgentEventRecords\" WHERE \"runId\" = @runID AND \"userId\" = @userID ORDER BY \"sequence\"",
             new { runID = run.ID, userID = run.UserID },
             transaction,
             cancellationToken).ConfigureAwait(false)).ToList();
         run.Transcript = (await QueryAsync<CloudAgentMessageRecord>(
             connection,
-            "SELECT \"run_id\" AS \"RunID\", \"kind\" AS \"Kind\", \"sequence\" AS \"Sequence\", \"message_json\" AS \"MessageJSON\" " +
-            "FROM \"cloud_agent_message_records\" WHERE \"run_id\" = @runID AND \"user_id\" = @userID ORDER BY \"kind\", \"sequence\"",
+            "SELECT \"runId\" AS \"RunID\", \"kind\" AS \"Kind\", \"sequence\" AS \"Sequence\", \"messageJson\" AS \"MessageJSON\" " +
+            "FROM \"cloudAgentMessageRecords\" WHERE \"runId\" = @runID AND \"userId\" = @userID ORDER BY \"kind\", \"sequence\"",
             new { runID = run.ID, userID = run.UserID },
             transaction,
             cancellationToken).ConfigureAwait(false)).ToList();
@@ -409,8 +409,8 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CloudAgentCanvasMutation>(
             connection,
             SqlBuilder.Select<CloudAgentCanvasMutation>(
-                "user_id = @userId AND run_id = @runId",
-                limitOffset: " ORDER BY created_at DESC, id DESC LIMIT 1"),
+                "\"userId\" = @userId AND \"runId\" = @runId",
+                limitOffset: " ORDER BY \"createdAt\" DESC, id DESC LIMIT 1"),
             new { userId, runId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -422,8 +422,8 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CloudAgentCanvasMutation>(
             connection,
             SqlBuilder.Select<CloudAgentCanvasMutation>(
-                "user_id = @userId AND run_id = @runId",
-                limitOffset: " ORDER BY created_at DESC, id DESC LIMIT 1"),
+                "\"userId\" = @userId AND \"runId\" = @runId",
+                limitOffset: " ORDER BY \"createdAt\" DESC, id DESC LIMIT 1"),
             new { userId, runId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -437,8 +437,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE "cloud_agent_canvas_mutations" SET "status" = 'undone', "undone_at" = @undoneAt
-            WHERE "id" = @mutationId AND "user_id" = @userId AND "run_id" = @runId AND "status" = 'applied'
+            UPDATE "cloudAgentCanvasMutations" SET "status" = 'undone', "undoneAt" = @undoneAt
+            WHERE "id" = @mutationId AND "userId" = @userId AND "runId" = @runId AND "status" = 'applied'
             """,
             new { mutationId, userId, runId, undoneAt },
             transaction,
@@ -455,8 +455,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE "cloud_agent_canvas_mutations" SET "status" = 'undone', "undone_at" = @undoneAt
-            WHERE "id" = @mutationId AND "user_id" = @userId AND "run_id" = @runId AND "status" = 'applied'
+            UPDATE "cloudAgentCanvasMutations" SET "status" = 'undone', "undoneAt" = @undoneAt
+            WHERE "id" = @mutationId AND "userId" = @userId AND "runId" = @runId AND "status" = 'applied'
             """,
             new { mutationId, userId, runId, undoneAt },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -475,9 +475,9 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE "cloud_agent_executions"
-            SET "status" = 'failed', "cleanup_pending" = @cleanup, "failure_message" = @message, "revision" = "revision" + 1
-            WHERE "id" = @id AND "user_id" = @userId AND "revision" = @revision AND "status" IN ('queued', 'running')
+            UPDATE "cloudAgentExecutions"
+            SET "status" = 'failed', "cleanupPending" = @cleanup, "failureMessage" = @message, "revision" = "revision" + 1
+            WHERE "id" = @id AND "userId" = @userId AND "revision" = @revision AND "status" IN ('queued', 'running')
             """,
             new { userId, id, revision, cleanup = true, message },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -495,9 +495,9 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE "cloud_agent_executions"
-            SET "status" = 'cancelled', "cleanup_pending" = @cleanup, "revision" = "revision" + 1
-            WHERE "id" = @id AND "user_id" = @userId AND "revision" = @revision AND "status" IN ('queued', 'running', 'waiting_approval')
+            UPDATE "cloudAgentExecutions"
+            SET "status" = 'cancelled', "cleanupPending" = @cleanup, "revision" = "revision" + 1
+            WHERE "id" = @id AND "userId" = @userId AND "revision" = @revision AND "status" IN ('queued', 'running', 'waiting_approval')
             """,
             new { userId, id, revision, cleanup = true },
             cancellationToken: cancellationToken).ConfigureAwait(false);

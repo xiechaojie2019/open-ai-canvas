@@ -15,7 +15,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<CanvasShare>(
             connection,
-            SqlBuilder.Select<CanvasShare>("user_id = @userId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CanvasShare>("\"userId\" = @userId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { userId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -28,7 +28,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CanvasShare>(
             connection,
             SqlBuilder.Select<CanvasShare>(
-                SoftDelete.Apply("canvas_shares", "token_hash = @tokenHash AND enabled = @enabled"),
+                SoftDelete.Apply("canvasShares", "\"tokenHash\" = @tokenHash AND enabled = @enabled"),
                 limitOffset: " LIMIT 1"),
             new { tokenHash, enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -41,7 +41,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"canvas_shares\" WHERE \"user_id\" = @userId AND \"project_id\" = @projectId",
+            "DELETE FROM \"canvasShares\" WHERE \"userId\" = @userId AND \"projectId\" = @projectId",
             new { userId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -53,7 +53,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"canvas_shares\" SET \"project_id\" = @ProjectID, \"token_hash\" = @TokenHash, \"token_cipher\" = @TokenCipher, \"enabled\" = @Enabled, \"expires_at\" = @ExpiresAt, \"created_at\" = @CreatedAt WHERE \"id\" = @ID",
+            "UPDATE \"canvasShares\" SET \"projectId\" = @ProjectID, \"tokenHash\" = @TokenHash, \"tokenCipher\" = @TokenCipher, \"enabled\" = @Enabled, \"expiresAt\" = @ExpiresAt, \"createdAt\" = @CreatedAt WHERE \"id\" = @ID",
             share,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (updated > 0)
@@ -73,7 +73,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<Resource>(
             connection,
-            SqlBuilder.Select<Resource>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<Resource>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

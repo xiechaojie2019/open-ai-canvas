@@ -16,7 +16,7 @@ public sealed partial class Repository
         return await QueryAsync<ProjectAssetFolder>(
             connection,
             SqlBuilder.Select<ProjectAssetFolder>(
-                "project_id = @projectId", "parent_id ASC, position ASC, created_at ASC"),
+                "\"projectId\" = @projectId", "\"parentId\" ASC, position ASC, \"createdAt\" ASC"),
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -29,7 +29,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ProjectAssetFolder>(
             connection,
             SqlBuilder.Select<ProjectAssetFolder>(
-                "id = @folderId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+                "id = @folderId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { folderId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -45,7 +45,7 @@ public sealed partial class Repository
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
             await ExecuteAsync(
                 connection,
-                "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updated_at\" = @now WHERE \"id\" = @projectId",
+                "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updatedAt\" = @now WHERE \"id\" = @projectId",
                 new { now = folder.UpdatedAt, projectId = folder.ProjectID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -61,10 +61,10 @@ public sealed partial class Repository
             int updated = await ExecuteAsync(
                 connection,
                 """
-                UPDATE "project_asset_folders" SET "parent_id" = @ParentID, "name" = @Name,
-                  "name_key" = @NameKey, "style" = @Style, "theme" = @Theme,
-                  "position" = @Position, "updated_at" = @UpdatedAt
-                WHERE "id" = @ID AND "project_id" = @ProjectID
+                UPDATE "projectAssetFolders" SET "parentId" = @ParentID, "name" = @Name,
+                  "nameKey" = @NameKey, "style" = @Style, "theme" = @Theme,
+                  "position" = @Position, "updatedAt" = @UpdatedAt
+                WHERE "id" = @ID AND "projectId" = @ProjectID
                 """,
                 folder, transaction, cancellationToken).ConfigureAwait(false);
             if (updated != 1)
@@ -73,7 +73,7 @@ public sealed partial class Repository
             }
             await ExecuteAsync(
                 connection,
-                "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updated_at\" = @now WHERE \"id\" = @projectId",
+                "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updatedAt\" = @now WHERE \"id\" = @projectId",
                 new { now = folder.UpdatedAt, projectId = folder.ProjectID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -97,11 +97,11 @@ public sealed partial class Repository
         {
             long childCount = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"project_asset_folders\" WHERE \"project_id\" = @projectId AND \"parent_id\" = @folderId",
+                "SELECT COUNT(*) FROM \"projectAssetFolders\" WHERE \"projectId\" = @projectId AND \"parentId\" = @folderId",
                 new { projectId, folderId }, transaction, cancellationToken).ConfigureAwait(false);
             long assetCount = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"project_asset_links\" WHERE \"project_id\" = @projectId AND \"folder_id\" = @folderId",
+                "SELECT COUNT(*) FROM \"projectAssetLinks\" WHERE \"projectId\" = @projectId AND \"folderId\" = @folderId",
                 new { projectId, folderId }, transaction, cancellationToken).ConfigureAwait(false);
             if (childCount > 0 || assetCount > 0)
             {
@@ -109,7 +109,7 @@ public sealed partial class Repository
             }
             int deleted = await ExecuteAsync(
                 connection,
-                "DELETE FROM \"project_asset_folders\" WHERE \"id\" = @folderId AND \"project_id\" = @projectId",
+                "DELETE FROM \"projectAssetFolders\" WHERE \"id\" = @folderId AND \"projectId\" = @projectId",
                 new { folderId, projectId }, transaction, cancellationToken).ConfigureAwait(false);
             if (deleted != 1)
             {
@@ -117,7 +117,7 @@ public sealed partial class Repository
             }
             await ExecuteAsync(
                 connection,
-                "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updated_at\" = @now WHERE \"id\" = @projectId",
+                "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updatedAt\" = @now WHERE \"id\" = @projectId",
                 new { now, projectId }, transaction, cancellationToken).ConfigureAwait(false);
             return DeleteFolderOutcome.Ok;
         }, cancellationToken).ConfigureAwait(false);
@@ -130,7 +130,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ProjectAssetLink>(
             connection,
-            SqlBuilder.Select<ProjectAssetLink>("project_id = @projectId", "created_at ASC"),
+            SqlBuilder.Select<ProjectAssetLink>("\"projectId\" = @projectId", "\"createdAt\" ASC"),
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -158,7 +158,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE \"project_asset_links\" SET \"folder_id\" = @FolderID, \"position\" = @Position WHERE \"id\" = @ID AND \"project_id\" = @ProjectID",
+            "UPDATE \"projectAssetLinks\" SET \"folderId\" = @FolderID, \"position\" = @Position WHERE \"id\" = @ID AND \"projectId\" = @ProjectID",
             link,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -170,7 +170,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"project_asset_links\" WHERE \"project_id\" = @projectId AND \"asset_id\" = @assetId",
+            "DELETE FROM \"projectAssetLinks\" WHERE \"projectId\" = @projectId AND \"assetId\" = @assetId",
             new { projectId, assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

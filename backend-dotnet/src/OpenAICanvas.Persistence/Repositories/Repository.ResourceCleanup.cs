@@ -36,9 +36,9 @@ public sealed partial class Repository
         return await QueryAsync<Resource>(
             connection,
             SqlBuilder.Select<Resource>(
-                "((\"status\" IN @incompleteStatuses AND \"updated_at\" <= @incompleteBefore)" +
-                " OR (\"status\" = @readyStatus AND \"created_at\" <= @readyBefore))",
-                "created_at ASC, id ASC",
+                "((\"status\" IN @incompleteStatuses AND \"updatedAt\" <= @incompleteBefore)" +
+                " OR (\"status\" = @readyStatus AND \"createdAt\" <= @readyBefore))",
+                "\"createdAt\" ASC, id ASC",
                 Dialect.LimitOffset(limit, 0)),
             new
             {
@@ -70,8 +70,8 @@ public sealed partial class Repository
             connection,
             """
             UPDATE "resources" SET
-                "created_at" = COALESCE(@createdAt, "created_at"),
-                "updated_at" = COALESCE(@updatedAt, "updated_at"),
+                "createdAt" = COALESCE(@createdAt, "createdAt"),
+                "updatedAt" = COALESCE(@updatedAt, "updatedAt"),
                 "status" = COALESCE(@status, "status")
             WHERE "id" = @id
             """,
@@ -94,8 +94,8 @@ public sealed partial class Repository
         return await QueryAsync<Asset>(
             connection,
             SqlBuilder.Select<Asset>(
-                "status = @status AND updated_at <= @cutoff",
-                "updated_at ASC, id ASC",
+                "status = @status AND \"updatedAt\" <= @cutoff",
+                "\"updatedAt\" ASC, id ASC",
                 Dialect.LimitOffset(limit, null)),
             new { status = AssetVersionStatus.AssetVersionStatusArchived, cutoff },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -146,13 +146,13 @@ public sealed partial class Repository
                 List<string> documents = [];
                 documents.AddRange(await QueryAsync<string>(
                     connection,
-                    "SELECT \"payload_json\" FROM \"assets\" WHERE \"user_id\" = @userId",
+                    "SELECT \"payloadJson\" FROM \"assets\" WHERE \"userId\" = @userId",
                     new { userId = resource.UserID },
                     transaction,
                     cancellationToken).ConfigureAwait(false));
                 documents.AddRange(await QueryAsync<string>(
                     connection,
-                    "SELECT \"payload_json\" FROM \"canvas_projects\" WHERE \"user_id\" = @userId",
+                    "SELECT \"payloadJson\" FROM \"canvasProjects\" WHERE \"userId\" = @userId",
                     new { userId = resource.UserID },
                     transaction,
                     cancellationToken).ConfigureAwait(false));
@@ -174,11 +174,11 @@ public sealed partial class Repository
 
             (string Table, string Column)[] checks =
             [
-                ("announcements", "image_resource_id"),
-                ("announcement_image_drafts", "resource_id"),
-                ("asset_representations", "resource_id"),
-                ("voice_profiles", "sample_resource_id"),
-                ("shot_artifacts", "resource_id"),
+                ("announcements", "imageResourceId"),
+                ("announcementImageDrafts", "resourceId"),
+                ("assetRepresentations", "resourceId"),
+                ("voiceProfiles", "sampleResourceId"),
+                ("shotArtifacts", "resourceId"),
             ];
             foreach ((string table, string column) in checks)
             {
@@ -195,7 +195,7 @@ public sealed partial class Repository
             }
 
             await ExecuteAsync(connection,
-                "DELETE FROM \"ark_private_asset_bindings\" WHERE \"resource_id\" IN @resourceIds",
+                "DELETE FROM \"arkPrivateAssetBindings\" WHERE \"resourceId\" IN @resourceIds",
                 new { resourceIds }, transaction, cancellationToken).ConfigureAwait(false);
 
             foreach (ResourceDeletionJob job in deletionJobs)

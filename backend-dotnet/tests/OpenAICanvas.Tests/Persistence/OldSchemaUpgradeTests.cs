@@ -15,7 +15,7 @@ namespace OpenAICanvas.Tests.Persistence;
 public sealed class OldSchemaUpgradeTests
 {
     [Fact]
-    public async Task v15结构库可升级到v34()
+    public async Task v15结构库可升级到v35()
     {
         string dbPath = Path.Combine(Path.GetTempPath(), $"canvas-upgrade-{Guid.NewGuid():N}.db");
         try
@@ -56,8 +56,8 @@ public sealed class OldSchemaUpgradeTests
             await migrator.MigrateAsync();
 
             SchemaStatus status = await migrator.ReadStatusAsync();
-            Assert.Equal(34, status.Current);
-            Assert.Equal(34, status.Expected);
+            Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, status.Current);
+            Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, status.Expected);
             Assert.True(status.Ready);
 
             // 旧表新列齐了：v28 的索引列存在。
@@ -65,9 +65,9 @@ public sealed class OldSchemaUpgradeTests
                 (SqliteConnection)database.CreateConnection();
             await verify.OpenAsync();
             List<string> columns = (await verify.QueryAsync<string>(
-                "SELECT name FROM pragma_table_info('cloud_agent_executions')")).AsList();
-            Assert.Contains(columns, c => c == "conversation_id");
-            Assert.Contains(columns, c => c == "checkpoint_version");
+                "SELECT name FROM pragma_table_info('cloudAgentExecutions')")).AsList();
+            Assert.Contains(columns, c => c == "conversationId");
+            Assert.Contains(columns, c => c == "checkpointVersion");
         }
         finally
         {

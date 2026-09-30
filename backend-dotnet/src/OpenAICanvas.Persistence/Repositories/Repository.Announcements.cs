@@ -37,7 +37,7 @@ public sealed partial class Repository
         parameters.Add("offset", offset);
         IReadOnlyList<Announcement> announcements = await QueryAsync<Announcement>(
             connection,
-            SqlBuilder.Select<Announcement>(null, "pinned DESC, published_at DESC", Dialect.LimitOffset(limit, offset))
+            SqlBuilder.Select<Announcement>(null, "pinned DESC, \"publishedAt\" DESC", Dialect.LimitOffset(limit, offset))
                 .Replace(" FROM \"announcements\"", " FROM \"announcements\"" + where),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -51,7 +51,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<Announcement> announcements = await QueryAsync<Announcement>(
             connection,
-            SqlBuilder.Select<Announcement>("status = @status", "pinned DESC, published_at DESC"),
+            SqlBuilder.Select<Announcement>("status = @status", "pinned DESC, \"publishedAt\" DESC"),
             new { status = "active" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -59,10 +59,10 @@ public sealed partial class Repository
             connection,
             """
             SELECT COUNT(*) FROM "announcements"
-            LEFT JOIN "user_announcement_reads"
-              ON "user_announcement_reads"."announcement_id" = "announcements"."id"
-             AND "user_announcement_reads"."user_id" = @userId
-            WHERE "announcements"."status" = @status AND "user_announcement_reads"."id" IS NULL
+            LEFT JOIN "userAnnouncementReads"
+              ON "userAnnouncementReads"."announcementId" = "announcements"."id"
+             AND "userAnnouncementReads"."userId" = @userId
+            WHERE "announcements"."status" = @status AND "userAnnouncementReads"."id" IS NULL
             """,
             new { userId, status = "active" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -87,7 +87,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"announcements\" SET \"status\" = @closed, \"closed_at\" = @closedAt, \"updated_at\" = @closedAt WHERE \"id\" = @id AND \"status\" = @active",
+            "UPDATE \"announcements\" SET \"status\" = @closed, \"closedAt\" = @closedAt, \"updatedAt\" = @closedAt WHERE \"id\" = @id AND \"status\" = @active",
             new { closed = "closed", closedAt, id, active = "active" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated == 1;
@@ -116,8 +116,8 @@ public sealed partial class Repository
         {
             await ExecuteAsync(
                 connection,
-                "INSERT INTO \"user_announcement_reads\" (\"id\", \"user_id\", \"announcement_id\", \"read_at\") VALUES (@id, @userId, @announcementId, @readAt)" +
-                Dialect.OnConflictDoNothing("\"user_id\", \"announcement_id\""),
+                "INSERT INTO \"userAnnouncementReads\" (\"id\", \"userId\", \"announcementId\", \"readAt\") VALUES (@id, @userId, @announcementId, @readAt)" +
+                Dialect.OnConflictDoNothing("\"userId\", \"announcementId\""),
                 new { id = IdGenerator.NewId(), userId, announcementId = id, readAt },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
@@ -143,7 +143,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<AnnouncementImageDraft>(
             connection,
             SqlBuilder.Select<AnnouncementImageDraft>(
-                "resource_id = @resourceId AND user_id = @userId", limitOffset: " LIMIT 1"),
+                "\"resourceId\" = @resourceId AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { resourceId, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -155,7 +155,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"announcement_image_drafts\" WHERE \"resource_id\" = @resourceId AND \"user_id\" = @userId",
+            "DELETE FROM \"announcementImageDrafts\" WHERE \"resourceId\" = @resourceId AND \"userId\" = @userId",
             new { resourceId, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -172,7 +172,7 @@ public sealed partial class Repository
         return await QueryAsync<AnnouncementImageDraft>(
             connection,
             SqlBuilder.Select<AnnouncementImageDraft>(
-                "created_at < @before", "created_at ASC", Dialect.LimitOffset(limit, null)),
+                "\"createdAt\" < @before", "\"createdAt\" ASC", Dialect.LimitOffset(limit, null)),
             new { before },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -210,9 +210,9 @@ public sealed partial class Repository
                 connection,
                 """
                 UPDATE "announcements" SET "title" = @Title, "content" = @Content,
-                  "image_resource_id" = @ImageResourceID, "level" = @Level, "pinned" = @Pinned,
-                  "status" = @Status, "published_at" = @PublishedAt, "closed_at" = @ClosedAt,
-                  "updated_at" = @UpdatedAt
+                  "imageResourceId" = @ImageResourceID, "level" = @Level, "pinned" = @Pinned,
+                  "status" = @Status, "publishedAt" = @PublishedAt, "closedAt" = @ClosedAt,
+                  "updatedAt" = @UpdatedAt
                 WHERE "id" = @ID
                 """,
                 announcement, transaction, cancellationToken).ConfigureAwait(false);
@@ -222,7 +222,7 @@ public sealed partial class Repository
             }
 
             await ExecuteAsync(connection,
-                "DELETE FROM \"user_announcement_reads\" WHERE \"announcement_id\" = @id",
+                "DELETE FROM \"userAnnouncementReads\" WHERE \"announcementId\" = @id",
                 new { id = announcement.ID }, transaction, cancellationToken).ConfigureAwait(false);
 
             if (oldResource is null)
@@ -231,20 +231,20 @@ public sealed partial class Repository
             }
             long referenceCount = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"announcements\" WHERE \"image_resource_id\" = @resourceId",
+                "SELECT COUNT(*) FROM \"announcements\" WHERE \"imageResourceId\" = @resourceId",
                 new { resourceId = oldResource.ID }, transaction, cancellationToken).ConfigureAwait(false);
             if (referenceCount > 0)
             {
                 return false;
             }
             await ExecuteAsync(connection,
-                "DELETE FROM \"ark_private_asset_bindings\" WHERE \"resource_id\" = @resourceId",
+                "DELETE FROM \"arkPrivateAssetBindings\" WHERE \"resourceId\" = @resourceId",
                 new { resourceId = oldResource.ID }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"announcement_image_drafts\" WHERE \"resource_id\" = @resourceId",
+                "DELETE FROM \"announcementImageDrafts\" WHERE \"resourceId\" = @resourceId",
                 new { resourceId = oldResource.ID }, transaction, cancellationToken).ConfigureAwait(false);
             int deleted = await ExecuteAsync(connection,
-                "DELETE FROM \"resources\" WHERE \"id\" = @resourceId AND \"user_id\" = @userId",
+                "DELETE FROM \"resources\" WHERE \"id\" = @resourceId AND \"userId\" = @userId",
                 new { resourceId = oldResource.ID, userId = oldResource.UserID },
                 transaction, cancellationToken).ConfigureAwait(false);
             if (deleted != 1)
@@ -271,7 +271,7 @@ public sealed partial class Repository
             AnnouncementImageDraft? draft = await FirstOrDefaultAsync<AnnouncementImageDraft>(
                 connection,
                 SqlBuilder.Select<AnnouncementImageDraft>(
-                    "resource_id = @resourceId AND user_id = @userId", limitOffset: " LIMIT 1"),
+                    "\"resourceId\" = @resourceId AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
                 new { resourceId = resource.ID, userId }, transaction, cancellationToken).ConfigureAwait(false);
             if (draft is null)
             {
@@ -279,24 +279,24 @@ public sealed partial class Repository
             }
             long referenceCount = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"announcements\" WHERE \"image_resource_id\" = @resourceId",
+                "SELECT COUNT(*) FROM \"announcements\" WHERE \"imageResourceId\" = @resourceId",
                 new { resourceId = resource.ID }, transaction, cancellationToken).ConfigureAwait(false);
             if (referenceCount > 0)
             {
                 return false;
             }
             await ExecuteAsync(connection,
-                "DELETE FROM \"ark_private_asset_bindings\" WHERE \"resource_id\" = @resourceId",
+                "DELETE FROM \"arkPrivateAssetBindings\" WHERE \"resourceId\" = @resourceId",
                 new { resourceId = resource.ID }, transaction, cancellationToken).ConfigureAwait(false);
             int deleted = await ExecuteAsync(connection,
-                "DELETE FROM \"resources\" WHERE \"id\" = @resourceId AND \"user_id\" = @userId",
+                "DELETE FROM \"resources\" WHERE \"id\" = @resourceId AND \"userId\" = @userId",
                 new { resourceId = resource.ID, userId }, transaction, cancellationToken).ConfigureAwait(false);
             if (deleted != 1)
             {
                 throw new InvalidOperationException("record not found");
             }
             await ExecuteAsync(connection,
-                "DELETE FROM \"announcement_image_drafts\" WHERE \"resource_id\" = @resourceId AND \"user_id\" = @userId",
+                "DELETE FROM \"announcementImageDrafts\" WHERE \"resourceId\" = @resourceId AND \"userId\" = @userId",
                 new { resourceId = resource.ID, userId }, transaction, cancellationToken).ConfigureAwait(false);
             if (deletionJob is not null)
             {
@@ -318,7 +318,7 @@ public sealed partial class Repository
             return;
         }
         int deleted = await connection.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM \"announcement_image_drafts\" WHERE \"resource_id\" = @resourceId AND \"user_id\" = @userId",
+            "DELETE FROM \"announcementImageDrafts\" WHERE \"resourceId\" = @resourceId AND \"userId\" = @userId",
             new { resourceId, userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (deleted != 1)
         {
@@ -344,7 +344,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"resources\" WHERE \"id\" = @id AND \"user_id\" = @userId",
+            "DELETE FROM \"resources\" WHERE \"id\" = @id AND \"userId\" = @userId",
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

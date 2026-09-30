@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>IDSequence</c>，数据库表 <c>id_sequences</c>。
+/// 对应 Go <c>IDSequence</c>，数据库表 <c>idSequences</c>。
 /// 源文件：internal/model/models_logical_model.go
 /// </summary>
 public class IDSequence
@@ -25,13 +25,13 @@ public class IDSequence
     [JsonPropertyName("value")]
     public long Value { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>LogicalModelRevision</c>，数据库表 <c>logical_model_revisions</c>。
+/// 对应 Go <c>LogicalModelRevision</c>，数据库表 <c>logicalModelRevisions</c>。
 /// 源文件：internal/model/models_logical_model.go
 /// </summary>
 public class LogicalModelRevision
@@ -40,7 +40,7 @@ public class LogicalModelRevision
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>logical_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelId")]
     public string LogicalModelID { get; set; } = string.Empty;
 
@@ -48,25 +48,25 @@ public class LogicalModelRevision
     [JsonPropertyName("version")]
     public long Version { get; set; }
 
-    /// <summary>数据库列 <c>capability_spec_json</c></summary>
+    /// <summary>数据库列 <c>capabilitySpecJson</c></summary>
     [JsonIgnore]
     public string CapabilitySpecJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>default_options_json</c></summary>
+    /// <summary>数据库列 <c>defaultOptionsJson</c></summary>
     [JsonIgnore]
     public string DefaultOptionsJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_by</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>createdBy</c>（maxLength=36）</summary>
     [JsonPropertyName("createdBy")]
     public string CreatedBy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>LogicalModelRoute</c>，数据库表 <c>logical_model_routes</c>。
+/// 对应 Go <c>LogicalModelRoute</c>，数据库表 <c>logicalModelRoutes</c>。
 /// 源文件：internal/model/models_logical_model.go
 /// </summary>
 public class LogicalModelRoute
@@ -75,11 +75,11 @@ public class LogicalModelRoute
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>logical_model_revision_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelRevisionId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelRevisionId")]
     public string LogicalModelRevisionID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelModelId")]
     public string ChannelModelID { get; set; } = string.Empty;
 
@@ -95,17 +95,17 @@ public class LogicalModelRoute
     [JsonPropertyName("weight")]
     public long Weight { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>LogicalModel</c>，数据库表 <c>logical_models</c>。
+/// 对应 Go <c>LogicalModel</c>，数据库表 <c>logicalModels</c>。
 /// 源文件：internal/model/models_logical_model.go
 /// </summary>
 public class LogicalModel
@@ -138,66 +138,66 @@ public class LogicalModel
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
-    /// <summary>数据库列 <c>sort_order</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>sortOrder</c>（maxLength=64）</summary>
     [JsonPropertyName("sortOrder")]
     public long SortOrder { get; set; }
 
-    /// <summary>数据库列 <c>revision_sequence</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>revisionSequence</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long RevisionSequence { get; set; }
 
-    /// <summary>数据库列 <c>active_revision_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>activeRevisionId</c>（maxLength=36）</summary>
     [JsonPropertyName("activeRevisionId")]
     public string ActiveRevisionID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>source_channel_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>sourceChannelModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("sourceChannelModelId")]
     [GoOmitEmpty]
     public string SourceChannelModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>price_policy</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>pricePolicy</c>（maxLength=24）</summary>
     [JsonPropertyName("pricePolicy")]
     public string PricePolicy { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>billing_mode</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>billingMode</c>（maxLength=32）</summary>
     [JsonPropertyName("billingMode")]
     public string BillingMode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>unit_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>unitPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("unitPriceMicrocredits")]
     public long UnitPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>input_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("inputPriceMicrocredits")]
     public long InputPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>output_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("outputPriceMicrocredits")]
     public long OutputPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cached_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedPriceMicrocredits")]
     public long CachedPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>legacy_model_ids_json</c></summary>
+    /// <summary>数据库列 <c>legacyModelIdsJson</c></summary>
     [JsonIgnore]
     public string LegacyModelIDsJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>archived_at</c></summary>
+    /// <summary>数据库列 <c>archivedAt</c></summary>
     [JsonIgnore]
     public DateTime? ArchivedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>RouteAttempt</c>，数据库表 <c>route_attempts</c>。
+/// 对应 Go <c>RouteAttempt</c>，数据库表 <c>routeAttempts</c>。
 /// 源文件：internal/model/models_logical_model.go
 /// </summary>
 public class RouteAttempt
@@ -206,35 +206,35 @@ public class RouteAttempt
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     public string TaskID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>route_run</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>routeRun</c>（maxLength=64）</summary>
     [JsonPropertyName("routeRun")]
     public long RouteRun { get; set; }
 
-    /// <summary>数据库列 <c>attempt_number</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>attemptNumber</c>（maxLength=64）</summary>
     [JsonPropertyName("attemptNumber")]
     public long AttemptNumber { get; set; }
 
-    /// <summary>数据库列 <c>logical_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelId")]
     public string LogicalModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>logical_model_revision_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelRevisionId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelRevisionId")]
     public string LogicalModelRevisionID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>route_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>routeId</c>（maxLength=36）</summary>
     [JsonPropertyName("routeId")]
     public string RouteID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelModelId")]
     public string ChannelModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
@@ -242,27 +242,27 @@ public class RouteAttempt
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>dispatch_state</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>dispatchState</c>（maxLength=32）</summary>
     [JsonPropertyName("dispatchState")]
     public string DispatchState { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_request_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>providerRequestId</c>（maxLength=160）</summary>
     [JsonPropertyName("providerRequestId")]
     public string ProviderRequestID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>failure_code</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>failureCode</c>（maxLength=80）</summary>
     [JsonPropertyName("failureCode")]
     public string FailureCode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>failure_message</c>（maxLength=1000）</summary>
+    /// <summary>数据库列 <c>failureMessage</c>（maxLength=1000）</summary>
     [JsonPropertyName("failureMessage")]
     public string FailureMessage { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>started_at</c></summary>
+    /// <summary>数据库列 <c>startedAt</c></summary>
     [JsonPropertyName("startedAt")]
     public DateTime StartedAt { get; set; }
 
-    /// <summary>数据库列 <c>completed_at</c></summary>
+    /// <summary>数据库列 <c>completedAt</c></summary>
     [JsonPropertyName("completedAt")]
     public DateTime? CompletedAt { get; set; }
 }

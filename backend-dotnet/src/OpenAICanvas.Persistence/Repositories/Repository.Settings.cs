@@ -49,7 +49,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<UserIdentity>(
             connection,
             SqlBuilder.Select<UserIdentity>(
-                "user_id = @userId AND provider = @provider",
+                "\"userId\" = @userId AND provider = @provider",
                 limitOffset: " LIMIT 1"),
             new { userId, provider },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -83,7 +83,7 @@ public sealed partial class Repository
         {
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE \"system_settings\" SET value_json = @ValueJSON, updated_by = @UpdatedBy, created_at = @CreatedAt, updated_at = @UpdatedAt WHERE \"key\" = @Key",
+                "UPDATE \"systemSettings\" SET \"valueJson\" = @ValueJSON, \"updatedBy\" = @UpdatedBy, \"createdAt\" = @CreatedAt, \"updatedAt\" = @UpdatedAt WHERE \"key\" = @Key",
                 new
                 {
                     setting.Key,
@@ -114,7 +114,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"system_settings\" WHERE \"key\" = @key",
+            "DELETE FROM \"systemSettings\" WHERE \"key\" = @key",
             new { key },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

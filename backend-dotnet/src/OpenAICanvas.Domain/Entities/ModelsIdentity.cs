@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>AuthSession</c>，数据库表 <c>auth_sessions</c>。
+/// 对应 Go <c>AuthSession</c>，数据库表 <c>authSessions</c>。
 /// 源文件：internal/model/models_identity.go
 /// </summary>
 public class AuthSession
@@ -21,29 +21,29 @@ public class AuthSession
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>token_hash</c></summary>
+    /// <summary>数据库列 <c>tokenHash</c></summary>
     [JsonIgnore]
     public string TokenHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>EmailVerificationCode</c>，数据库表 <c>email_verification_codes</c>。
+/// 对应 Go <c>EmailVerificationCode</c>，数据库表 <c>emailVerificationCodes</c>。
 /// 源文件：internal/model/models_identity.go
 /// </summary>
 public class EmailVerificationCode
@@ -60,7 +60,7 @@ public class EmailVerificationCode
     [JsonPropertyName("email")]
     public string Email { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>code_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>codeHash</c>（maxLength=64）</summary>
     [JsonIgnore]
     public string CodeHash { get; set; } = string.Empty;
 
@@ -68,21 +68,21 @@ public class EmailVerificationCode
     [JsonPropertyName("purpose")]
     public string Purpose { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>used_at</c></summary>
+    /// <summary>数据库列 <c>usedAt</c></summary>
     [JsonPropertyName("usedAt")]
     public DateTime? UsedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>OAuthState</c>，数据库表 <c>o_auth_states</c>。
+/// 对应 Go <c>OAuthState</c>，数据库表 <c>oAuthStates</c>。
 /// 源文件：internal/model/models_identity.go
 /// </summary>
 public class OAuthState
@@ -95,37 +95,37 @@ public class OAuthState
     [JsonPropertyName("provider")]
     public string Provider { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>state_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>stateHash</c>（maxLength=64）</summary>
     [JsonIgnore]
     public string StateHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>code_verifier</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>codeVerifier</c>（maxLength=160）</summary>
     [JsonIgnore]
     public string CodeVerifier { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>next_path</c></summary>
+    /// <summary>数据库列 <c>nextPath</c></summary>
     [JsonPropertyName("nextPath")]
     public string NextPath { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>accepted_terms</c>（not null）</summary>
+    /// <summary>数据库列 <c>acceptedTerms</c>（not null）</summary>
     [JsonPropertyName("acceptedTerms")]
     public bool AcceptedTerms { get; set; }
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("expiresAt")]
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>used_at</c></summary>
+    /// <summary>数据库列 <c>usedAt</c></summary>
     [JsonPropertyName("usedAt")]
     public DateTime? UsedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>UserIdentity</c>，数据库表 <c>user_identities</c>。
+/// 对应 Go <c>UserIdentity</c>，数据库表 <c>userIdentities</c>。
 /// 源文件：internal/model/models_identity.go
 /// </summary>
 public class UserIdentity
@@ -134,7 +134,7 @@ public class UserIdentity
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
@@ -146,19 +146,19 @@ public class UserIdentity
     [JsonPropertyName("subject")]
     public string Subject { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_username</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>providerUsername</c>（maxLength=160）</summary>
     [JsonPropertyName("providerUsername")]
     public string ProviderUsername { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>avatar_url</c></summary>
+    /// <summary>数据库列 <c>avatarUrl</c></summary>
     [JsonPropertyName("avatarUrl")]
     public string AvatarURL { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }
@@ -187,17 +187,17 @@ public class User
     [GoOmitEmpty]
     public string Phone { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>email_verified_at</c></summary>
+    /// <summary>数据库列 <c>emailVerifiedAt</c></summary>
     [JsonPropertyName("emailVerifiedAt")]
     [GoOmitEmpty]
     public DateTime? EmailVerifiedAt { get; set; }
 
-    /// <summary>数据库列 <c>phone_verified_at</c></summary>
+    /// <summary>数据库列 <c>phoneVerifiedAt</c></summary>
     [JsonPropertyName("phoneVerifiedAt")]
     [GoOmitEmpty]
     public DateTime? PhoneVerifiedAt { get; set; }
 
-    /// <summary>数据库列 <c>display_name</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>displayName</c>（maxLength=80）</summary>
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = string.Empty;
 
@@ -209,19 +209,19 @@ public class User
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>password_hash</c></summary>
+    /// <summary>数据库列 <c>passwordHash</c></summary>
     [JsonIgnore]
     public string PasswordHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>last_login_at</c></summary>
+    /// <summary>数据库列 <c>lastLoginAt</c></summary>
     [JsonPropertyName("lastLoginAt")]
     public DateTime? LastLoginAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

@@ -35,7 +35,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<TaskEntity>(
             connection,
-            SqlBuilder.Select<TaskEntity>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<TaskEntity>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -57,10 +57,10 @@ public sealed partial class Repository
             limit = 50;
         }
 
-        List<string> conditions = ["user_id = @userId"];
+        List<string> conditions = ["\"userId\" = @userId"];
         if (!string.IsNullOrWhiteSpace(projectId))
         {
-            conditions.Add("project_id = @projectId");
+            conditions.Add("\"projectId\" = @projectId");
         }
         if (activeOnly)
         {
@@ -72,7 +72,7 @@ public sealed partial class Repository
             connection,
             SqlBuilder.Select<TaskEntity>(
                 string.Join(" AND ", conditions),
-                orderBy: "created_at DESC",
+                orderBy: "\"createdAt\" DESC",
                 limitOffset: Dialect.LimitOffset(limit, 0)),
             new
             {
@@ -90,7 +90,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<TaskLog>(
             connection,
-            SqlBuilder.Select<TaskLog>("user_id = @userId AND task_id = @taskId", orderBy: "created_at ASC"),
+            SqlBuilder.Select<TaskLog>("\"userId\" = @userId AND \"taskId\" = @taskId", orderBy: "\"createdAt\" ASC"),
             new { userId, taskId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -121,7 +121,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         foreach (BillingOrder order in await QueryAsync<BillingOrder>(
             connection,
-            SqlBuilder.Select<BillingOrder>("user_id = @userId AND task_id IN @taskIds"),
+            SqlBuilder.Select<BillingOrder>("\"userId\" = @userId AND \"taskId\" IN @taskIds"),
             new { userId, taskIds },
             cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -144,9 +144,9 @@ public sealed partial class Repository
         string? value = await ScalarAsync<string>(
             connection,
             """
-            SELECT provider_request_id FROM api_call_logs
-            WHERE task_id = @taskId AND provider_request_id <> ''
-            ORDER BY created_at DESC
+            SELECT "providerRequestId" FROM "apiCallLogs"
+            WHERE "taskId" = @taskId AND "providerRequestId" <> ''
+            ORDER BY "createdAt" DESC
             LIMIT 1
             """,
             new { taskId },
@@ -176,8 +176,8 @@ public sealed partial class Repository
         TaskEntity? task = await FirstOrDefaultAsync<TaskEntity>(
             connection,
             $"""
-            SELECT id, user_id, status FROM tasks
-            WHERE id = @taskId AND user_id = @userId
+            SELECT id, "userId", status FROM tasks
+            WHERE id = @taskId AND "userId" = @userId
             {Dialect.ForUpdate()}
             """,
             new { taskId, userId },
@@ -199,8 +199,8 @@ public sealed partial class Repository
         TaskUsage usage = await QuerySingleOrDefaultAsync<TaskUsage>(
             connection,
             """
-            SELECT COUNT(*) AS "Count", COALESCE(SUM(byte_count), 0) AS "Bytes", COALESCE(MAX(sequence), 0) AS "Max"
-            FROM task_text_delta WHERE task_id = @taskId
+            SELECT COUNT(*) AS "Count", COALESCE(SUM("byteCount"), 0) AS "Bytes", COALESCE(MAX(sequence), 0) AS "Max"
+            FROM "taskTextDelta" WHERE "taskId" = @taskId
             """,
             new { taskId },
             transaction,
@@ -208,7 +208,7 @@ public sealed partial class Repository
 
         long userBytes = await ScalarAsync<long>(
             connection,
-            "SELECT COALESCE(SUM(byte_count), 0) FROM task_text_delta WHERE user_id = @userId",
+            "SELECT COALESCE(SUM(\"byteCount\"), 0) FROM \"taskTextDelta\" WHERE \"userId\" = @userId",
             new { userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -258,7 +258,7 @@ public sealed partial class Repository
         return await QueryAsync<TaskTextDelta>(
             connection,
             SqlBuilder.Select<TaskTextDelta>(
-                "user_id = @userId AND task_id = @taskId AND sequence > @after",
+                "\"userId\" = @userId AND \"taskId\" = @taskId AND sequence > @after",
                 orderBy: "sequence ASC",
                 limitOffset: Dialect.LimitOffset(limit, 0)),
             new { userId, taskId, after },
@@ -277,7 +277,7 @@ public sealed partial class Repository
 
         TaskEntity? task = await FirstOrDefaultAsync<TaskEntity>(
             connection,
-            $"SELECT id, status, text_draft FROM tasks WHERE id = @taskId{Dialect.ForUpdate()}",
+            $"SELECT id, status, \"textDraft\" FROM tasks WHERE id = @taskId{Dialect.ForUpdate()}",
             new { taskId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -292,7 +292,7 @@ public sealed partial class Repository
         {
             IReadOnlyList<TaskTextDelta> items = await QueryAsync<TaskTextDelta>(
                 connection,
-                "SELECT content FROM task_text_delta WHERE task_id = @taskId ORDER BY sequence ASC",
+                "SELECT content FROM \"taskTextDelta\" WHERE \"taskId\" = @taskId ORDER BY sequence ASC",
                 new { taskId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -300,7 +300,7 @@ public sealed partial class Repository
             string draft = string.Concat(items.Select(item => item.Content));
             await ExecuteAsync(
                 connection,
-                "UPDATE tasks SET text_draft = @draft WHERE id = @taskId",
+                "UPDATE tasks SET \"textDraft\" = @draft WHERE id = @taskId",
                 new { draft, taskId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -308,7 +308,7 @@ public sealed partial class Repository
 
         await ExecuteAsync(
             connection,
-            "UPDATE task_text_delta SET expires_at = @expiresAt WHERE task_id = @taskId",
+            "UPDATE \"taskTextDelta\" SET \"expiresAt\" = @expiresAt WHERE \"taskId\" = @taskId",
             new { expiresAt, taskId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -327,7 +327,7 @@ public sealed partial class Repository
 
         IReadOnlyList<string> taskIds = (await QueryAsync<string>(
             connection,
-            "SELECT DISTINCT task_id FROM task_text_delta WHERE expires_at <= @now",
+            "SELECT DISTINCT \"taskId\" FROM \"taskTextDelta\" WHERE \"expiresAt\" <= @now",
             new { now },
             transaction,
             cancellationToken).ConfigureAwait(false)).AsList();
@@ -336,7 +336,7 @@ public sealed partial class Repository
         {
             TaskEntity? task = await FirstOrDefaultAsync<TaskEntity>(
                 connection,
-                "SELECT id, status, text_draft FROM tasks WHERE id = @taskId LIMIT 1",
+                "SELECT id, status, \"textDraft\" FROM tasks WHERE id = @taskId LIMIT 1",
                 new { taskId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -355,7 +355,7 @@ public sealed partial class Repository
 
             IReadOnlyList<TaskTextDelta> items = await QueryAsync<TaskTextDelta>(
                 connection,
-                "SELECT content FROM task_text_delta WHERE task_id = @taskId ORDER BY sequence ASC",
+                "SELECT content FROM \"taskTextDelta\" WHERE \"taskId\" = @taskId ORDER BY sequence ASC",
                 new { taskId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -363,7 +363,7 @@ public sealed partial class Repository
             string draft = string.Concat(items.Select(item => item.Content));
             await ExecuteAsync(
                 connection,
-                "UPDATE tasks SET text_draft = @draft WHERE id = @taskId",
+                "UPDATE tasks SET \"textDraft\" = @draft WHERE id = @taskId",
                 new { draft, taskId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -372,9 +372,9 @@ public sealed partial class Repository
         int deleted = await ExecuteAsync(
             connection,
             """
-            DELETE FROM task_text_delta
-            WHERE expires_at <= @now
-               OR NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_text_delta.task_id)
+            DELETE FROM "taskTextDelta"
+            WHERE "expiresAt" <= @now
+               OR NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = "taskTextDelta"."taskId")
             """,
             new { now },
             transaction,
@@ -397,10 +397,10 @@ public sealed partial class Repository
             """
             UPDATE tasks SET
                 status = @status, stage = @stage, progress = 100,
-                result_json = @resultJson, text_draft = '',
-                error = '', completed_at = @now,
-                lease_owner = '', lease_expires_at = NULL, updated_at = @now
-            WHERE id = @taskId AND user_id = @userId AND status = @textReplayStatus
+                "resultJson" = @resultJson, "textDraft" = '',
+                error = '', "completedAt" = @now,
+                "leaseOwner" = '', "leaseExpiresAt" = NULL, "updatedAt" = @now
+            WHERE id = @taskId AND "userId" = @userId AND status = @textReplayStatus
             """,
             new
             {
@@ -426,10 +426,10 @@ public sealed partial class Repository
             """
             SELECT
                 COUNT(*) AS "EventCount",
-                COUNT(DISTINCT task_id) AS "TaskCount",
-                COALESCE(SUM(byte_count), 0) AS "ByteCount",
-                MIN(created_at) AS "OldestAt"
-            FROM task_text_delta
+                COUNT(DISTINCT "taskId") AS "TaskCount",
+                COALESCE(SUM("byteCount"), 0) AS "ByteCount",
+                MIN("createdAt") AS "OldestAt"
+            FROM "taskTextDelta"
             """,
             cancellationToken: cancellationToken).ConfigureAwait(false) ?? new TextReplayStats();
     }

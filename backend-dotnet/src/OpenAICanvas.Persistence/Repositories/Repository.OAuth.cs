@@ -15,7 +15,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
-            INSERT INTO o_auth_states (id, provider, state_hash, code_verifier, next_path, accepted_terms, expires_at, used_at, created_at)
+            INSERT INTO "oAuthStates" (id, provider, "stateHash", "codeVerifier", "nextPath", "acceptedTerms", "expiresAt", "usedAt", "createdAt")
             VALUES (@ID, @Provider, @StateHash, @CodeVerifier, @NextPath, @AcceptedTerms, @ExpiresAt, @UsedAt, @CreatedAt)
             """;
         await connection.ExecuteAsync(new CommandDefinition(sql, state, cancellationToken: cancellationToken));
@@ -33,10 +33,10 @@ public sealed partial class Repository
         return await InTransactionAsync(async (connection, transaction) =>
         {
             const string selectSql = """
-                SELECT id, provider, state_hash, code_verifier, next_path, accepted_terms, expires_at, used_at, created_at
-                FROM o_auth_states
-                WHERE provider = @Provider AND state_hash = @StateHash
-                  AND used_at IS NULL AND expires_at > @Now
+                SELECT id, provider, "stateHash", "codeVerifier", "nextPath", "acceptedTerms", "expiresAt", "usedAt", "createdAt"
+                FROM "oAuthStates"
+                WHERE provider = @Provider AND "stateHash" = @StateHash
+                  AND "usedAt" IS NULL AND "expiresAt" > @Now
                 LIMIT 1
                 """;
 
@@ -51,8 +51,8 @@ public sealed partial class Repository
 
             DateTime now = DateTime.UtcNow;
             const string updateSql = """
-                UPDATE o_auth_states SET used_at = @Now
-                WHERE id = @ID AND used_at IS NULL
+                UPDATE "oAuthStates" SET "usedAt" = @Now
+                WHERE id = @ID AND "usedAt" IS NULL
                 """;
 
             int affected = await connection.ExecuteAsync(
@@ -80,8 +80,8 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
-            SELECT id, user_id, provider, subject, provider_username, avatar_url, created_at, updated_at
-            FROM user_identities
+            SELECT id, "userId", provider, subject, "providerUsername", "avatarUrl", "createdAt", "updatedAt"
+            FROM "userIdentities"
             WHERE provider = @Provider AND subject = @Subject
             LIMIT 1
             """;

@@ -145,7 +145,7 @@ public sealed class CloudAgentResourceLeaseTests : IDisposable
             (Microsoft.Data.Sqlite.SqliteConnection)_database.CreateConnection();
         await connection.OpenAsync();
         long? count = await connection.ExecuteScalarAsync<long?>(
-            "SELECT COUNT(*) FROM cloud_agent_resource_leases WHERE user_id = @userID AND owner_id = @ownerID",
+            "SELECT COUNT(*) FROM \"cloudAgentResourceLeases\" WHERE \"userId\" = @userID AND \"ownerId\" = @ownerID",
             new { userID, ownerID });
         return count ?? 0;
     }
