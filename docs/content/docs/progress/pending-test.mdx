@@ -3089,3 +3089,10 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 说明：这是读取校验的对比逻辑 bug；PUT/GET 网络链路本身在上一轮签名修复后已通。
 - [x] 存储/删除 10 测试通过；本地真实凭证回环（PUT→Range GET→DELETE）此前已验证。
 - [ ] 部署后验收：管理端「测试连接」应返回「连接测试通过」。
+
+### provider-input 资源地址按完整策略签发（2026-09-30 · 续十四）
+
+- **OSS 资源做方舟视频参考素材仍报「尚未配置服务器访问地址」**：`.NET` 的 `ProviderResourceUrlAsync` 写死构造平台 URL（要求 HTTPS 公网地址），即使资源已在 OSS 上。Go 的 `providerResourceURL` 走完整访问策略（PurposeProvider）。修复：本地资源保持平台签名 URL；云资源经 `ResolveRemoteAccessAsync` 签发——公网源站直接签 OSS 直链（无需平台公网地址）、CDN 优先、私有源站+allowPrivateProxy 回退平台代理。
+- 测试扩展：OSS 资源 provider-input 应签出 `bucket.oss-cn-hangzhou.aliyuncs.com` 直链（含 Signature）。
+- [x] 组合根测试（本地+云资源）通过。
+- [ ] 部署后验收：重新发起音频生视频，任务应提交成功（参考素材 URL 为 OSS 直链）。

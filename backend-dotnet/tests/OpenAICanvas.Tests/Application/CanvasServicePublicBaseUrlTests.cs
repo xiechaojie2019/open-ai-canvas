@@ -79,10 +79,42 @@ public sealed class CanvasServicePublicBaseUrlTests : IAsyncDisposable
         };
         await _repository.CreateResourceAsync(resource);
 
-        // provider-input 场景：要求绝对 URL（组合根必须能解析平台公网地址）。
+        // 本地资源 provider-input：要求绝对平台 URL（组合根必须能解析平台公网地址）。
         string url = await canvas.ResourceDomain.ProviderResourceUrlAsync(
             resource, DateTime.UtcNow.AddMinutes(5));
         Assert.StartsWith("https://example.com/api/public/resources/", url);
         Assert.Contains("signature=", url);
+
+        // 云资源 provider-input：公网源站签出 OSS 直链，不依赖平台公网地址。
+        Resource remote = new()
+        {
+            ID = IdGenerator.NewId(),
+            UserID = "u-base",
+            Kind = "image",
+            Status = ResourceStatus.ResourceStatusReady,
+            Provider = "aliyun",
+            ObjectKey = "open-ai-canvas/users/u-base/image/2026/09/30/r.png",
+            Endpoint = "https://bucket.oss-cn-hangzhou.aliyuncs.com",
+            Bucket = "bucket",
+            MimeType = "image/png",
+            Size = 1024,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        await _repository.CreateResourceAsync(remote);
+        await _repository.SaveSystemSettingAsync(new SystemSetting
+        {
+            Key = "oss",
+            ValueJSON = """
+                {"enabled":true,"provider":"aliyun","region":"cn-hangzhou","endpoint":"https://bucket.oss-cn-hangzhou.aliyuncs.com","bucket":"bucket","accessKeyId":"test-id","accessKeySecret":"test-secret","publicBaseUrl":"","pathPrefix":"open-ai-canvas","s3Preset":"custom","pathStyle":false,"sessionToken":"","allowUserS3":false,"cdnAuthMode":"","requireCDN":false,"allowPrivateProxy":false}
+                """,
+            UpdatedBy = "admin",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        string remoteUrl = await canvas.ResourceDomain.ProviderResourceUrlAsync(
+            remote, DateTime.UtcNow.AddMinutes(5));
+        Assert.StartsWith("https://bucket.oss-cn-hangzhou.aliyuncs.com/open-ai-canvas/", remoteUrl);
+        Assert.Contains("Signature=", remoteUrl);
     }
 }

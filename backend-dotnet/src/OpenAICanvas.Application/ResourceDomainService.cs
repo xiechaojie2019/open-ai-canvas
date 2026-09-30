@@ -473,11 +473,23 @@ public sealed class ResourceDomainService
     /// </summary>
     /// <summary>
     /// 供模型上游读取的绝对资源地址（provider 参考素材 URL 路径）。
-    /// 对应 Go: <c>providerResourceURL</c>。要求配置 HTTPS 公网访问地址。
+    /// 对应 Go: <c>providerResourceURL</c>——本地资源走平台签名 URL（要求 HTTPS 公网地址）；
+    /// 云资源走完整访问策略（公网源站签 OSS 直链、CDN 优先、私有源站代理回退）。
     /// </summary>
-    public Task<string> ProviderResourceUrlAsync(
-        Resource resource, DateTime expires, CancellationToken cancellationToken = default) =>
-        SignedResourceAccessUrlAsync(resource, "original", expires, publicBaseUrl: true, cancellationToken);
+    public async Task<string> ProviderResourceUrlAsync(
+        Resource resource, DateTime expires, CancellationToken cancellationToken = default)
+    {
+        if (IsLocalProvider(resource.Provider))
+        {
+            return await SignedResourceAccessUrlAsync(
+                resource, "original", expires, publicBaseUrl: true, cancellationToken).ConfigureAwait(false);
+        }
+        ResourceAccess access = await ResolveRemoteAccessAsync(
+            resource,
+            new ResourceAccessOptions(PurposeProvider, VariantOriginal, DownloadName: ""),
+            DateTime.UtcNow, cancellationToken).ConfigureAwait(false);
+        return access.Url;
+    }
 
     private async Task<string> SignedResourceAccessUrlAsync(
         Resource resource, string variant, DateTime expires, bool publicBaseUrl, CancellationToken cancellationToken)
