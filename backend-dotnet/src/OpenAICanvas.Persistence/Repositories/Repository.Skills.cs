@@ -11,6 +11,35 @@ namespace OpenAICanvas.Persistence.Repositories;
 /// </summary>
 public sealed partial class Repository
 {
+    /// <summary>
+    /// 内置技能幂等落库（按 id 冲突更新正文字段；用户关系独立表不受影响）。
+    /// 对应 Go: <c>UpsertBuiltinSkills</c> 的 OnConflict DoUpdates 语义。
+    /// </summary>
+    public async Task UpsertBuiltinSkillsAsync(IReadOnlyList<Skill> skills, CancellationToken cancellationToken = default)
+    {
+        if (skills.Count == 0)
+        {
+            throw new InvalidOperationException("builtin skills are empty");
+        }
+        const string columns = "owner_id, author_name, author_avatar_url, name, description, instruction, "
+            + "status, source, tag, sort_weight, is_private, markdown_url, showcase_media_json, extra_info, "
+            + "initial_like_count, initial_added_count, created_at, updated_at";
+        string[] columnNames = columns.Split(',').Select(c => c.Trim()).ToArray();
+        await InTransactionAsync(async (connection, transaction) =>
+        {
+            string insert = SqlBuilder.Insert(typeof(Skill));
+            string updateClause = " ON CONFLICT (\"id\") DO UPDATE SET "
+                + string.Join(", ", columnNames.Select(c => $"\"{c}\" = EXCLUDED.\"{c}\""));
+            foreach (Skill skill in skills)
+            {
+                DynamicParameters parameters = SqlBuilder.Parameters(skill);
+                await connection.ExecuteAsync(new CommandDefinition(
+                    insert + updateClause,
+                    parameters, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     // ---------------------------------------------------------------- 查询
 
     /// <summary>技能列表过滤条件。对应 Go: <c>repository.SkillListFilter</c>。</summary>

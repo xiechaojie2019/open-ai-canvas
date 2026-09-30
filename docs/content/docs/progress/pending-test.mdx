@@ -3039,3 +3039,15 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 7. **产物登记**（TaskTerminalService，PENDING-CONFIRMATIONS）：成功任务的产物资产登记由前端素材库覆盖，后端登记未移植。
 
 以上均不阻塞单实例部署的主流程；1/2 建议在 OSS 验收后接续，3 仅多实例部署需要。
+
+### 技能场景预设与内置技能种子（2026-09-30 · 续八）
+
+`GET /api/skills/presets` 此前返回 400——.NET 侧路由与种子机制整体未移植。本轮补齐：
+
+- **种子数据**：`presets.json`（10 个场景预设）与 `skills.json`（官方技能清单）从 Go 仓库原样复制并内嵌到 Application 程序集。
+- **`SkillPresets()`**：完整校验链（版本=1、非空、presetId 格式/去重、场景五分类、技能数 1-8 且去重、只引用种子市场已上架技能、source=hand-curated、证据等级 E1-E5、推荐理由 1-200 字）——启动即失败好过线上坏数据。
+- **`EnsureBuiltinSkillsAsync()`**：种子校验（公开启用、时间/计数、作者信息）→ 图片编辑三技能（host 词汇表，对应 Go `builtinImageEditingSkillDefinitions`）→ `UpsertBuiltinSkillsAsync` 按 id 冲突幂等落库（用户加入/收藏关系独立表不受影响）；启动在 `Program.cs` 执行，预设校验前置。`CANVAS_SKIP_BUILTIN_SKILLS=true` 供端点测试保持空库。
+- **路由**：`GET /skills/presets` 公开只读（无用户上下文）。
+- 测试 2 个：预设目录通过校验（格式/场景/证据/来源断言）、内置技能幂等落库且图片编辑三技能在列（翻页核对全量）。
+- [x] 全量回归 1643/1643 全绿（历史首次零失败——本轮无并行噪音）。
+- [ ] 部署后验收：技能库页面应出现官方技能市场（120+ 技能）与场景预设目录；`/api/skills/presets` 返回 200。

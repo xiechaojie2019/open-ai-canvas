@@ -262,6 +262,16 @@ await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
 await app.Services.GetRequiredService<OpenAICanvas.Application.ToolsService>()
     .EnsureBuiltinToolsAsync().ConfigureAwait(false);
 
+// 启动种子：内置技能 + 场景预设校验幂等落库（Go main.go:88 的 EnsureBuiltinSkills）。
+// 预设校验失败即中断启动——好过公开目录暴露坏引用。
+// 端点级测试需要空技能库，用 CANVAS_SKIP_BUILTIN_SKILLS 退出种子（生产不设）。
+if (!string.Equals(Environment.GetEnvironmentVariable("CANVAS_SKIP_BUILTIN_SKILLS"), "true",
+        StringComparison.OrdinalIgnoreCase))
+{
+    await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
+        .Skills.EnsureBuiltinSkillsAsync().ConfigureAwait(false);
+}
+
 // 插件运行时引导（10.1/10.2）：扫描官方包目录、合并 bundled 清单并加载注册表。
 // 与 Go 一致在监听前完成；坏包跳过不阻断启动。
 await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()
