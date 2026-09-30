@@ -3051,3 +3051,14 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 测试 2 个：预设目录通过校验（格式/场景/证据/来源断言）、内置技能幂等落库且图片编辑三技能在列（翻页核对全量）。
 - [x] 全量回归 1643/1643 全绿（历史首次零失败——本轮无并行噪音）。
 - [ ] 部署后验收：技能库页面应出现官方技能市场（120+ 技能）与场景预设目录；`/api/skills/presets` 返回 200。
+
+### 渠道模型报价路由（2026-09-30 · 续九）
+
+`POST /api/model-catalog/quote` 此前 404——.NET 未移植。本轮补齐（对应 Go `QuoteChannelModel`）：
+
+- **`QuoteChannelModelAsync`**：报价复用任务创建同一套渠道模型解析（价格档/SKU 选择器/能力合同），不预留积分不提交请求：意图校验（能力四类、参考素材 0-128）→ quoteInput 组装（options→config、素材计数占位）→ `ResolveForQuoteAsync`（TaskCreationService 的渠道模型解析公开桥）→ token 估算 → `BuildBillingOrderWithPriceTierAsync`（scene=model_quote）→ 报价投影（billingMode/quantity/amount/estimated）。
+- **路由**：`POST /model-catalog/quote` 登录 + JSON body（channelId/modelKey/intent）。
+- 移植中修复：ModelRequestIntent 的 Inputs/Options 反序列化后可空（Go 零值等价空表），校验前补空表初始化。
+- 测试 3 个：固定价格模型报价金额、缺渠道/模型 422、未登录 401。测试种子价格配置在 ChannelModel 本体（旧库默认档由 attach 按本体字段合成）。
+- [x] 全量回归 1646/1646 全绿。
+- [ ] 部署后验收：前端模型选择/报价刷新不再 404。

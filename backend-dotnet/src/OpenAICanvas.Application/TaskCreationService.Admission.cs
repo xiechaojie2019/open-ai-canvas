@@ -369,6 +369,15 @@ public sealed partial class TaskCreationService
         return input;
     }
 
+    /// <summary>
+    /// 报价复用渠道模型解析（不做额度/配额/密钥校验）。
+    /// 对应 Go: <c>QuoteChannelModel</c> 对 <c>resolveSystemChannelModelSelection</c> 的复用。
+    /// </summary>
+    public Task<Dictionary<string, JsonElement>> ResolveForQuoteAsync(
+        Dictionary<string, JsonElement> input, string taskType, string operation,
+        CancellationToken cancellationToken) =>
+        ResolveSystemChannelModelSelectionAsync(input, taskType, operation, cancellationToken);
+
     /// <summary>系统渠道任务 admission。对应 Go: <c>resolveSystemChannelModelSelection</c>。</summary>
     private async Task<Dictionary<string, JsonElement>> ResolveSystemChannelModelSelectionAsync(
         Dictionary<string, JsonElement> input,
