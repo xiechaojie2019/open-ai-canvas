@@ -136,6 +136,10 @@ public sealed class StorageSettingsEndpointTests : IDisposable
         Assert.Equal("open-ai-canvas", setting.GetProperty("pathPrefix").GetString());
         Assert.False(setting.TryGetProperty("accessKeySecret", out _));
         Assert.False(setting.TryGetProperty("sessionToken", out _));
+        // CDN 交付字段是前端设置页响应校验的必需项，缺失会让设置页报“格式无效”。
+        Assert.Equal("", setting.GetProperty("cdnAuthMode").GetString());
+        Assert.False(setting.GetProperty("requireCDN").GetBoolean());
+        Assert.False(setting.GetProperty("allowPrivateProxy").GetBoolean());
 
         using HttpClient user = await SignInAsUserAsync();
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/api/admin/settings/oss")).StatusCode);

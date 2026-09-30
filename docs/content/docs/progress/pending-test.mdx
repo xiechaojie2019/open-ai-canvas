@@ -2885,6 +2885,28 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - [x] 全量回归 1610/1611（唯一失败 `ChannelAdminTests.更新渠道_完整路径与秘钥保留` 为偶发，单跑通过）；发布 linux-x64 产物并部署测试站，backend healthy（schema 34/34）。
 - [ ] 请用前端再次重新提交一次带参考图的图片编辑任务确认本单闭环；同单可到任务详情日志核对不再出现 data URL 诊断。
 
+## 画布透明图"所选模型与任务能力不匹配"（2026-09-29 · 画布 aN9SUlmj3XDzNPdjh3gK_ 工单）
+
+用户在后台给渠道模型 gpt-image-2 配置了透明背景（配置正确），画布上对图片节点使用"移除图片背景/图层拆分"等工具时报『所选模型与任务能力不匹配』。排查结论（后端 + 前端双侧验证）：
+
+- **后端行为正确**：用临时会话直接调 `POST /api/tasks` 实测——gpt-image-2 + transparentBackground=true 的图片任务创建成功并生成成功；把 model 换成渠道里的文本模型 gpt-6-luna 则精确复现 `所选模型与任务能力不匹配`（`TaskCreationService.Admission.cs:494`，intent=image vs 渠道模型 capability=text）。该画布上"AI 图层拆分""移除图片背景"三个节点绑定的正是 gpt-6-luna。
+- **前端缺陷（已修）**：媒体工具对话框（局部重绘/图片编辑/图层拆分）初始化时继承 `节点 metadata.model || 全局 config.model`，节点创建时画布默认模型是文本模型的话就会绑上文本模型；ModelPicker 选项列表按能力过滤后看不到该值，但当前值仍显示并可直接确认，确认后 `payload.generationConfig.model` 会覆盖 `buildGenerationConfig` 已解析的兼容模型发给后端。修复：`model-selection.ts` 新增 `resolveImageDialogModel`（继承值通过图片能力校验则保留，否则落到图片能力组内兼容模型），在唯一挂载点 `canvas-project-media-dialogs.tsx` 对三个对话框统一应用；成功一次后节点绑定会被兼容模型自愈覆盖。
+- **遗留观察（未改）**：`modelCapabilityConfigFor` 对没有 image 段的模型回落默认图片能力（transparentBackground.supported=true），文本模型节点因此也能显示透明图开关，属于同类混淆源，涉及面大另行处理；`modelProtocolCapability` 在 `filterModelsByCapability` 里未传协议定义表，协议层过滤目前是空转（第三层 configuredCapability 兜住了）。
+- [x] web 相关测试 24/24；vite 打包通过（`bun run build` 的 tsc 报错为 main 既有问题：live2d-loader/project-asset-sync/user-data-sync 三文件，与本改动无关）；前端已重建镜像部署测试站并 healthy。
+- [ ] 请在画布上重新对"移除图片背景/图层拆分"节点执行生成，确认模型已自动路由到 gpt-image-2 且透明背景生效；已有节点的旧绑定在对话框打开时会自动显示为兼容模型。
+- 排障备注：复现时在测试站建的验证任务 `31209a9f1a4daaba7180ef93d41eab3f` 已成功并正常计费（即 gpt-image-2+透明图的通过证据），可删除。
+
+## 创作台"镜 2"视频卡片永久 pending（2026-09-29 · 测试站工单）
+
+创作菜单一条 9月28日 17:46 的"镜 2 视频生成"卡片一直显示"影策正在生成视频……"。排查结论：
+
+- **后端无卡死**：当时唯一的视频任务 `0763c7d1d547c85233e7ef07cd4e367a`（prompt 会动的苹果）17:49 创建、17:53 成功、产物完整——它是用户在任务中心"新建任务"里手动补建的（input 形状 `video_${operation}` + metadata 仅 videoEditOperation 可证），与卡片无关联。
+- **根因一（提交崩溃）**：#554（93bc079b）重构时误删创作页视频分支的 `normalizedVideo` 定义但保留全部引用，视频提交在 try 之外抛 ReferenceError：任务不会创建、catch 不生效、卡片永久 pending。已恢复定义（`normalizeVideoValue(videoProfile, ...)`）。
+- **根因二（孤儿不自愈）**：创建请求响应在刷新/断网时丢失会让 pending 消息永远没有 taskIds，`isRecoverableCreationMessage` 因 `!taskIds?.length` 不再接管，卡片同样永久 pending。已新增 `sweepOrphanedCreationMessages`：水合时把超过 30 分钟仍 pending 且无 taskIds 的消息收敛为显式失败态（生成中断，请重新发送），用户可重试。
+- **顺带发现（未改）**：`TaskForOutput` 的 `PublicTaskInputJSON` 投影会改写实体上的 InputJSON，若被后续保存会把库里的完整输入覆盖成投影（本例 DB 中 prompt/config 已丢失，属同类症状），后续应让投影不改写原实体。
+- [x] 专项测试 21/21；tsc 仅剩 main 既有错误（live2d-loader/project-asset-sync/user-data-sync/sha256/libtv-settings）；vite 打包通过。
+- [ ] 部署后刷新创作页：原卡住的"镜 2"卡片应变为"生成中断"可重试状态；新发视频请求应正常创建任务并出片。
+
 ## v16–v34 移植收尾核对与最终缺口清单（2026-09-29）
 
 逐版本核对 Go migrations v1–v34 与 .NET 目录：34 版名称/序号/校验和全部一致（v6/v7 为两端一致的历史顺序兼容切换），功能面已全部落地。以下为核对后**仍未实现**的剩余项，全部是跨管线/跨功能依赖，按优先级排列：
@@ -2947,3 +2969,85 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - [x] 全量回归 1623/1624（唯一失败 `ChannelOrderTests` 渠道创建为既有并行时序噪音，单跑 4/4 通过）；`TaskQueueAdmissionEndpointTests` 的旧参数声明式能力 JSON 夹具已按 Go 当前契约更新（Go 对该形态同样解码失败，非兼容层）。
 - [ ] 测试站部署后建议验证：管理员分析总览出现 finance 汇总且 CSV 含收入/成本/利润列；Agent 运行多步后任务中心可见 cloud_agent_step 任务（步骤真实带 canonical 出站）。
 - [ ] 仍缺（保持记录）：Agent 步骤的 TextDraft 流式回写（Go taskTextStreamPublisher 对应物，影响打字机效果而非功能）；Go `cloudAgentStepLimits`（策略级单步输出上限/墙钟，RuntimePolicy 无对应字段）；interjections/计划（plan）机制；`cloudAgentPruneInspectedImages`（A 组看图轮内裁剪）；创建侧 agentRequests 占位校验接线。
+
+### A 组：Agent 看图链路（2026-09-29 · 续四）
+
+前置（上一轮的模型上下文装配）就绪后，全量移植 Go `cloud_agent_vision.go`：
+
+- **VisionEnabled 贯通**：请求 DTO 补 `visionEnabled`；建 run 时由服务端按本轮渠道模型合同定格（`text.references.maxImages > 0`，`CloudAgentVisionCapabilities` 会话创建与运行时共用），客户端传入值被忽略；`canvas_inspect_image` 工具 schema 按 VisionEnabled + 画布范围注册（创建时 canonical 改用真实请求构建工具表）。
+- **识图执行**：`PrepareImageInspectionAsync`（节点归属/资源就绪/图片类型/字节上限校验、本轮 16 次调用硬闸、按“节点+资源+revision”的同版本去重（重复即触发 repeated_read_guard 终局）、同图附图 2 次后只回执文字、批次附图数受模型 maxImages 限制）；校验在检查点事务外，成功后工具回执入历史 + 计数（含创作锚点视觉身份标记）+ 图片入缓冲。
+- **图片投递**：图片只挂 user 消息（tool 角色只接受字符串）；同一批的看图结果缓冲后合并成**一条** user 消息追加在全部 tool 结果之后（满足上游 assistant(tool_calls) → 紧跟全部 tool 回执的配对合同），本批最后一个是看图时 ToolResult 内 flush，否则由 advance 组装 canonical 前兜底 flush（幂等）。
+- **轮内裁剪**：`PruneInspectedImages` 保留最近 3 个工具轮次的图片，更早的换成逐图带 nodeId/观察注记的占位符（文字回执永远保留）；步骤入队时在组装请求前执行并广播 `context_images_pruned` 事件。
+- **参考白名单**：`ImageReferencesAsync` 只放行实际附图且归属/就绪/类型/大小校验通过的 resource: 引用（超出模型数量的旧图替换为文字），经步骤入队 `referenceImages` 下发，由 Worker 的 `resolveAgentResourcePlaceholders` 水合；水合侧补 Go `imageOnly` 特例（强制图片类型/字节上限/拒绝内嵌替换/空内容拒绝，数量超限报错）。
+- 状态字段（imageInspectCounts/imageInspectionReads/imageInspectCalls/pendingImageInspections）进检查点，重启不重置预算；visualNote 补进创作锚点资产 DTO（Go 契约）。
+- 测试 7 个：配对不变式（交错必被抓、修复后单条 user 消息带全部图片）、批次执行两条 flush 路径与幂等、计数迁移与锚点标记、轮内裁剪（保留期/占位符/观察注记/无工具轮次回退）、工具注册开关。测试顺带抓到一个真实移植错误（图片消息文本部件误写为 content 键，会破坏上游文本部件校验），已修复。
+- [x] 全量回归 1630/1631（唯一失败为既有并行时序噪音 `ChannelModelWriteTests`，单跑 10/10 通过）。
+- [ ] 测试站部署后建议验收：给支持图片输入的文本模型建一轮 Agent 对话，要求它查看画布上的图片并描述画面；任务中心应出现带 referenceImages 的 cloud_agent_step 任务，且同一张图第三次调用只回执文字。
+- [ ] 已知边界（保持记录）：识图 16 次硬闸触发即终局本轮（与 Go 一致）；未移植的 interjections/plan/step-limits 机制与本链路无耦合。
+
+### 存储设置页格式无效修复 + 对象存储通道现状确认（2026-09-29 · 续五）
+
+- **画布 blob 资源加载异常诊断**：画布 `K_mWyL239jS9urVi8JRCM` 两个图片生成结果节点的 `content` 被持久化为浏览器本地 `blob:` URL、`storageKey` 停在 `generation-image:` 本地键——根因是 `project-asset-sync.ts` 的 `storedGenerationImage` 只写本地 IndexedDB，缺视频/音频分支（`storedGenerationMedia`）已有的幂等上传资源库步骤。`blob:` 天然"来源+会话"作用域，跨端（.79:3030 ↔ .211:5173）与刷新后必然失效。修复方向已给出（图片物化对齐视频：物化后 `uploadMediaFile` 上传并改写节点引用），待用户确认后实施。
+- **存储设置页「服务端返回的存储配置格式无效」**：.NET `PublicOSSSetting` 缺 Go 契约里的 `cdnAuthMode`/`requireCDN`/`allowPrivateProxy` 三个字段，前端响应校验失败。已补齐请求/存储/公共三个 DTO、归一化（trim+小写，非空时仅允许 public/qiniu，报错文案与 Go 一致）与投影，测试补三字段断言。
+- **对象存储通道现状**：.NET `ResourceUploadService` 明确注释对象存储（OSS/COS/Kodo/S3）通道未移植——**即使管理端配好 OSS，资源物理对象目前仍始终以 local provider 落在服务器本地盘**（storage location 注册/连接测试可用，但 `storeResourceObject` 强制回退 local）。与 Go 的差异记录在 PENDING-CONFIRMATIONS.md；「生成图片是否上 OSS」取决于先落地两个前置：① 上游图片物化上传资源库（见第一条），② 后端对象存储写通道移植。
+- [x] StorageSettings 回归 4/4；全量回归 1630/1631（既有并行噪音）。
+- [ ] 部署后验收：管理后台「存储服务」页能正常读取配置不再报格式无效；保存含 CDN 鉴权方式的配置能回读一致。
+
+### 对象存储写入通道 + 切线路成本重算（2026-09-30）
+
+**对象存储写入通道**（此前 .NET 仅 local 落盘，本次全量移植）：
+- `StorageObjectChannel`：阿里云 OSS（V1 签名）、腾讯云 COS（q-sign-algorithm=sha1 头授权 + 预签名）、七牛云 Kodo（表单上传 + Kodo 管理 API 删除 + S3 兼容 AWS V4 预签名读取）、通用 S3（AWSSDK.S3）；Range 读取（416 容忍）、CDN 公开/七牛 V2 签名、强制下载 Content-Disposition、分发配置摘要。
+- 上传路由：创建任务前按用户/平台设置解析启用配置（对齐 Go `activeResourceOSSSetting`：个人 S3 需平台允许），源站拒绝时重置请求位降级 local 并改写绑定字段（Go `storeResourceObject` 的 io.NopCloser 语义在 .NET 以 NonDisposingStream 落实，避免传输层关闭调用方流导致降级重读失败）；任务资源删除按 provider 分派远程删除（404 容忍）。
+- 资源投递：`ResolveRemoteAccessAsync` 落地 Go `assets.ResolveAccess` 远程分支——CDN 优先（public 过期时间置空）、RequireCDN 显式 503、公网源站签名直链（无 CDN 鉴权时留 `cdn_auth_unconfigured` 回退原因）、私有源站仅 provider-input 允许平台代理；`/resources/:id/file` 对 CDN/origin 返回 307，代理路径按 Range 转读源站；下载强制走源站直链 + Content-Disposition。
+- **前端图片物化对齐**：`storedGenerationImage` 与视频/音频一致，本地副本后幂等上传资源库并改写节点引用——根治画布生成图片 `content` 停留 `blob:` 本地 URL、跨端/刷新加载异常的问题。
+- 测试 6 个（本地 SQLite + 形态断言，无真实云依赖）：上传路由与降级（真实请求到 aliyun 端点被 403 拒绝后降级 local）、未注入时保持本地、公开 CDN 直链与批量访问、RequireCDN 未配置鉴权 503、公网源站签名直链、私有源站 display 拒绝/provider 代理放行。
+
+**切线路成本重算**：
+- `Repository.SwitchTaskLogicalRouteAsync`：任务行 CAS（running+原 route）→ 订单成本快照改写（不反查当前价格）→ channel 计费时替换订单价格并按差额调整积分预留（新价格不得扩大原授权，charge limit 拦截；差额入账并留 ledger“备用供应线路价格调整”）。错误以 Reason 标记转译（task_state_conflict / insufficient_credits / billing_charge_limit / billing_state_conflict）。
+- `LogicalModelService.SwitchTaskToNextRouteAsync`：排除已尝试路由的备用线路选型（复用 Go `eligibleLogicalRoutes(tried)` 加权语义）→ 能力/价格校验 → 重放路由选型到任务输入 → channel 计费创建替换订单 → 调仓储事务；任务字段随切换更新。
+- 测试 4 个：无订单切换、渠道计费差额调整与留痕、超批准上限拒绝、任务/路由过期冲突。
+- [x] 存储通道 6 + 切线路 4 测试通过；全量回归 1634/1637（3 失败为已知并行噪音，单跑通过）；web vite 构建通过，web 测试基线一致（23 fail 为存量）。
+- [ ] 测试站部署后验收：管理端配好 OSS 后上传资源落 OSS（`resources.provider` 为云厂商）；画布生成图片刷新后仍可加载（`content` 为资源引用而非 blob:）；RouteAttempt 状态机与执行器循环（Go `taskRouteExecutor`）仍待移植——.NET worker 依旧直连执行，切线路编排当前供重试/恢复路径调用。
+
+### RouteAttempt 状态机与执行器循环（2026-09-30 · 续六）
+
+- **仓储**：`CreateRouteAttemptAsync` / `RouteAttemptsAsync` / `SaveRouteAttemptAsync` / `MarkRouteAttemptDispatchingAsync`（CAS：仅 not_sent 可确认，防陈旧 Worker 二次分发同一尝试）。
+- **`RouteAttemptOrchestrator`**：`BeginTaskRouteAttemptAsync`（直连任务留尝试记录 + 旧任务无提交记录拒绝自动重发；managed 任务复用 not_sent / accepted / submission_unknown / rejected_no_job 分支状态机，安全拒绝触发切换）；`MarkDispatchingAsync`；`FinishAttemptAsync`（成功/失败分类：有 ProviderRequestID → accepted、安全拒绝 → rejected_no_job、其余 → submission_unknown）；`NextAttemptAfterFailureAsync`（失败线路健康阻断：401/403 封渠道 10 分钟、404 封渠道模型 10 分钟、429 封渠道 30s（RetryAfter 可延长）→ 排除已尝试路由 → `SwitchTaskToNextRouteAsync` 重算成本切换）。
+- **Worker 接线**：`ExecuteWithRouteFailoverAsync` 循环替代单次执行——managed 任务上游安全拒绝时自动切备用线路重发（任务行已随切换事务更新）；非安全拒绝与直连任务保持原始失败；切换/阻断失败留 task_log“备用路由不可用”。
+- 已知边界（对齐记录）：Go 的分布式健康阻断走 Redis（Coordinator.RouteBlockedUntil/BlockRoute），.NET 协调器接口暂无对应方法，当前为进程内阻断——单实例部署语义一致，多实例部署阻断不共享（单实例部署不受影响）。
+- [x] 存储通道 + 切线路 + 路由状态相关 10 测试通过；全量回归 1640/1641（1 失败为 TaskEndpointTests 并行时序噪音，单跑 19/19 通过）。
+- [ ] 测试站部署后验收：managed 任务在上游 401/404 时应自动切备用线路并在任务日志留“上游未创建任务，切换备用能力路由”，route_attempts 表出现多个尝试行。
+
+### 对象存储通道收尾接线（2026-09-30 · 续七）
+
+- **删除作业云分支**：`ResourceDeleteService` 注入 StorageSettingsService，云 provider（OSS/COS/Kodo/S3）删除任务经对象存储通道按资源绑定的存储位置远程删除（404 容忍，失败 pending 重试）——此前云任务永久 pending。复用“画布历史引用保护”守卫后再删。
+- **连接测试全 provider**：`TestAsync` 移除 S3-only 的 501 限制，阿里云/COS/七牛经 `StorageObjectChannel` 做写入-读取-删除回环测试（S3 保持 AWSSDK 路径）。管理端「测试连接」对四种 provider 均可用。
+- 注释同步：ResourceUploadService/ResourceDomainService 的“未移植/待确认 #25”标记已过时，更新为实际行为描述。
+- [x] StorageSettings/删除/存储通道/切线路 14 测试通过；solution 编译通过。
+- [ ] 部署后验收：配置阿里云/COS/七牛后「测试连接」应返回成功；删除云 provider 资源后 `resource_deletion_jobs` 应为 done。
+
+### 剩余未移植清单（全量核对 2026-09-30）
+
+逐项核对源码标记与 Go 侧对照后，真正的功能缺口只剩以下（其余标记为过时注释或已被本次工作覆盖）：
+
+1. **Ark 私有资产同步**（ResourceDomainService:187，待确认 #25）：火山方舟私有资产的上传绑定与同步依赖云 SDK；当前导入/直链路径可用，私有资产同步不可用。
+2. **画布分享云 provider 投递**（CanvasShareService）：公开分享资源下发目前仅支持本地 provider 文件流；云 provider 需要把 handler 改为按 ResolveAccess 307 重定向/代理。核心投递策略已在 ResolveRemoteAccessAsync 就绪，仅差分享 handler 接线。
+3. **Redis 协调器**（SystemPerformanceService）：多实例部署的分布式频控/路由健康阻断/协调器接口；单实例部署语义完整。
+4. **plan_update 工具与插值提醒**（CloudAgentLessons/interjections）：Agent 计划机制，见上轮记录。
+5. **外观设置（Appearance）与角色卡（Character）服务**：CanvasAuthHost 邮件品牌名恒为默认、ProjectAssetService 角色摘要恒为 null；均为占位实现不阻塞主流程。
+6. **插件扩展渠道目录**（ChannelModelCatalogService 阶段 10）： declarative 插件包的目录扩展面。
+7. **产物登记**（TaskTerminalService，PENDING-CONFIRMATIONS）：成功任务的产物资产登记由前端素材库覆盖，后端登记未移植。
+
+以上均不阻塞单实例部署的主流程；1/2 建议在 OSS 验收后接续，3 仅多实例部署需要。
+
+### 技能场景预设与内置技能种子（2026-09-30 · 续八）
+
+`GET /api/skills/presets` 此前返回 400——.NET 侧路由与种子机制整体未移植。本轮补齐：
+
+- **种子数据**：`presets.json`（10 个场景预设）与 `skills.json`（官方技能清单）从 Go 仓库原样复制并内嵌到 Application 程序集。
+- **`SkillPresets()`**：完整校验链（版本=1、非空、presetId 格式/去重、场景五分类、技能数 1-8 且去重、只引用种子市场已上架技能、source=hand-curated、证据等级 E1-E5、推荐理由 1-200 字）——启动即失败好过线上坏数据。
+- **`EnsureBuiltinSkillsAsync()`**：种子校验（公开启用、时间/计数、作者信息）→ 图片编辑三技能（host 词汇表，对应 Go `builtinImageEditingSkillDefinitions`）→ `UpsertBuiltinSkillsAsync` 按 id 冲突幂等落库（用户加入/收藏关系独立表不受影响）；启动在 `Program.cs` 执行，预设校验前置。`CANVAS_SKIP_BUILTIN_SKILLS=true` 供端点测试保持空库。
+- **路由**：`GET /skills/presets` 公开只读（无用户上下文）。
+- 测试 2 个：预设目录通过校验（格式/场景/证据/来源断言）、内置技能幂等落库且图片编辑三技能在列（翻页核对全量）。
+- [x] 全量回归 1643/1643 全绿（历史首次零失败——本轮无并行噪音）。
+- [ ] 部署后验收：技能库页面应出现官方技能市场（120+ 技能）与场景预设目录；`/api/skills/presets` 返回 200。

@@ -67,6 +67,16 @@ public static partial class SkillsEndpoints
         });
 
         // 注意：字面量段必须在 {id} 之前声明（ASP.NET 也按字面量优先匹配，顺序仅为可读性）。
+        // 场景预设目录：公开只读的市场元数据（与 /openapi.yaml 同模式，无用户数据）。
+        api.MapGet("/skills/presets", (HttpContext context) =>
+        {
+            try
+            {
+                return ApiResults.Ok(new { presets = service.Skills.SkillPresets() });
+            }
+            catch (Exception error) { return ApiResults.FailService(error, context); }
+        });
+
         api.MapGet("/skills/added", async (HttpContext context, CancellationToken cancellationToken) =>
         {
             if (!await TryRequireUserAsync(context, service, cancellationToken).ConfigureAwait(false))

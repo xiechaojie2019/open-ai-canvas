@@ -1065,6 +1065,9 @@ public sealed partial class TaskCreationService
     }
 
     /// <summary>任务类型 → 能力。对应 Go: <c>capabilityFromTaskType</c>。</summary>
+    /// <summary>任务类型到能力类别（供切线路等外部编排复用）。</summary>
+    public static string CapabilityFromTaskTypePublic(string taskType) => CapabilityFromTaskType(taskType);
+
     private static string CapabilityFromTaskType(string taskType)
     {
         string value = taskType.ToLowerInvariant();

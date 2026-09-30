@@ -11,6 +11,10 @@
   -->
 
   <ItemGroup>
+    <EmbeddedResource Include="SkillsSeed\presets.json" />
+    <EmbeddedResource Include="SkillsSeed\skills.json" />
+</ItemGroup>
+<ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="3.7.405.5" />
   </ItemGroup>
 

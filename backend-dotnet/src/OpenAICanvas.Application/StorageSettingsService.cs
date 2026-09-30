@@ -9,6 +9,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Domain.Serialization;
 using OpenAICanvas.Outbound;
 using OpenAICanvas.Persistence.Repositories;
 
@@ -30,6 +31,9 @@ public sealed class OSSSettingRequest
     [JsonPropertyName("pathStyle")] public bool PathStyle { get; set; }
     [JsonPropertyName("sessionToken")] public string SessionToken { get; set; } = "";
     [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; set; }
+    [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; set; } = "";
+    [JsonPropertyName("requireCDN")] public bool RequireCDN { get; set; }
+    [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; set; }
 }
 
 public sealed class PublicOSSSetting
@@ -53,6 +57,9 @@ public sealed class PublicOSSSetting
     [JsonPropertyName("historyCount")] public long HistoryCount { get; init; }
     [JsonPropertyName("referencedResourceCount")] public long ReferencedResourceCount { get; init; }
     [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; init; }
+    [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; init; } = "";
+    [JsonPropertyName("requireCDN")] public bool RequireCDN { get; init; }
+    [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; init; }
     [JsonPropertyName("updatedBy")] public string? UpdatedBy { get; init; }
     [JsonPropertyName("createdAt")] public DateTime? CreatedAt { get; init; }
     [JsonPropertyName("updatedAt")] public DateTime? UpdatedAt { get; init; }
@@ -177,10 +184,6 @@ public sealed class StorageSettingsService
         StoredOSSSetting value, string scope, string ownerId, CancellationToken cancellationToken)
     {
         ValidateForTest(value);
-        if (value.Provider != "s3")
-        {
-            throw AppError.New(501, $"当前 .NET 后端尚未实现 {value.Provider} 对象存储连接测试，请使用通用 S3 兼容接口");
-        }
         string mutexKey = scope + ":" + ownerId;
         if (!ActiveTests.TryAdd(mutexKey, 0))
         {
@@ -189,6 +192,10 @@ public sealed class StorageSettingsService
         try
         {
             await OutboundGuard.ValidateOutboundUrlAsync(value.Endpoint).ConfigureAwait(false);
+            if (value.Provider != "s3")
+            {
+                return await TestViaChannelAsync(value, cancellationToken).ConfigureAwait(false);
+            }
             AWSCredentials credentials = string.IsNullOrEmpty(value.SessionToken)
                 ? new BasicAWSCredentials(value.AccessKeyId, value.AccessKeySecret)
                 : new SessionAWSCredentials(value.AccessKeyId, value.AccessKeySecret, value.SessionToken);
@@ -278,6 +285,31 @@ public sealed class StorageSettingsService
         value.StorageLocationId = location.ID;
     }
 
+    // ------------------------------------------------------------ 对象存储通道（内部）
+
+    /// <summary>平台存储的通道设置（未做启用校验）。对应 Go: <c>readOSSSetting</c>。</summary>
+    internal async Task<StorageChannelSettings> PlatformChannelSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        SystemSetting? record = await _repository.SystemSettingAsync(PlatformSettingKey, cancellationToken).ConfigureAwait(false);
+        return (record is null ? Defaults() : ReadStored(record.ValueJSON)).ToChannelSettings();
+    }
+
+    /// <summary>用户最新存储的通道设置。对应 Go: <c>readUserOSSSetting</c>。</summary>
+    internal async Task<StorageChannelSettings?> LatestUserChannelSettingsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        UserOSSSetting? record = await _repository.LatestUserOSSSettingAsync(userId, cancellationToken).ConfigureAwait(false);
+        return record is null ? null : ReadStored(record.ValueJSON).ToChannelSettings();
+    }
+
+    /// <summary>用户全部存储版本的通道设置（新→旧）。对应 Go: <c>UserOSSSettingsForUser</c> 的值投影。</summary>
+    internal async Task<IReadOnlyList<StorageChannelSettings>> UserChannelSettingsHistoryAsync(
+        string userId, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<UserOSSSetting> records = await _repository.UserOSSSettingsForUserAsync(userId, cancellationToken)
+            .ConfigureAwait(false);
+        return records.Select(record => ReadStored(record.ValueJSON).ToChannelSettings()).ToList();
+    }
+
     private async Task<PublicOSSSetting> PublicAsync(StoredOSSSetting value, string scope, string ownerId,
         string? updatedBy, DateTime? createdAt, DateTime? updatedAt, CancellationToken cancellationToken,
         bool? allowUserS3 = null)
@@ -296,6 +328,7 @@ public sealed class StorageSettingsService
             HasSessionToken = !string.IsNullOrEmpty(value.SessionToken), StorageLocationId = value.StorageLocationId ?? location?.ID,
             TestedAt = location?.TestedAt, TestedDigest = location?.TestedDigest, HistoryCount = history,
             ReferencedResourceCount = references, AllowUserS3 = allowUserS3 ?? value.AllowUserS3,
+            CdnAuthMode = value.CdnAuthMode, RequireCDN = value.RequireCDN, AllowPrivateProxy = value.AllowPrivateProxy,
             UpdatedBy = updatedBy, CreatedAt = createdAt, UpdatedAt = updatedAt,
         };
     }
@@ -338,6 +371,8 @@ public sealed class StorageSettingsService
             PublicBaseUrl = TrimUrl(request.PublicBaseUrl), PathPrefix = TrimPath(request.PathPrefix),
             S3Preset = preset, PathStyle = request.PathStyle, SessionToken = (request.SessionToken ?? "").Trim(),
             AllowUserS3 = request.AllowUserS3,
+            CdnAuthMode = (request.CdnAuthMode ?? "").Trim().ToLowerInvariant(),
+            RequireCDN = request.RequireCDN, AllowPrivateProxy = request.AllowPrivateProxy,
         };
     }
 
@@ -345,6 +380,8 @@ public sealed class StorageSettingsService
     {
         if (!value.Enabled && string.IsNullOrEmpty(value.PublicBaseUrl))
             throw AppError.BadAuthRequest("服务器本地存储需要填写服务器访问地址");
+        if (value.CdnAuthMode.Length > 0 && value.CdnAuthMode is not ("public" or "qiniu"))
+            throw AppError.BadAuthRequest("CDN 鉴权方式无效，仅支持 public 或 qiniu");
     }
 
     private static void ValidateForTest(StoredOSSSetting value)
@@ -373,6 +410,49 @@ public sealed class StorageSettingsService
         return JsonSerializer.Serialize(encrypted, JsonOptions);
     }
 
+    /// <summary>阿里云/COS/七牛经对象存储通道做写入-读取-删除回环测试。</summary>
+    private static async Task<OSSConnectionTestResult> TestViaChannelAsync(
+        StoredOSSSetting value, CancellationToken cancellationToken)
+    {
+        StorageChannelSettings setting = value.ToChannelSettings();
+        string key = BuildObjectKey(setting.PathPrefix, ".yingce-connection-test-" + Guid.NewGuid().ToString("N"));
+        byte[] marker = "yingce-storage-test"u8.ToArray();
+        await StorageObjectChannel.PutObjectAsync(
+            setting, key, "text/plain", marker.Length, new MemoryStream(marker), cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            using StorageObjectStream range = await StorageObjectChannel.GetOriginObjectRangeAsync(
+                setting, key, "bytes=0-3", cancellationToken).ConfigureAwait(false);
+            byte[] head = new byte[4];
+            int read = 0;
+            while (read < 4)
+            {
+                int n = await range.Body.ReadAsync(head, read, 4 - read, cancellationToken).ConfigureAwait(false);
+                if (n == 0)
+                {
+                    break;
+                }
+                read += n;
+            }
+            if (read != 4 || !head.AsSpan(0, 4).SequenceEqual(marker))
+            {
+                throw AppError.BadAuthRequest("对象存储连接测试读取校验失败");
+            }
+        }
+        finally
+        {
+            await StorageObjectChannel.DeleteObjectAsync(setting, key).ConfigureAwait(false);
+        }
+        return new OSSConnectionTestResult
+        {
+            Ok = true,
+            Message = "连接成功",
+            TestedAt = DateTime.UtcNow,
+            TestedDigest = TestDigest(value),
+        };
+    }
+
     private static StoredOSSSetting Defaults() => new() { Provider = "aliyun", PathPrefix = "open-ai-canvas", S3Preset = "custom" };
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static string TrimUrl(string? value) => (value ?? "").Trim().TrimEnd('/');
@@ -398,11 +478,44 @@ public sealed class StorageSettingsService
         [JsonPropertyName("pathStyle")] public bool PathStyle { get; set; }
         [JsonPropertyName("sessionToken")] public string SessionToken { get; set; } = "";
         [JsonPropertyName("allowUserS3")] public bool AllowUserS3 { get; set; }
+        [JsonPropertyName("archivedCredentials")]
+        public Dictionary<string, StorageArchivedCredentials>? ArchivedCredentials { get; set; }
+        [JsonPropertyName("cdnAuthMode")] public string CdnAuthMode { get; set; } = "";
+        [JsonPropertyName("requireCDN")] public bool RequireCDN { get; set; }
+        [JsonPropertyName("allowPrivateProxy")] public bool AllowPrivateProxy { get; set; }
         [JsonPropertyName("storageLocationId")] public string? StorageLocationId { get; set; }
         public OSSSettingRequest ToRequest() => new() { Enabled = Enabled, Provider = Provider, Region = Region,
             Endpoint = Endpoint, CdnBaseUrl = CdnBaseUrl, Bucket = Bucket, AccessKeyId = AccessKeyId,
             AccessKeySecret = AccessKeySecret, PublicBaseUrl = PublicBaseUrl, PathPrefix = PathPrefix,
-            S3Preset = S3Preset, PathStyle = PathStyle, SessionToken = SessionToken, AllowUserS3 = AllowUserS3 };
+            S3Preset = S3Preset, PathStyle = PathStyle, SessionToken = SessionToken, AllowUserS3 = AllowUserS3,
+            CdnAuthMode = CdnAuthMode, RequireCDN = RequireCDN, AllowPrivateProxy = AllowPrivateProxy };
+        // Stored 是扁平结构（cdnAuthMode 等在顶层），通道设置是嵌套 delivery——必须显式映射，
+        // JSON 直接往返会把分发配置丢掉。
+        public StorageChannelSettings ToChannelSettings() => new()
+        {
+            Enabled = Enabled,
+            Provider = Provider,
+            Region = Region,
+            Endpoint = Endpoint,
+            CdnBaseUrl = CdnBaseUrl,
+            Bucket = Bucket,
+            AccessKeyId = AccessKeyId,
+            AccessKeySecret = AccessKeySecret,
+            PublicBaseUrl = PublicBaseUrl,
+            PathPrefix = PathPrefix,
+            S3Preset = S3Preset,
+            PathStyle = PathStyle,
+            SessionToken = SessionToken,
+            StorageLocationId = StorageLocationId ?? "",
+            AllowUserS3 = AllowUserS3,
+            ArchivedCredentials = ArchivedCredentials,
+            Delivery = new StorageDeliverySettings
+            {
+                CdnAuthMode = CdnAuthMode,
+                RequireCDN = RequireCDN,
+                AllowPrivateProxy = AllowPrivateProxy,
+            },
+        };
         public StoredOSSSetting Clone() => (StoredOSSSetting)MemberwiseClone();
     }
 }

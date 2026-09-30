@@ -16,16 +16,13 @@ namespace OpenAICanvas.Application;
 /// <c>detectUploadedMimeType</c> / <c>storeResource</c> / <c>storeResourceObject</c> /
 /// <c>writeLocalResourceObject</c> / <c>retryStoredResource</c>。
 /// </summary>
-/// <remarks>
-/// 对象存储（OSS/COS/Kodo/S3）通道未移植，见 PENDING-CONFIRMATIONS.md；
-/// 这里与 Go 的降级路径等价：始终以 local provider 落盘。
-/// </remarks>
 public sealed class ResourceUploadService
 {
     private readonly Repository _repository;
     private readonly UploadQuota _quota;
     private readonly string _dataDir;
     private readonly VideoPlaybackService? _playback;
+    private readonly StorageSettingsService? _storageSettings;
 
     private readonly IRuntimePolicyProvider? _policyProvider;
 
@@ -34,13 +31,15 @@ public sealed class ResourceUploadService
         UploadQuota quota,
         string? dataDir = null,
         IRuntimePolicyProvider? policyProvider = null,
-        VideoPlaybackService? playback = null)
+        VideoPlaybackService? playback = null,
+        StorageSettingsService? storageSettings = null)
     {
         _repository = repository;
         _quota = quota;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
         _policyProvider = policyProvider;
         _playback = playback;
+        _storageSettings = storageSettings;
     }
 
     private IRuntimePolicyProvider PolicyProvider => _policyProvider ?? new DefaultRuntimePolicyProvider();
@@ -356,6 +355,17 @@ public sealed class ResourceUploadService
 
         DateTime now = DateTime.UtcNow;
         kind = NormalizeResourceKind(kind, mimeType);
+        // 云存储路由在创建记录前解析：管理员启用但配置不完整时上传必须显式失败，
+        // 而不是静默降级成 local（对应 Go: storeResourceWithWriter 的 activeResourceOSSSetting）。
+        StorageChannelSettings? ossSetting = null;
+        string storageSettingID = "";
+        bool useOSS = false;
+        if (!forceLocal && _storageSettings is not null)
+        {
+            (ossSetting, storageSettingID, useOSS) = await ResourceObjectStorage
+                .ActiveForUserAsync(_repository, _storageSettings, userId, cancellationToken)
+                .ConfigureAwait(false);
+        }
         Resource resource = new()
         {
             ID = IdGenerator.NewId(),
@@ -373,6 +383,15 @@ public sealed class ResourceUploadService
             CreatedAt = now,
             UpdatedAt = now,
         };
+        if (useOSS && ossSetting is not null)
+        {
+            resource.Provider = ossSetting.Provider;
+            resource.ObjectKey = ResourceObjectStorage.ObjectKey(
+                ossSetting, userId, kind, fileName, mimeType, now);
+            resource.Endpoint = ossSetting.Endpoint;
+            resource.Bucket = ossSetting.Bucket;
+            resource.StorageSettingID = storageSettingID;
+        }
 
         try
         {
@@ -418,7 +437,7 @@ public sealed class ResourceUploadService
             // 与 Go 一致：先尝试清理物理对象，清理成功则删除记录并报"保存就绪状态失败"。
             try
             {
-                DeleteStoredResourceObject(resource);
+                await DeleteStoredResourceObjectAsync(resource, CancellationToken.None).ConfigureAwait(false);
                 await _repository.DeleteResourceAsync(userId, resource.ID, cancellationToken).ConfigureAwait(false);
                 throw new InvalidOperationException($"保存资源就绪状态失败：{error.Message}", error);
             }
@@ -443,19 +462,80 @@ public sealed class ResourceUploadService
     }
 
     /// <summary>
-    /// 写入资源物理对象。local 通道直接落盘；对象存储通道未移植，按 Go 的降级语义
-    /// 统一改写为 local provider 后落盘，保证上传写路径不因外部存储缺席而整体失败。
+    /// 写入资源物理对象：云写入只有源站接受才成功；外部源站不可用时按 Go 语义
+    /// 重置读取位置并降级 local，绑定字段在任何调用方持久化就绪状态前被改写。
     /// 对应 Go: <c>storeResourceObject</c>。
     /// </summary>
-    private Task<string> StoreResourceObjectAsync(
+    private async Task<string> StoreResourceObjectAsync(
         Resource resource, string fileName, Stream body, CancellationToken cancellationToken)
     {
         if (resource.Provider is "" or "local")
         {
             WriteLocalResourceObject(LocalObjectPath(resource.ObjectKey), body);
-            return Task.FromResult(string.Empty);
+            return string.Empty;
+        }
+        if (_storageSettings is null)
+        {
+            throw new InvalidOperationException("对象存储通道未注入存储设置服务");
         }
 
+        string? etag = null;
+        string fallbackError = "";
+        try
+        {
+            StorageChannelSettings setting = await ResourceObjectStorage
+                .ForResourceAsync(_repository, _storageSettings, resource.UserID, resource, cancellationToken)
+                .ConfigureAwait(false);
+            etag = await StorageObjectChannel.PutObjectAsync(
+                setting, resource.ObjectKey, resource.MimeType, resource.Size, body, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            fallbackError = error.Message;
+        }
+        if (etag is not null)
+        {
+            return etag;
+        }
+
+        // 降级本地存储：请求体必须可重读；失败时保留原始错误并终止。
+        try
+        {
+            body.Seek(0, SeekOrigin.Begin);
+        }
+        catch (Exception seekError)
+        {
+            throw new InvalidOperationException(
+                $"对象存储上传失败：{fallbackError}；降级本地存储时重置读取位置失败：{seekError.Message}", seekError);
+        }
+        string localKey = LocalObjectKey(resource.UserID, resource.Kind, fileName, resource.MimeType, DateTime.UtcNow);
+        resource.Provider = "local";
+        resource.ObjectKey = localKey;
+        resource.Endpoint = "";
+        resource.Bucket = "";
+        resource.StorageSettingID = "";
+        resource.ETag = "";
+        try
+        {
+            WriteLocalResourceObject(LocalObjectPath(localKey), body);
+        }
+        catch (Exception localError)
+        {
+            throw new InvalidOperationException(
+                $"对象存储上传失败：{fallbackError}；降级本地存储失败：{localError.Message}");
+        }
+        return string.Empty;
+    }
+
+    /// <summary>已废弃的本地回退实现（保留编译占位，路由版本见上）。</summary>
+    private Task<string> StoreResourceObjectLocalFallbackAsync(
+        Resource resource, string fileName, Stream body, CancellationToken cancellationToken)
+    {
         resource.Provider = "local";
         resource.ObjectKey = LocalObjectKey(resource.UserID, resource.Kind, fileName, resource.MimeType, DateTime.UtcNow);
         resource.Endpoint = string.Empty;
@@ -557,16 +637,38 @@ public sealed class ResourceUploadService
     }
 
     /// <summary>物理对象删除（仅本地通道）。对应 Go: <c>deleteStoredResourceObject</c> 的本地分支。</summary>
-    public void DeleteStoredResourceObject(Resource resource)
+    /// <summary>
+    /// 删除资源物理对象：local 落盘文件；远程 provider 按资源绑定的存储位置回读配置后删除
+    /// （404 视为已删除）。对应 Go: <c>deleteStoredResourceObject</c> 的 provider 分派。
+    /// </summary>
+    public async Task DeleteStoredResourceObjectAsync(Resource resource, CancellationToken cancellationToken)
     {
-        if (resource.Provider is not ("" or "local"))
+        if (string.IsNullOrWhiteSpace(resource.ObjectKey))
         {
-            return;
+            throw new InvalidOperationException($"资源 {resource.ID} 的存储路径为空");
         }
-        string path = LocalObjectPath(resource.ObjectKey);
-        if (File.Exists(path))
+        switch (resource.Provider.Trim().ToLowerInvariant())
         {
-            File.Delete(path);
+            case "" or "local":
+                File.Delete(LocalObjectPath(resource.ObjectKey));
+                return;
+            case StorageObjectChannel.AliyunProvider:
+            case StorageObjectChannel.TencentProvider:
+            case StorageObjectChannel.QiniuProvider:
+            case StorageObjectChannel.S3Provider:
+                {
+                    if (_storageSettings is null)
+                    {
+                        throw new InvalidOperationException("对象存储通道未注入存储设置服务");
+                    }
+                    StorageChannelSettings setting = await ResourceObjectStorage
+                        .ForResourceAsync(_repository, _storageSettings, resource.UserID, resource, cancellationToken)
+                        .ConfigureAwait(false);
+                    await StorageObjectChannel.DeleteObjectAsync(setting, resource.ObjectKey).ConfigureAwait(false);
+                    return;
+                }
+            default:
+                throw new InvalidOperationException($"资源 {resource.ID} 使用了不支持的存储类型 {resource.Provider}");
         }
     }
 

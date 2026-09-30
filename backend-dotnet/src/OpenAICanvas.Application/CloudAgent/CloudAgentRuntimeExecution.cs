@@ -84,6 +84,28 @@ public sealed partial class CloudAgentRuntimeService
                 .ConfigureAwait(false);
         }
 
+        // 看图的资源与能力校验在写事务外完成；真实图片只在模型任务执行时读取。
+        CloudAgentImageInspectionDto? inspection = null;
+        Exception? inspectionError = null;
+        if (allowed && name == "canvas_inspect_image" && state.Request.VisionEnabled)
+        {
+            try
+            {
+                inspection = await PrepareImageInspectionAsync(
+                    run.UserID, state.Request.CanvasID, state, call, cancellationToken).ConfigureAwait(false);
+            }
+            catch (CloudAgentImageInspectionBudgetException)
+            {
+                await FailAsync(run, state, CloudAgentRuntimeService.ImageInspectionBudgetMessage)
+                    .ConfigureAwait(false);
+                return;
+            }
+            catch (Exception cause) when (cause is AppError or CloudAgentReadLoopException)
+            {
+                inspectionError = cause;
+            }
+        }
+
         bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
             async (current, context) =>
             {
@@ -147,12 +169,53 @@ public sealed partial class CloudAgentRuntimeService
                     result = skillResult;
                     toolError = skillError;
                 }
+                else if (name == "canvas_inspect_image")
+                {
+                    if (inspectionError is not null)
+                    {
+                        toolError = inspectionError;
+                    }
+                    else
+                    {
+                        result = inspection?.Receipt;
+                    }
+                    if (toolError is null && inspection is not null)
+                    {
+                        CloudAgentRuntimeService.MarkCanvasImageInspection(
+                            state,
+                            CloudAgentJsonHelpers.StringValue(
+                                CloudAgentJsonHelpers.Get(inspection.Receipt, "nodeId")),
+                            inspection.ImageURL.Trim().Length > 0);
+                        if (inspection.CacheKey.Length > 0)
+                        {
+                            state.ImageInspectionReads ??= new Dictionary<string, int>(StringComparer.Ordinal);
+                            state.ImageInspectionReads[inspection.CacheKey] =
+                                state.ImageInspectionReads.GetValueOrDefault(inspection.CacheKey) + 1;
+                        }
+                    }
+                }
                 else
                 {
                     (result, toolError) = await ReadToolAsync(context, run.UserID, state, call)
                         .ConfigureAwait(false);
                 }
-                ToolResult(run.ID, state, call, result, toolError);
+                if (toolError is CloudAgentReadLoopException readLoop)
+                {
+                    // 重复读取护栏：先记回执再终局，模型能看到最后一次结果与失败原因。
+                    ToolResult(run.ID, state, call, result, null, inspection);
+                    CloudAgentContracts.Save(current, state);
+                    current.Status = "failed";
+                    current.FailureMessage = CloudAgentContracts.TruncateRunes(readLoop.Message, 1000);
+                    CloudAgentContracts.AddEvent(state, run.ID, "run_failed", CloudAgentContracts.Payload(
+                        ("text", current.FailureMessage),
+                        ("reason", "repeated_read_guard"),
+                        ("toolName", call.Function.Name),
+                        ("repeatCount", readLoop.Count)));
+                    CloudAgentContracts.Save(current, state);
+                    await context.SaveRunAsync(current).ConfigureAwait(false);
+                    return;
+                }
+                ToolResult(run.ID, state, call, result, toolError, inspection);
                 CloudAgentContracts.Save(current, state);
                 await context.SaveRunAsync(current).ConfigureAwait(false);
             }, cancellationToken).ConfigureAwait(false);

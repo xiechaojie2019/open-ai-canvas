@@ -31,6 +31,9 @@ public sealed class SkillsEndpointTests : IDisposable
             builder.UseSetting("CANVAS_BACKEND_DATA_DIR", _dataDir);
             builder.UseSetting("CANVAS_DATABASE_DRIVER", "sqlite");
             builder.UseSetting("CANVAS_AUTO_MIGRATE", "true");
+            // 这些用例断言空库/自建数据，不希望内置技能种子混入。
+            builder.UseEnvironment("Testing");
+            Environment.SetEnvironmentVariable("CANVAS_SKIP_BUILTIN_SKILLS", "true");
         });
 
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });

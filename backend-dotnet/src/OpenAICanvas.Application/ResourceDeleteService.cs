@@ -17,18 +17,21 @@ namespace OpenAICanvas.Application;
 /// <remarks>
 /// 删除走 Outbox 模式：业务记录与删除任务同事务提交；事务失败物理文件完全不动；
 /// 提交成功后由 <see cref="DrainResourceDeletionJobsAsync"/> 幂等清理。
-/// 本地 provider 内联删除；云 provider（OSS/COS/Kodo/S3）的任务保留 pending
-/// （云 SDK 未移植，见 PENDING-CONFIRMATIONS.md #25）。
+/// 本地 provider 内联删除；云 provider（OSS/COS/Kodo/S3）按资源绑定的存储位置
+/// 回读配置后经对象存储通道远程删除（404 视为已删除）。
 /// </remarks>
 public sealed class ResourceDeleteService
 {
     private readonly Repository _repository;
     private readonly string _dataDir;
+    private readonly StorageSettingsService? _storageSettings;
 
-    public ResourceDeleteService(Repository repository, string? dataDir = null)
+    public ResourceDeleteService(Repository repository, string? dataDir = null,
+        StorageSettingsService? storageSettings = null)
     {
         _repository = repository;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
+        _storageSettings = storageSettings;
     }
 
     /// <summary>删除素材并级联清理资源。对应 Go: <c>deleteUserAssetWithResources</c>。</summary>
@@ -174,8 +177,8 @@ public sealed class ResourceDeleteService
     }
 
     /// <summary>
-    /// 幂等清理删除任务：本地对象直接删除；云 provider 任务保持 pending。
-    /// 对应 Go: <c>drainResourceDeletionJobs</c>（云 provider 清理待接，见待确认 #25）。
+    /// 幂等清理删除任务：本地对象直接删除；云 provider 经对象存储通道远程删除。
+    /// 对应 Go: <c>drainResourceDeletionJobs</c>。
     /// </summary>
     public async Task DrainResourceDeletionJobsAsync(CancellationToken cancellationToken = default)
     {
@@ -225,7 +228,49 @@ public sealed class ResourceDeleteService
             }
             else
             {
-                // 云 provider：任务保留 pending，等待云 SDK 接入后的 worker 推进。
+                // 云 provider：按资源绑定的存储位置回读配置后远程删除（404 容忍）。
+                if (_storageSettings is null)
+                {
+                    await _repository.UpdateResourceDeletionJobAsync(
+                        job.ID, "pending", "对象存储通道未注入存储设置服务",
+                        DateTime.UtcNow.AddMinutes(5), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+                Resource identity = new()
+                {
+                    ID = job.ResourceID,
+                    UserID = job.UserID,
+                    Provider = job.Provider,
+                    Endpoint = job.Endpoint,
+                    Bucket = job.Bucket,
+                    StorageSettingID = job.StorageSettingID,
+                    ObjectKey = job.ObjectKey,
+                };
+                string cloudError;
+                try
+                {
+                    StorageChannelSettings setting = await ResourceObjectStorage
+                        .ForResourceAsync(_repository, _storageSettings, job.UserID, identity, cancellationToken)
+                        .ConfigureAwait(false);
+                    await StorageObjectChannel.DeleteObjectAsync(setting, job.ObjectKey)
+                        .ConfigureAwait(false);
+                    cloudError = "";
+                }
+                catch (Exception error)
+                {
+                    cloudError = error.Message;
+                }
+                if (cloudError.Length == 0)
+                {
+                    await _repository.UpdateResourceDeletionJobAsync(
+                        job.ID, "done", "", DateTime.UtcNow, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _repository.UpdateResourceDeletionJobAsync(
+                        job.ID, "pending", cloudError, DateTime.UtcNow.AddMinutes(1), cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
         }
     }

@@ -214,6 +214,10 @@ public sealed class CloudAgentSessionService
             history.Add(new CloudAgentTextMessageDto("user", parent.Prompt));
             history.Add(new CloudAgentTextMessageDto("assistant", text));
         }
+        // 看图能力取决于本轮渠道模型自己的合同（text.references.maxImages），在建 run 时定格并
+        // 持久化：工具授权每步都从落库状态重建，运行期间不再变化，客户端传入值被忽略。
+        request.VisionEnabled = await CloudAgentVisionCapabilities.EnabledAsync(
+            _repository, request, cancellationToken).ConfigureAwait(false);
         string encodedHistory = JsonSerializer.Serialize(history, GoJson.WriteOptions);
         if (encodedHistory.Length > 64000)
         {
@@ -245,7 +249,8 @@ public sealed class CloudAgentSessionService
             Profile = profile,
             Policy = policy,
         };
-        CloudAgentCanonicalRequestDto canonical = Canonical(system, history, request.Prompt, request.CanvasID);
+        CloudAgentCanonicalRequestDto canonical = Canonical(
+            system, history, request.Prompt, request.CanvasID, request);
         await CloudAgentLessons.AttachAsync(canonical, _repository, userID, request.Prompt, cancellationToken)
             .ConfigureAwait(false);
         Dictionary<string, JsonElement> input = new(StringComparer.Ordinal)
@@ -728,7 +733,8 @@ public sealed class CloudAgentSessionService
 
     /// <summary>模型请求规范形。对应 Go: <c>cloudAgentCanonical</c>。</summary>
     public static CloudAgentCanonicalRequestDto Canonical(
-        string system, List<CloudAgentTextMessageDto> history, string prompt, string canvasID)
+        string system, List<CloudAgentTextMessageDto> history, string prompt, string canvasID,
+        CloudAgentRequestDto? request = null)
     {
         List<Dictionary<string, JsonElement>> messages = [];
         foreach (CloudAgentTextMessageDto message in history)
@@ -750,7 +756,7 @@ public sealed class CloudAgentSessionService
         {
             SystemPrompt = system,
             Messages = messages,
-            Tools = CloudAgentTools.BuildTools(null),
+            Tools = CloudAgentTools.BuildTools(request),
             ToolChoice = JsonSerializer.SerializeToElement("auto"),
             PromptCacheKey = "cloud-agent:" + cacheKey[..48],
         };
