@@ -21,9 +21,10 @@ public sealed partial class Repository
         {
             throw new InvalidOperationException("builtin skills are empty");
         }
-        const string columns = "owner_id, author_name, author_avatar_url, name, description, instruction, "
-            + "status, source, tag, sort_weight, is_private, markdown_url, showcase_media_json, extra_info, "
-            + "initial_like_count, initial_added_count, created_at, updated_at";
+        // 这里是逗号分隔的裸列名列表，引号由下方 $"\"{c}\"" 拼装时统一添加，切勿在此处预先加引号。
+        const string columns = "ownerId, authorName, authorAvatarUrl, name, description, instruction, "
+            + "status, source, tag, sortWeight, isPrivate, markdownUrl, showcaseMediaJson, extraInfo, "
+            + "initialLikeCount, initialAddedCount, createdAt, updatedAt";
         string[] columnNames = columns.Split(',').Select(c => c.Trim()).ToArray();
         await InTransactionAsync(async (connection, transaction) =>
         {

@@ -41,7 +41,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         List<UserOSSSetting> items = [];
         items.AddRange(await QueryAsync<UserOSSSetting>(connection,
-            SqlBuilder.Select<UserOSSSetting>("user_id = @userId", "updated_at DESC, id DESC"),
+            SqlBuilder.Select<UserOSSSetting>("\"userId\" = @userId", "\"updatedAt\" DESC, id DESC"),
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false));
         return items;
     }

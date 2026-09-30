@@ -357,10 +357,19 @@ def report_bare(renames: dict[str, str]) -> None:
             print("  " + item)
 
 
+# 逗号分隔的裸标识符列表，例如 Repository.Skills 的 columns 常量
+#   "owner_id, author_name, ..., "  → 调用点再 Split(',') 并由 $"{c}" 自行套引号。
+# 它不是 SQL 片段：这里若补引号，拼出来会是 ""col"" 双重引号，PG 直接语法错误
+# （2026-09-30 合并上游时踩到：Repository.Skills.cs 让应用启动即崩）。
+BARE_IDENT_LIST = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*,?$")
+
+
 def _rewrite_sql_span(sql: str, pattern: re.Pattern[str], renames: dict[str, str], kind: str = "raw"):
     # 整个字面量是迁移契约值（迁移名/校验和）时原样保留。
     if sql.strip() in _protected_literals():
         return sql, 0
+    # 纯裸标识符列表：只改名，不补引号（引号由调用点负责）。
+    bare_list = bool(BARE_IDENT_LIST.match(sql.strip()))
     regions = _single_quoted_regions(sql)
     token = QUOTE_TOKENS[kind]
     out = []
@@ -379,7 +388,7 @@ def _rewrite_sql_span(sql: str, pattern: re.Pattern[str], renames: dict[str, str
         old = match.group(0)
         new = renames[old]
         out.append(sql[last:start])
-        if whole_span or _quote_bounds(sql, start, end, kind):
+        if whole_span or bare_list or _quote_bounds(sql, start, end, kind):
             out.append(new)
         else:
             out.append(token + new + token)
