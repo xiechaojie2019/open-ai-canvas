@@ -964,7 +964,8 @@ public static partial class CloudAgentContracts
             });
         }
         int historySequence = 0;
-        foreach (CloudAgentTextMessageDto message in state.TextHistory)
+        // Go 的 nil slice 可直接 range；C# 侧 TextHistory 可空，等价零次迭代。
+        foreach (CloudAgentTextMessageDto message in state.TextHistory ?? [])
         {
             historySequence++;
             transcript.Add(new CloudAgentMessageRecord

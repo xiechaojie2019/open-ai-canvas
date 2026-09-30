@@ -3096,3 +3096,10 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 测试扩展：OSS 资源 provider-input 应签出 `bucket.oss-cn-hangzhou.aliyuncs.com` 直链（含 Signature）。
 - [x] 组合根测试（本地+云资源）通过。
 - [ ] 部署后验收：重新发起音频生视频，任务应提交成功（参考素材 URL 为 OSS 直链）。
+
+### Agent 卡「正在处理」NRE 修复（2026-09-30 · 续十五）
+
+- **agent 卡在「正在处理当前画布」**：运行 `aga283b7…`（画布 a9WoNziMe4VKLT2EuNi6q）每 2 秒循环抛 NRE——`CloudAgentContracts.Save` 里 `foreach (state.TextHistory)` 遇到 **null**（Go 的 nil slice 可直接 range = 零次迭代；.NET 可空 List 直接 NRE）。根因：根任务创建路径未初始化 TextHistory（Checkpoint>=2 剥离后依赖 Decode 初始化，但 EnsureRoot 早期路径未走 Decode）。
+- 修复：`Save` 对 TextHistory 空保护（`?? []`），对齐 Go 的 nil-slice 零值语义。
+- [x] CloudAgent 相关 9 测试通过。
+- [ ] 部署后：该 agent 运行应自动恢复推进（不再循环 NRE）；如已卡死超时，重新发起对话即可。
