@@ -3082,3 +3082,10 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - **「对象存储连接测试失败」**：`StorageObjectChannel.AliyunRequest` 把 Content-Type 挂在 `request.Headers` 上，但随后附加的 `StreamContent` 会按 Content 头重建请求头——实际发送的 Content-Type 与 V1 签名所用值不一致 → `SignatureDoesNotMatch`。修复：Content-Type 改挂到 Content 上，并全部经 NonDisposingStream 包装；Date 头改用 InvariantCulture（"R" 在部分区域设置下会本地化星期/月份名）。用真实凭证本地复现：修复前 403 SignatureDoesNotMatch，修复后 PUT/GET/DELETE 回环全通。
 - 测试站现有阿里云配置（dazezb / cn-zhangjiakou / tools 前缀）凭证有效——修复部署后「测试连接」应直接通过。
 - [x] 本地复现回环通过（真实阿里云 PUT→Range GET→DELETE）；存储通道 6 测试通过。
+
+### 连接测试读取校验修复（2026-09-30 · 续十三）
+
+- **「对象存储连接测试读取校验失败」**：`TestViaChannelAsync` 的 Range 读取只取回 4 字节（bytes=0-3），却与 **19 字节完整 marker** 做等长 `SequenceEqual`——恒不相等，任何 provider 都必然报此错。修复为按实际读取长度比较前 N 字节。
+- 说明：这是读取校验的对比逻辑 bug；PUT/GET 网络链路本身在上一轮签名修复后已通。
+- [x] 存储/删除 10 测试通过；本地真实凭证回环（PUT→Range GET→DELETE）此前已验证。
+- [ ] 部署后验收：管理端「测试连接」应返回「连接测试通过」。

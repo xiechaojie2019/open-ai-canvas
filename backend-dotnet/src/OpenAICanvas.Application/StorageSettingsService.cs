@@ -435,7 +435,8 @@ public sealed class StorageSettingsService
                 }
                 read += n;
             }
-            if (read != 4 || !head.AsSpan(0, 4).SequenceEqual(marker))
+            // 只比较前 4 字节（Range bytes=0-3 的返回），不能与完整 marker 等长比较。
+            if (!head.AsSpan(0, Math.Min(read, 4)).SequenceEqual(marker.AsSpan(0, Math.Min(read, 4))))
             {
                 throw AppError.BadAuthRequest("对象存储连接测试读取校验失败");
             }
