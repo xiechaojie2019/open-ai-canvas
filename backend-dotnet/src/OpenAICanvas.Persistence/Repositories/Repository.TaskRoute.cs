@@ -256,3 +256,63 @@ public sealed class TaskRouteChargeLimitException : Exception
     {
     }
 }
+
+// ------------------------------------------------------------ 路由尝试
+
+public sealed partial class Repository
+{
+    /// <summary>创建路由尝试记录。对应 Go: <c>CreateRouteAttempt</c>。</summary>
+    public async Task CreateRouteAttemptAsync(
+        RouteAttempt attempt, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            SqlBuilder.Insert(typeof(RouteAttempt)), attempt, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>任务的某次路由运行的全部尝试（按尝试序号）。对应 Go: <c>RouteAttempts</c>。</summary>
+    public async Task<IReadOnlyList<RouteAttempt>> RouteAttemptsAsync(
+        string taskId, long routeRun, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        List<RouteAttempt> items = [];
+        items.AddRange(await QueryAsync<RouteAttempt>(
+            connection,
+            SqlBuilder.Select<RouteAttempt>(
+                "\"task_id\" = @taskId AND \"route_run\" = @routeRun", "attempt_number ASC"),
+            new { taskId, routeRun },
+            cancellationToken: cancellationToken).ConfigureAwait(false));
+        return items;
+    }
+
+    /// <summary>保存路由尝试终态。对应 Go: <c>SaveRouteAttempt</c>。</summary>
+    public async Task SaveRouteAttemptAsync(
+        RouteAttempt attempt, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            SqlBuilder.Update(typeof(RouteAttempt)), attempt, cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// CAS 标记分发中：仅 not_sent 可确认，防陈旧 Worker 二次分发同一尝试。
+    /// 对应 Go: <c>MarkRouteAttemptDispatching</c>。
+    /// </summary>
+    public async Task MarkRouteAttemptDispatchingAsync(
+        string id, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        int updated = await ExecuteAsync(
+            connection,
+            "UPDATE \"route_attempts\" SET \"status\" = 'dispatching', \"dispatch_state\" = 'submission_unknown' "
+            + "WHERE \"id\" = @id AND \"dispatch_state\" = 'not_sent'",
+            new { id },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (updated != 1)
+        {
+            throw AppError.New(409, "提交状态未能独占确认，为避免重复扣费已停止自动重发");
+        }
+    }
+}

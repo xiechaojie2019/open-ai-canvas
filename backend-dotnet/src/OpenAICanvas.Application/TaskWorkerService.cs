@@ -329,7 +329,7 @@ public sealed class TaskWorkerService
             await _repository.MarkBillingRunningAsync(claimed.BillingOrderID, ct).ConfigureAwait(false);
 
             (Dictionary<string, object?> result, bool providerSucceeded) =
-                await ExecuteProviderTaskAsync(claimed, ct).ConfigureAwait(false);
+                await ExecuteWithRouteFailoverAsync(claimed, ct).ConfigureAwait(false);
 
             latest = await _repository.TaskAsync(claimed.ID, ct).ConfigureAwait(false);
             if (latest is null)
@@ -457,8 +457,75 @@ public sealed class TaskWorkerService
         Dictionary<string, object?> Result, bool ProviderSucceeded);
 
     /// <summary>
+    /// 带路由失败切换的执行循环（managed 任务）：上游安全拒绝（401/403/404/429、渠道槽位）
+    /// 时阻断失败线路、重算成本并切换备用线路重试；非安全拒绝保持原始失败。
+    /// 直连任务仍单次执行，仅留路由尝试记录。对应 Go: <c>routeExecutor.execute</c>。
+    /// </summary>
+    private async Task<(Dictionary<string, object?> Result, bool ProviderSucceeded)> ExecuteWithRouteFailoverAsync(
+        TaskEntity task, CancellationToken cancellationToken)
+    {
+        bool managed = task.LogicalModelID.Length > 0;
+        RouteAttemptOrchestrator orchestrator = RouteAttemptOrchestrator.Shared(
+            _repository, CanvasService?.LogicalModels
+                ?? throw new InvalidOperationException("任务 Worker 未注入 CanvasService"));
+        RouteAttempt? attempt = await orchestrator.BeginTaskRouteAttemptAsync(task, cancellationToken)
+            .ConfigureAwait(false);
+        while (true)
+        {
+            await orchestrator.MarkDispatchingAsync(attempt!, cancellationToken).ConfigureAwait(false);
+            Exception? executionError = null;
+            Dictionary<string, object?> result;
+            try
+            {
+                result = (await ExecuteProviderTaskAsync(task, cancellationToken).ConfigureAwait(false)).Result;
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                executionError = error;
+                result = [];
+            }
+            await orchestrator.FinishAttemptAsync(attempt!, task, executionError, cancellationToken)
+                .ConfigureAwait(false);
+            if (executionError is null)
+            {
+                return (result, true);
+            }
+            if (!managed)
+            {
+                throw executionError;
+            }
+            RouteAttempt? next;
+            try
+            {
+                next = await orchestrator.NextAttemptAfterFailureAsync(
+                    task, attempt!, executionError, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception routeError) when (
+                routeError is AppError or TaskRouteChargeLimitException
+                or TaskRouteConflictException or InsufficientCreditsException)
+            {
+                await _repository.CreateTaskLogAsync(
+                    task.UserID, task.ID, "warn", "备用路由不可用，保留原始失败", routeError.Message,
+                    CancellationToken.None).ConfigureAwait(false);
+                throw executionError;
+            }
+            if (next is null)
+            {
+                throw executionError;
+            }
+            task.RouteID = next.RouteID;
+            task.ChannelModelID = next.ChannelModelID;
+            task.ProviderRequestID = "";
+            await _repository.CreateTaskLogAsync(
+                task.UserID, task.ID, "warn", "上游未创建任务，切换备用能力路由", next.RouteID,
+                CancellationToken.None).ConfigureAwait(false);
+            attempt = next;
+        }
+    }
+
+    /// <summary>
     /// 解密输入、解析渠道并按任务类型分发给对应协议实现。
-    /// 对应 Go: <c>routeExecutor.execute</c> 的直连分支（无 RouteAttempt 状态机）。
+    /// 对应 Go: <c>routeExecutor.execute</c> 的单次协议执行。
     /// </summary>
     private async Task<ProviderExecutionResult> ExecuteProviderTaskAsync(
         TaskEntity task, CancellationToken cancellationToken)

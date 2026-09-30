@@ -3008,3 +3008,12 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 测试 4 个：无订单切换、渠道计费差额调整与留痕、超批准上限拒绝、任务/路由过期冲突。
 - [x] 存储通道 6 + 切线路 4 测试通过；全量回归 1634/1637（3 失败为已知并行噪音，单跑通过）；web vite 构建通过，web 测试基线一致（23 fail 为存量）。
 - [ ] 测试站部署后验收：管理端配好 OSS 后上传资源落 OSS（`resources.provider` 为云厂商）；画布生成图片刷新后仍可加载（`content` 为资源引用而非 blob:）；RouteAttempt 状态机与执行器循环（Go `taskRouteExecutor`）仍待移植——.NET worker 依旧直连执行，切线路编排当前供重试/恢复路径调用。
+
+### RouteAttempt 状态机与执行器循环（2026-09-30 · 续六）
+
+- **仓储**：`CreateRouteAttemptAsync` / `RouteAttemptsAsync` / `SaveRouteAttemptAsync` / `MarkRouteAttemptDispatchingAsync`（CAS：仅 not_sent 可确认，防陈旧 Worker 二次分发同一尝试）。
+- **`RouteAttemptOrchestrator`**：`BeginTaskRouteAttemptAsync`（直连任务留尝试记录 + 旧任务无提交记录拒绝自动重发；managed 任务复用 not_sent / accepted / submission_unknown / rejected_no_job 分支状态机，安全拒绝触发切换）；`MarkDispatchingAsync`；`FinishAttemptAsync`（成功/失败分类：有 ProviderRequestID → accepted、安全拒绝 → rejected_no_job、其余 → submission_unknown）；`NextAttemptAfterFailureAsync`（失败线路健康阻断：401/403 封渠道 10 分钟、404 封渠道模型 10 分钟、429 封渠道 30s（RetryAfter 可延长）→ 排除已尝试路由 → `SwitchTaskToNextRouteAsync` 重算成本切换）。
+- **Worker 接线**：`ExecuteWithRouteFailoverAsync` 循环替代单次执行——managed 任务上游安全拒绝时自动切备用线路重发（任务行已随切换事务更新）；非安全拒绝与直连任务保持原始失败；切换/阻断失败留 task_log“备用路由不可用”。
+- 已知边界（对齐记录）：Go 的分布式健康阻断走 Redis（Coordinator.RouteBlockedUntil/BlockRoute），.NET 协调器接口暂无对应方法，当前为进程内阻断——单实例部署语义一致，多实例部署阻断不共享（单实例部署不受影响）。
+- [x] 存储通道 + 切线路 + 路由状态相关 10 测试通过；全量回归 1640/1641（1 失败为 TaskEndpointTests 并行时序噪音，单跑 19/19 通过）。
+- [ ] 测试站部署后验收：managed 任务在上游 401/404 时应自动切备用线路并在任务日志留“上游未创建任务，切换备用能力路由”，route_attempts 表出现多个尝试行。
