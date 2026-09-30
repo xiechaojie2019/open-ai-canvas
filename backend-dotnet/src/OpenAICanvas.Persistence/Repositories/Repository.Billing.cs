@@ -34,7 +34,7 @@ public sealed partial class Repository
 
         BillingOrder? order = await FirstOrDefaultAsync<BillingOrder>(
             connection,
-            "SELECT id, status FROM billing_orders WHERE id = @id LIMIT 1",
+            "SELECT id, status FROM \"billingOrders\" WHERE id = @id LIMIT 1",
             new { id },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -55,7 +55,7 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE billing_orders SET status = @running, started_at = @now, updated_at = @now
+            UPDATE "billingOrders" SET status = @running, "startedAt" = @now, "updatedAt" = @now
             WHERE id = @id AND status = @reserved
             """,
             new
@@ -101,7 +101,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE billing_orders SET status = @uncertain, error = @errorText, updated_at = @now
+            UPDATE "billingOrders" SET status = @uncertain, error = @errorText, "updatedAt" = @now
             WHERE id = @id AND status IN @openStatuses
             """,
             new
@@ -186,12 +186,12 @@ public sealed partial class Repository
                 int affected = await ExecuteAsync(
                     connection,
                     """
-                    UPDATE credit_accounts SET
-                        available_microcredits = available_microcredits + @delta,
-                        reserved_microcredits = reserved_microcredits - @reserved,
+                    UPDATE "creditAccounts" SET
+                        "availableMicrocredits" = "availableMicrocredits" + @delta,
+                        "reservedMicrocredits" = "reservedMicrocredits" - @reserved,
                         version = version + 1,
-                        updated_at = @now
-                    WHERE user_id = @userId AND reserved_microcredits >= @reserved
+                        "updatedAt" = @now
+                    WHERE "userId" = @userId AND "reservedMicrocredits" >= @reserved
                     """,
                     new
                     {
@@ -224,14 +224,14 @@ public sealed partial class Repository
                 await ExecuteAsync(
                     connection,
                     """
-                    UPDATE billing_orders SET
-                        status = @settled, settled_at = @now, updated_at = @now,
-                        actual_amount_microcredits = @actual, refunded_amount_microcredits = @refund,
-                        input_tokens = @inputTokens, output_tokens = @outputTokens, cached_tokens = @cachedTokens,
-                        usage_available = @usageAvailable, usage_source = @usageSource
+                    UPDATE "billingOrders" SET
+                        status = @settled, "settledAt" = @now, "updatedAt" = @now,
+                        "actualAmountMicrocredits" = @actual, "refundedAmountMicrocredits" = @refund,
+                        "inputTokens" = @inputTokens, "outputTokens" = @outputTokens, "cachedTokens" = @cachedTokens,
+                        "usageAvailable" = @usageAvailable, "usageSource" = @usageSource
                         {providerSet}
                     WHERE id = @id
-                    """.Replace("{providerSet}", providerRequestId.Length > 0 ? ", provider_request_id = @providerRequestId" : ""),
+                    """.Replace("{providerSet}", providerRequestId.Length > 0 ? ", \"providerRequestId\" = @providerRequestId" : ""),
                     new
                     {
                         settled = BillingStatus.BillingStatusSettled,
@@ -295,11 +295,11 @@ public sealed partial class Repository
             int simpleAffected = await ExecuteAsync(
                 connection,
                 """
-                UPDATE credit_accounts SET
-                    reserved_microcredits = reserved_microcredits - @amount,
+                UPDATE "creditAccounts" SET
+                    "reservedMicrocredits" = "reservedMicrocredits" - @amount,
                     version = version + 1,
-                    updated_at = @now
-                WHERE user_id = @userId AND reserved_microcredits >= @amount
+                    "updatedAt" = @now
+                WHERE "userId" = @userId AND "reservedMicrocredits" >= @amount
                 """,
                 new { amount = order.AmountMicrocredits, now = DateTime.UtcNow, userId = order.UserID },
                 transaction,
@@ -317,12 +317,12 @@ public sealed partial class Repository
             await ExecuteAsync(
                 connection,
                 """
-                UPDATE billing_orders SET
-                    status = @settled, actual_amount_microcredits = @amount,
-                    settled_at = @now, updated_at = @now
+                UPDATE "billingOrders" SET
+                    status = @settled, "actualAmountMicrocredits" = @amount,
+                    "settledAt" = @now, "updatedAt" = @now
                     {providerSet}
                 WHERE id = @id
-                """.Replace("{providerSet}", providerRequestId.Length > 0 ? ", provider_request_id = @providerRequestId" : ""),
+                """.Replace("{providerSet}", providerRequestId.Length > 0 ? ", \"providerRequestId\" = @providerRequestId" : ""),
                 new
                 {
                     settled = BillingStatus.BillingStatusSettled,
@@ -426,11 +426,11 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE credit_accounts SET
-                available_microcredits = available_microcredits - @actual,
+            UPDATE "creditAccounts" SET
+                "availableMicrocredits" = "availableMicrocredits" - @actual,
                 version = version + 1,
-                updated_at = @now
-            WHERE user_id = @userId
+                "updatedAt" = @now
+            WHERE "userId" = @userId
             """,
             new { actual, now = DateTime.UtcNow, userId = order.UserID },
             transaction,
@@ -449,29 +449,29 @@ public sealed partial class Repository
         List<string> sets =
         [
             "status = @settled",
-            "actual_amount_microcredits = @actual",
-            "refunded_amount_microcredits = @refunded",
-            "refunded_at = NULL",
-            "settled_at = @now",
+            "\"actualAmountMicrocredits\" = @actual",
+            "\"refundedAmountMicrocredits\" = @refunded",
+            "\"refundedAt\" = NULL",
+            "\"settledAt\" = @now",
             "error = ''",
-            "updated_at = @now",
+            "\"updatedAt\" = @now",
         ];
         if (providerRequestId.Length > 0)
         {
-            sets.Add("provider_request_id = @providerRequestId");
+            sets.Add("\"providerRequestId\" = @providerRequestId");
         }
         if (usage is not null)
         {
-            sets.Add("input_tokens = @inputTokens");
-            sets.Add("output_tokens = @outputTokens");
-            sets.Add("cached_tokens = @cachedTokens");
-            sets.Add("usage_available = @usageAvailable");
+            sets.Add("\"inputTokens\" = @inputTokens");
+            sets.Add("\"outputTokens\" = @outputTokens");
+            sets.Add("\"cachedTokens\" = @cachedTokens");
+            sets.Add("\"usageAvailable\" = @usageAvailable");
         }
 
         int orderAffected = await ExecuteAsync(
             connection,
             $"""
-            UPDATE billing_orders SET {string.Join(", ", sets)}
+            UPDATE "billingOrders" SET {string.Join(", ", sets)}
             WHERE id = @id AND status = @refunded
             """,
             new
@@ -536,8 +536,8 @@ public sealed partial class Repository
         IReadOnlyList<(string Status, long Count)> rows = await QueryAsync<(string Status, long Count)>(
             connection,
             """
-            SELECT status, COUNT(*) FROM billing_orders
-            WHERE status IN @statuses AND updated_at < @cutoff
+            SELECT status, COUNT(*) FROM "billingOrders"
+            WHERE status IN @statuses AND "updatedAt" < @cutoff
             GROUP BY status
             """,
             new { statuses = openStatuses, cutoff },
@@ -551,9 +551,9 @@ public sealed partial class Repository
         DateTime? oldest = (await QueryAsync<DateTime?>(
             connection,
             """
-            SELECT created_at FROM billing_orders
-            WHERE status IN @statuses AND updated_at < @cutoff
-            ORDER BY created_at ASC LIMIT 1
+            SELECT "createdAt" FROM "billingOrders"
+            WHERE status IN @statuses AND "updatedAt" < @cutoff
+            ORDER BY "createdAt" ASC LIMIT 1
             """,
             new { statuses = openStatuses, cutoff },
             cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -597,12 +597,12 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE credit_accounts SET
-                available_microcredits = available_microcredits + @amount,
-                reserved_microcredits = reserved_microcredits - @amount,
+            UPDATE "creditAccounts" SET
+                "availableMicrocredits" = "availableMicrocredits" + @amount,
+                "reservedMicrocredits" = "reservedMicrocredits" - @amount,
                 version = version + 1,
-                updated_at = @now
-            WHERE user_id = @userId AND reserved_microcredits >= @amount
+                "updatedAt" = @now
+            WHERE "userId" = @userId AND "reservedMicrocredits" >= @amount
             """,
             new { amount = order.AmountMicrocredits, now = DateTime.UtcNow, userId = order.UserID },
             transaction,
@@ -621,9 +621,9 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE billing_orders SET
+            UPDATE "billingOrders" SET
                 status = @refunded, error = @errorText,
-                refunded_amount_microcredits = @amount, refunded_at = @now, updated_at = @now
+                "refundedAmountMicrocredits" = @amount, "refundedAt" = @now, "updatedAt" = @now
             WHERE id = @id
             """,
             new
@@ -681,8 +681,8 @@ public sealed partial class Repository
         long count = await ScalarAsync<long>(
             connection,
             """
-            SELECT COUNT(*) FROM api_call_logs
-            WHERE task_id = @taskId AND billable = @billable AND status = @status
+            SELECT COUNT(*) FROM "apiCallLogs"
+            WHERE "taskId" = @taskId AND billable = @billable AND status = @status
             """,
             new
             {
@@ -703,8 +703,8 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE billing_orders SET
-                resolved_by = @actorUserId, resolution_note = @note, updated_at = @now
+            UPDATE "billingOrders" SET
+                "resolvedBy" = @actorUserId, "resolutionNote" = @note, "updatedAt" = @now
             WHERE id = @id
             """,
             new { actorUserId, note, now = DateTime.UtcNow, id },
@@ -719,9 +719,9 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE billing_orders SET
-                provider_request_id = @providerRequestId, updated_at = @now
-            WHERE id = @id AND provider_request_id = ''
+            UPDATE "billingOrders" SET
+                "providerRequestId" = @providerRequestId, "updatedAt" = @now
+            WHERE id = @id AND "providerRequestId" = ''
             """,
             new { providerRequestId, now = DateTime.UtcNow, id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -792,10 +792,10 @@ public sealed partial class Repository
         ApiCallLog? log = await FirstOrDefaultAsync<ApiCallLog>(
             connection,
             """
-            SELECT input_tokens AS "InputTokens", output_tokens AS "OutputTokens", cached_tokens AS "CachedTokens"
-            FROM api_call_logs
-            WHERE billing_order_id = @orderId AND status = @status AND usage_available = @usageAvailable
-            ORDER BY created_at DESC
+            SELECT "inputTokens" AS "InputTokens", "outputTokens" AS "OutputTokens", "cachedTokens" AS "CachedTokens"
+            FROM "apiCallLogs"
+            WHERE "billingOrderId" = @orderId AND status = @status AND "usageAvailable" = @usageAvailable
+            ORDER BY "createdAt" DESC
             LIMIT 1
             """,
             new
@@ -827,7 +827,7 @@ public sealed partial class Repository
         CancellationToken cancellationToken) =>
         await FirstOrDefaultAsync<CreditAccount>(
             connection,
-            SqlBuilder.Select<CreditAccount>("user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CreditAccount>("\"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { userId },
             transaction,
             cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("credit account does not exist");
@@ -857,26 +857,26 @@ public sealed partial class Repository
     {
         List<string> sets =
         [
-            "input_tokens = @inputTokens",
-            "output_tokens = @outputTokens",
-            "cached_tokens = @cachedTokens",
-            "usage_available = @usageAvailable",
-            "usage_source = @usageSource",
-            "updated_at = @now",
+            "\"inputTokens\" = @inputTokens",
+            "\"outputTokens\" = @outputTokens",
+            "\"cachedTokens\" = @cachedTokens",
+            "\"usageAvailable\" = @usageAvailable",
+            "\"usageSource\" = @usageSource",
+            "\"updatedAt\" = @now",
         ];
         if (actualAvailable)
         {
-            sets.Add("actual_amount_microcredits = @actual");
+            sets.Add("\"actualAmountMicrocredits\" = @actual");
         }
         if (providerRequestId.Length > 0)
         {
-            sets.Add("provider_request_id = @providerRequestId");
+            sets.Add("\"providerRequestId\" = @providerRequestId");
         }
 
         await ExecuteAsync(
             connection,
             $"""
-            UPDATE billing_orders SET {string.Join(", ", sets)}
+            UPDATE "billingOrders" SET {string.Join(", ", sets)}
             WHERE id = @id AND status NOT IN @closedStatuses
             """,
             new

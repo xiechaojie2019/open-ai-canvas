@@ -12,7 +12,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<UserOSSSetting>(connection,
-            SqlBuilder.Select<UserOSSSetting>("user_id = @userId", "updated_at DESC, id DESC", " LIMIT 1"),
+            SqlBuilder.Select<UserOSSSetting>("\"userId\" = @userId", "\"updatedAt\" DESC, id DESC", " LIMIT 1"),
             new { userId }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -31,7 +31,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<StorageLocation>(connection,
             SqlBuilder.Select<StorageLocation>(
-                "scope = @scope AND owner_id = @ownerId AND provider = @provider AND location_digest = @digest",
+                "scope = @scope AND \"ownerId\" = @ownerId AND provider = @provider AND \"locationDigest\" = @digest",
                 limitOffset: " LIMIT 1"),
             new { scope, ownerId, provider, digest }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -58,10 +58,10 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection,
-            "UPDATE \"storage_locations\" SET active = FALSE, updated_at = @now WHERE scope = @scope AND owner_id = @ownerId",
+            "UPDATE \"storageLocations\" SET active = FALSE, \"updatedAt\" = @now WHERE scope = @scope AND \"ownerId\" = @ownerId",
             new { scope, ownerId, now = DateTime.UtcNow }, transaction, cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(connection,
-            "UPDATE \"storage_locations\" SET active = @active, updated_at = @now WHERE id = @id AND scope = @scope AND owner_id = @ownerId",
+            "UPDATE \"storageLocations\" SET active = @active, \"updatedAt\" = @now WHERE id = @id AND scope = @scope AND \"ownerId\" = @ownerId",
             new { id, scope, ownerId, active, now = DateTime.UtcNow }, transaction, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -71,7 +71,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(connection,
-            "SELECT COUNT(*) FROM \"storage_locations\" WHERE scope = @scope AND owner_id = @ownerId",
+            "SELECT COUNT(*) FROM \"storageLocations\" WHERE scope = @scope AND \"ownerId\" = @ownerId",
             new { scope, ownerId }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -84,7 +84,7 @@ public sealed partial class Repository
         }
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(connection,
-            "SELECT COUNT(*) FROM \"resources\" WHERE storage_setting_id = @storageLocationId",
+            "SELECT COUNT(*) FROM \"resources\" WHERE \"storageSettingId\" = @storageLocationId",
             new { storageLocationId }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

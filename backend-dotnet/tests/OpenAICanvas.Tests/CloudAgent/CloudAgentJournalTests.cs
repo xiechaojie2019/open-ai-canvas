@@ -134,8 +134,8 @@ public sealed class CloudAgentJournalTests : IDisposable
 
         await using SqliteConnection connection = (SqliteConnection)_database.CreateConnection();
         await connection.OpenAsync();
-        Assert.Equal(2, await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM cloud_agent_event_records"));
-        Assert.Equal(2, await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM cloud_agent_message_records"));
+        Assert.Equal(2, await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM \"cloudAgentEventRecords\""));
+        Assert.Equal(2, await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM \"cloudAgentMessageRecords\""));
 
         // 重新加载并重建：事件/消息与保存前一致。
         CloudAgentExecution? reloaded = await _repository.CloudAgentAsync("user-a", "run-1");

@@ -12,28 +12,28 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>CloudAgentResourceLease</c>，数据库表 <c>cloud_agent_resource_leases</c>。
+/// 对应 Go <c>CloudAgentResourceLease</c>，数据库表 <c>cloudAgentResourceLeases</c>。
 /// 源文件：internal/model/cloud_agent_resource_lease.go
 /// </summary>
 public class CloudAgentResourceLease
 {
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36，主键）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>run_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>runId</c>（maxLength=80）</summary>
     [JsonPropertyName("")]
     public string RunID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>owner_id</c>（maxLength=160，主键）</summary>
+    /// <summary>数据库列 <c>ownerId</c>（maxLength=160，主键）</summary>
     [JsonPropertyName("")]
     public string OwnerID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>resource_id</c>（maxLength=36，主键）</summary>
+    /// <summary>数据库列 <c>resourceId</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("")]
     public string ResourceID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("")]
     public DateTime ExpiresAt { get; set; }
 }

@@ -15,7 +15,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ProjectUnit>(
             connection,
-            SqlBuilder.Select<ProjectUnit>("project_id = @projectId", "position ASC, created_at ASC"),
+            SqlBuilder.Select<ProjectUnit>("\"projectId\" = @projectId", "position ASC, \"createdAt\" ASC"),
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -27,7 +27,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<ProjectUnit>(
             connection,
-            SqlBuilder.Select<ProjectUnit>("id = @unitId AND project_id = @projectId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<ProjectUnit>("id = @unitId AND \"projectId\" = @projectId", limitOffset: " LIMIT 1"),
             new { unitId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -67,8 +67,8 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         string sql = sourceChanged
-            ? "UPDATE \"project_units\" SET \"title\" = @Title, \"source_text\" = @SourceText, \"word_count\" = @WordCount, \"status\" = @Status, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID AND \"project_id\" = @ProjectID"
-            : "UPDATE \"project_units\" SET \"title\" = @Title, \"status\" = @Status, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID AND \"project_id\" = @ProjectID";
+            ? "UPDATE \"projectUnits\" SET \"title\" = @Title, \"sourceText\" = @SourceText, \"wordCount\" = @WordCount, \"status\" = @Status, \"updatedAt\" = @UpdatedAt WHERE \"id\" = @ID AND \"projectId\" = @ProjectID"
+            : "UPDATE \"projectUnits\" SET \"title\" = @Title, \"status\" = @Status, \"updatedAt\" = @UpdatedAt WHERE \"id\" = @ID AND \"projectId\" = @ProjectID";
         await ExecuteAsync(connection, sql, unit, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -79,7 +79,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"project_units\" WHERE \"id\" = @unitId AND \"project_id\" = @projectId",
+            "DELETE FROM \"projectUnits\" WHERE \"id\" = @unitId AND \"projectId\" = @projectId",
             new { unitId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -95,7 +95,7 @@ public sealed partial class Repository
             {
                 await ExecuteAsync(
                     connection,
-                    "UPDATE \"project_units\" SET \"position\" = @position, \"updated_at\" = @now WHERE \"id\" = @id AND \"project_id\" = @projectId",
+                    "UPDATE \"projectUnits\" SET \"position\" = @position, \"updatedAt\" = @now WHERE \"id\" = @id AND \"projectId\" = @projectId",
                     new { position = (long)index, now, id = unitIds[index], projectId },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
@@ -109,7 +109,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updated_at\" = @now WHERE \"id\" = @projectId",
+            "UPDATE \"projects\" SET \"revision\" = \"revision\" + 1, \"updatedAt\" = @now WHERE \"id\" = @projectId",
             new { now = DateTime.UtcNow, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -121,7 +121,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE \"canvas_projects\" SET \"project_id\" = @projectId, \"revision\" = \"revision\" + 1, \"updated_at\" = @now WHERE \"id\" = @canvasId AND \"user_id\" = @userId",
+            "UPDATE \"canvasProjects\" SET \"projectId\" = @projectId, \"revision\" = \"revision\" + 1, \"updatedAt\" = @now WHERE \"id\" = @canvasId AND \"userId\" = @userId",
             new { projectId, now = DateTime.UtcNow, canvasId, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -133,7 +133,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<CanvasUnitLink>(
             connection,
-            SqlBuilder.Select<CanvasUnitLink>("project_id = @projectId", "created_at ASC"),
+            SqlBuilder.Select<CanvasUnitLink>("\"projectId\" = @projectId", "\"createdAt\" ASC"),
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -155,7 +155,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"canvas_unit_links\" WHERE \"project_id\" = @projectId AND \"canvas_id\" = @canvasId AND \"unit_id\" = @unitId",
+            "DELETE FROM \"canvasUnitLinks\" WHERE \"projectId\" = @projectId AND \"canvasId\" = @canvasId AND \"unitId\" = @unitId",
             new { projectId, canvasId, unitId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

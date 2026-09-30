@@ -19,7 +19,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<PluginPlatformState>(
             connection,
-            SqlBuilder.Select<PluginPlatformState>("plugin_id = @pluginID", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<PluginPlatformState>("\"pluginId\" = @pluginID", limitOffset: " LIMIT 1"),
             new { pluginID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -31,7 +31,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<PluginPlatformState>(
             connection,
-            SqlBuilder.Select<PluginPlatformState>(orderBy: "plugin_id ASC"),
+            SqlBuilder.Select<PluginPlatformState>(orderBy: "\"pluginId\" ASC"),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -45,7 +45,7 @@ public sealed partial class Repository
         {
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE plugin_platform_states SET available = @Available, updated_by = @UpdatedBy, created_at = @CreatedAt, updated_at = @UpdatedAt WHERE plugin_id = @PluginID",
+                "UPDATE \"pluginPlatformStates\" SET available = @Available, \"updatedBy\" = @UpdatedBy, \"createdAt\" = @CreatedAt, \"updatedAt\" = @UpdatedAt WHERE \"pluginId\" = @PluginID",
                 new
                 {
                     state.PluginID,
@@ -77,7 +77,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<UserPluginState>(
             connection,
             SqlBuilder.Select<UserPluginState>(
-                "user_id = @userID AND plugin_id = @pluginID",
+                "\"userId\" = @userID AND \"pluginId\" = @pluginID",
                 limitOffset: " LIMIT 1"),
             new { userID, pluginID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -91,8 +91,8 @@ public sealed partial class Repository
         return await QueryAsync<UserPluginState>(
             connection,
             SqlBuilder.Select<UserPluginState>(
-                "user_id = @userID",
-                orderBy: "plugin_id ASC"),
+                "\"userId\" = @userID",
+                orderBy: "\"pluginId\" ASC"),
             new { userID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -105,7 +105,7 @@ public sealed partial class Repository
         {
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE user_plugin_states SET enabled = @Enabled, updated_at = @UpdatedAt WHERE user_id = @UserID AND plugin_id = @PluginID",
+                "UPDATE \"userPluginStates\" SET enabled = @Enabled, \"updatedAt\" = @UpdatedAt WHERE \"userId\" = @UserID AND \"pluginId\" = @PluginID",
                 new
                 {
                     state.UserID,
@@ -141,7 +141,7 @@ public sealed partial class Repository
         IEnumerable<(string PluginID, long EnabledCount)> rows = await connection.QueryAsync<(string, long)>(
             new CommandDefinition(
                 // enabled 在 PG 是 boolean、SQLite 是 numeric，参数化布尔两端同源。
-                "SELECT plugin_id AS PluginID, COUNT(*) AS EnabledCount FROM user_plugin_states WHERE enabled = @enabled GROUP BY plugin_id",
+                "SELECT \"pluginId\" AS PluginID, COUNT(*) AS EnabledCount FROM \"userPluginStates\" WHERE enabled = @enabled GROUP BY \"pluginId\"",
                 new { enabled = true },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
         return rows.ToDictionary(row => row.PluginID, row => row.EnabledCount, StringComparer.Ordinal);
@@ -153,7 +153,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await connection.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM user_plugin_states WHERE plugin_id = @pluginID",
+            "DELETE FROM \"userPluginStates\" WHERE \"pluginId\" = @pluginID",
             new { pluginID },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
@@ -164,7 +164,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int affected = await connection.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM plugin_platform_states WHERE plugin_id = @pluginID",
+            "DELETE FROM \"pluginPlatformStates\" WHERE \"pluginId\" = @pluginID",
             new { pluginID },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         return affected > 0;

@@ -17,7 +17,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM tasks WHERE user_id = @userId AND status IN ('queued', 'running')",
+            "SELECT COUNT(*) FROM tasks WHERE \"userId\" = @userId AND status IN ('queued', 'running')",
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -43,7 +43,7 @@ public sealed partial class Repository
         {
             long active = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM logical_models WHERE id = @id AND enabled = 1 AND archived_at IS NULL AND active_revision_id = @revision",
+                "SELECT COUNT(*) FROM \"logicalModels\" WHERE id = @id AND enabled = 1 AND \"archivedAt\" IS NULL AND \"activeRevisionId\" = @revision",
                 new { id = task.LogicalModelID, revision = task.LogicalModelRevisionID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -56,7 +56,7 @@ public sealed partial class Repository
 
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM tasks WHERE user_id = @userId AND status IN ('queued', 'running')",
+            "SELECT COUNT(*) FROM tasks WHERE \"userId\" = @userId AND status IN ('queued', 'running')",
             new { userId = task.UserID },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -91,7 +91,7 @@ public sealed partial class Repository
 
         await ExecuteAsync(
             connection,
-            "INSERT INTO credit_accounts (user_id, available_microcredits, reserved_microcredits, version, created_at, updated_at) VALUES (@userId, 0, 0, 0, @now, @now) ON CONFLICT DO NOTHING",
+            "INSERT INTO \"creditAccounts\" (\"userId\", \"availableMicrocredits\", \"reservedMicrocredits\", version, \"createdAt\", \"updatedAt\") VALUES (@userId, 0, 0, 0, @now, @now) ON CONFLICT DO NOTHING",
             new { userId = order.UserID, now = DateTime.UtcNow },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -99,11 +99,11 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE credit_accounts SET
-              available_microcredits = available_microcredits - @amount,
-              reserved_microcredits = reserved_microcredits + @amount,
-              version = version + 1, updated_at = @now
-            WHERE user_id = @userId AND available_microcredits >= @amount
+            UPDATE "creditAccounts" SET
+              "availableMicrocredits" = "availableMicrocredits" - @amount,
+              "reservedMicrocredits" = "reservedMicrocredits" + @amount,
+              version = version + 1, "updatedAt" = @now
+            WHERE "userId" = @userId AND "availableMicrocredits" >= @amount
             """,
             new { amount = order.AmountMicrocredits, now = DateTime.UtcNow, userId = order.UserID },
             transaction,
@@ -138,12 +138,12 @@ public sealed partial class Repository
             connection,
             """
             UPDATE tasks SET status = 'cancelled', stage = '任务已取消', error = '任务已取消',
-              completed_at = @now, updated_at = @now
+              "completedAt" = @now, "updatedAt" = @now
               {cancellationSet}
-            WHERE id = @taskId AND user_id = @userId AND status = @expectedStatus
+            WHERE id = @taskId AND "userId" = @userId AND status = @expectedStatus
             """.Replace("{cancellationSet}", cancellationSource is null
                 ? ""
-                : ", cancellation_source = @cancellationSource, cancellation_actor_id = @cancellationActorID, cancellation_requested_at = @now, execution_diagnostic_json = @diagnosticJSON"),
+                : ", \"cancellationSource\" = @cancellationSource, \"cancellationActorId\" = @cancellationActorID, \"cancellationRequestedAt\" = @now, \"executionDiagnosticJson\" = @diagnosticJSON"),
             new
             {
                 taskId,
@@ -174,7 +174,7 @@ public sealed partial class Repository
 
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM tasks WHERE user_id = @userId AND status IN ('queued', 'running')",
+            "SELECT COUNT(*) FROM tasks WHERE \"userId\" = @userId AND status IN ('queued', 'running')",
             new { userId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -194,18 +194,18 @@ public sealed partial class Repository
             connection,
             """
             UPDATE tasks SET
-              status = 'queued', stage = '等待队列调度', progress = 5, error = '', result_json = '',
-              text_draft = '', started_at = NULL, completed_at = NULL,
-              provider_request_id = '', poll_stage = '', next_poll_at = NULL,
-              provider_cancel_status = '', provider_cancel_error = '', provider_cancel_attempts = 0,
-              provider_cancel_requested_at = NULL, provider_cancelled_at = NULL, provider_cancel_next_check_at = NULL,
-              route_run = route_run + 1,
-              logical_model_revision_id = @LogicalModelRevisionID, route_id = @RouteID,
-              channel_model_id = @ChannelModelID, input_json = @InputJSON,
+              status = 'queued', stage = '等待队列调度', progress = 5, error = '', "resultJson" = '',
+              "textDraft" = '', "startedAt" = NULL, "completedAt" = NULL,
+              "providerRequestId" = '', "pollStage" = '', "nextPollAt" = NULL,
+              "providerCancelStatus" = '', "providerCancelError" = '', "providerCancelAttempts" = 0,
+              "providerCancelRequestedAt" = NULL, "providerCancelledAt" = NULL, "providerCancelNextCheckAt" = NULL,
+              "routeRun" = "routeRun" + 1,
+              "logicalModelRevisionId" = @LogicalModelRevisionID, "routeId" = @RouteID,
+              "channelModelId" = @ChannelModelID, "inputJson" = @InputJSON,
               model = @Model, provider = @Provider,
-              lease_owner = '', lease_expires_at = NULL, updated_at = @now,
-              billing_order_id = @billingOrderId
-            WHERE id = @ID AND user_id = @UserID AND status IN ('failed', 'cancelled')
+              "leaseOwner" = '', "leaseExpiresAt" = NULL, "updatedAt" = @now,
+              "billingOrderId" = @billingOrderId
+            WHERE id = @ID AND "userId" = @UserID AND status IN ('failed', 'cancelled')
             """,
             new
             {
@@ -229,14 +229,14 @@ public sealed partial class Repository
         }
         await ExecuteAsync(
             connection,
-            "DELETE FROM task_text_delta WHERE user_id = @userId AND task_id = @taskId",
+            "DELETE FROM \"taskTextDelta\" WHERE \"userId\" = @userId AND \"taskId\" = @taskId",
             new { userId, taskId = prepared.ID },
             transaction,
             cancellationToken).ConfigureAwait(false);
 
         TaskEntity? task = await FirstOrDefaultAsync<TaskEntity>(
             connection,
-            SqlBuilder.Select<TaskEntity>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<TaskEntity>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id = prepared.ID, userId },
             transaction,
             cancellationToken).ConfigureAwait(false);

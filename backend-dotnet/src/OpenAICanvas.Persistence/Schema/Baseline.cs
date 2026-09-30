@@ -42,6 +42,25 @@ public static class Baseline
     }
 
     /// <summary>
+    /// EntityMetadata 记录的是 v35 之后的物理名，而建表脚本与 v1–v34 的迁移仍使用基线
+    /// snake_case 命名。<see cref="AlignMissingColumnsAsync"/> 运行在改名之前，因此必须
+    /// 把元数据里的名字折回基线名：否则表名改过的表会被 <c>TableExistsAsync</c> 误判为
+    /// "不存在"（于是漏补列），而表名恰好没变的表又会因列名对不上在建表脚本里查不到定义
+    /// （抛"建表脚本里找不到列定义"）。
+    /// </summary>
+    private static readonly Dictionary<string, string> BaselineTableNames =
+        CamelCaseRenamePlan.Tables.ToDictionary(item => item.NewName, item => item.OldName, StringComparer.Ordinal);
+
+    private static readonly Dictionary<(string Table, string Column), string> BaselineColumnNames =
+        CamelCaseRenamePlan.Columns.ToDictionary(item => (item.Table, item.NewName), item => item.OldName);
+
+    private static string BaselineTableName(string table) =>
+        BaselineTableNames.TryGetValue(table, out string? renamed) ? renamed : table;
+
+    private static string BaselineColumnName(string table, string column) =>
+        BaselineColumnNames.TryGetValue((table, column), out string? renamed) ? renamed : column;
+
+    /// <summary>
     /// 把全部实体缺失的列按建表脚本的定义补齐。对应 Go AutoMigrate 的加列语义。
     /// </summary>
     private static async Task AlignMissingColumnsAsync(SchemaMigrationContext ctx)
@@ -49,7 +68,9 @@ public static class Baseline
         foreach (System.Type type in EntityMetadata.KnownTypes)
         {
             EntityMap map = EntityMetadata.For(type);
-            if (!await ctx.TableExistsAsync(map.Table).ConfigureAwait(false))
+            // 本步在 v35 改名之前执行，库内仍是基线命名，一律用折回后的名字操作。
+            string table = BaselineTableName(map.Table);
+            if (!await ctx.TableExistsAsync(table).ConfigureAwait(false))
             {
                 continue;
             }
@@ -57,19 +78,20 @@ public static class Baseline
             List<string> existing = (await ctx.QueryAsync<string>(
                 ctx.Dialect.IsPostgres
                     ? "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = @table"
-                    : $"SELECT name FROM pragma_table_info('{map.Table.Replace("'", "''")}')",
-                new { table = map.Table }).ConfigureAwait(false)).ToList();
+                    : $"SELECT name FROM pragma_table_info('{table.Replace("'", "''")}')",
+                new { table }).ConfigureAwait(false)).ToList();
             HashSet<string> present = new(existing, StringComparer.Ordinal);
 
             foreach (ColumnMap column in map.Columns)
             {
-                if (present.Contains(column.Column))
+                string baselineColumn = BaselineColumnName(table, column.Column);
+                if (present.Contains(baselineColumn))
                 {
                     continue;
                 }
-                string definition = ctx.ColumnDefinition(map.Table, column.Column);
+                string definition = ctx.ColumnDefinition(table, baselineColumn);
                 await ctx.ExecuteAsync(
-                    $"ALTER TABLE \"{map.Table}\" ADD COLUMN \"{column.Column}\" {definition}")
+                    $"ALTER TABLE \"{table}\" ADD COLUMN \"{baselineColumn}\" {definition}")
                     .ConfigureAwait(false);
             }
         }
@@ -318,6 +340,75 @@ public static class Baseline
                 $"ALTER TABLE \"{table}\" ALTER COLUMN \"{column}\" TYPE varchar({ModelText.AssetIdMaxLength})")
                 .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// 版本 35：把物理表名与列名从 snake_case 收敛为 camelCase。
+    /// 改名计划见 <see cref="CamelCaseRenamePlan"/>（由
+    /// scripts/rename-schema-identifiers.py --plan-cs 生成）。
+    /// </summary>
+    /// <remarks>
+    /// v1–v34 的基线与建表脚本继续使用 snake_case，由本步一次性收敛：
+    /// 这样新库与老库都会走到同一种结构，且不改动已发布迁移的名称与校验和。
+    /// <para>
+    /// 顺序必须是先列后表——改列名时表名还是旧名。账本表 <c>schema_migrations</c>
+    /// 与其 <c>applied_at</c> 不在计划内（迁移链自身在改名前后都要读写它）。
+    /// </para>
+    /// </remarks>
+    public static async Task ApplyCamelCaseIdentifiersAsync(SchemaMigrationContext ctx)
+    {
+        HashSet<string> tables = await ReadExistingTableNamesAsync(ctx).ConfigureAwait(false);
+        HashSet<(string Table, string Column)> columns = await ReadExistingColumnsAsync(ctx).ConfigureAwait(false);
+
+        // 列改名：跳过不存在的表/列，使重复执行与部分迁移过的库都能安全通过。
+        foreach ((string table, string oldName, string newName) in CamelCaseRenamePlan.Columns)
+        {
+            if (!tables.Contains(table) || !columns.Contains((table, oldName)))
+            {
+                continue;
+            }
+
+            await ctx.ExecuteAsync($"ALTER TABLE \"{table}\" RENAME COLUMN \"{oldName}\" TO \"{newName}\"")
+                .ConfigureAwait(false);
+        }
+
+        foreach ((string oldName, string newName) in CamelCaseRenamePlan.Tables)
+        {
+            if (!tables.Contains(oldName))
+            {
+                continue;
+            }
+
+            await ctx.ExecuteAsync($"ALTER TABLE \"{oldName}\" RENAME TO \"{newName}\"")
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<HashSet<string>> ReadExistingTableNamesAsync(SchemaMigrationContext ctx)
+    {
+        string sql = ctx.Dialect.IsPostgres
+            ? "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()"
+            : "SELECT name FROM sqlite_master WHERE type = 'table'";
+        IReadOnlyList<string> names = await ctx.QueryAsync<string>(sql).ConfigureAwait(false);
+        return new HashSet<string>(names, StringComparer.Ordinal);
+    }
+
+    private static async Task<HashSet<(string Table, string Column)>> ReadExistingColumnsAsync(
+        SchemaMigrationContext ctx)
+    {
+        // 两种方言都能用一条查询取回全部 (表, 列)：SQLite 用 pragma 表值函数做连接。
+        string sql = ctx.Dialect.IsPostgres
+            ? "SELECT table_name AS TableName, column_name AS ColumnName FROM information_schema.columns WHERE table_schema = current_schema()"
+            : "SELECT m.name AS TableName, p.name AS ColumnName FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type = 'table'";
+        IReadOnlyList<IdentifierRef> rows = await ctx.QueryAsync<IdentifierRef>(sql).ConfigureAwait(false);
+        return rows.Select(row => (row.TableName, row.ColumnName)).ToHashSet();
+    }
+
+    private sealed class IdentifierRef
+    {
+        public string TableName { get; init; } = string.Empty;
+
+        public string ColumnName { get; init; } = string.Empty;
     }
 
     private sealed class CandidateRow

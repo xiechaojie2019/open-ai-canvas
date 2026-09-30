@@ -19,9 +19,9 @@ public sealed partial class Repository
         List<BannerAnnouncement> banners = (await QueryAsync<BannerAnnouncement>(
             connection,
             SqlBuilder.Select<BannerAnnouncement>(
-                $"{Quote("status")} = @status AND ({Quote("starts_at")} IS NULL OR {Quote("starts_at")} <= @now) " +
-                $"AND ({Quote("ends_at")} IS NULL OR {Quote("ends_at")} >= @now)",
-                orderBy: Quote("created_at") + " DESC"),
+                $"{Quote("status")} = @status AND ({Quote("startsAt")} IS NULL OR {Quote("startsAt")} <= @now) " +
+                $"AND ({Quote("endsAt")} IS NULL OR {Quote("endsAt")} >= @now)",
+                orderBy: Quote("createdAt") + " DESC"),
             new { status = "active", now },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         banners.ForEach(DecodeTitleRuns);
@@ -47,7 +47,7 @@ public sealed partial class Repository
         }
         long? total = await ScalarAsync<long?>(
             connection,
-            $"SELECT COUNT(*) FROM {Quote("banner_announcements")} WHERE {where}",
+            $"SELECT COUNT(*) FROM {Quote("bannerAnnouncements")} WHERE {where}",
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         parameters["limit"] = limit;
@@ -55,7 +55,7 @@ public sealed partial class Repository
         List<BannerAnnouncement> banners = (await QueryAsync<BannerAnnouncement>(
             connection,
             SqlBuilder.Select<BannerAnnouncement>(
-                where, orderBy: Quote("created_at") + " DESC", limitOffset: " LIMIT @limit OFFSET @offset"),
+                where, orderBy: Quote("createdAt") + " DESC", limitOffset: " LIMIT @limit OFFSET @offset"),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         banners.ForEach(DecodeTitleRuns);

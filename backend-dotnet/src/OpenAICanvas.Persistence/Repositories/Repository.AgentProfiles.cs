@@ -22,7 +22,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<AgentProfile>(
             connection,
             SqlBuilder.Select<AgentProfile>(
-                "user_id = @userId AND scope = @scope AND project_id = @projectId AND canvas_id = @canvasId",
+                "\"userId\" = @userId AND scope = @scope AND \"projectId\" = @projectId AND \"canvasId\" = @canvasId",
                 limitOffset: " LIMIT 1"),
             new { userId, scope, projectId, canvasId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -42,7 +42,7 @@ public sealed partial class Repository
             AgentProfile? current = await QuerySingleOrDefaultAsync<AgentProfile>(
                 connection,
                 SqlBuilder.Select<AgentProfile>(
-                    "user_id = @userId AND scope = @scope AND project_id = @projectId AND canvas_id = @canvasId",
+                    "\"userId\" = @userId AND scope = @scope AND \"projectId\" = @projectId AND \"canvasId\" = @canvasId",
                     limitOffset: " LIMIT 1"),
                 new { userId = profile.UserID, scope = profile.Scope, projectId = profile.ProjectID, canvasId = profile.CanvasID },
                 transaction,
@@ -70,7 +70,7 @@ public sealed partial class Repository
             profile.UpdatedAt = DateTime.UtcNow;
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE \"agent_profiles\" SET \"content\" = @Content, \"revision\" = @Revision, \"hash\" = @Hash, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID AND \"revision\" = @ExpectedRevision",
+                "UPDATE \"agentProfiles\" SET \"content\" = @Content, \"revision\" = @Revision, \"hash\" = @Hash, \"updatedAt\" = @UpdatedAt WHERE \"id\" = @ID AND \"revision\" = @ExpectedRevision",
                 new { profile.Content, profile.Revision, profile.Hash, profile.UpdatedAt, profile.ID, ExpectedRevision = current.Revision },
                 transaction,
                 cancellationToken: cancellationToken).ConfigureAwait(false);

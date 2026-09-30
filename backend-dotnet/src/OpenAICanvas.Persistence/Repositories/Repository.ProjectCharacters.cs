@@ -24,9 +24,9 @@ public sealed partial class Repository
             $"""
             SELECT {SqlBuilder.Projection<Asset>("assets")}
             FROM assets
-            JOIN project_asset_links ON project_asset_links.asset_id = assets.id
-            WHERE assets.id = @assetId AND assets.user_id = @userId
-              AND assets.category = @category AND project_asset_links.project_id = @projectId
+            JOIN "projectAssetLinks" ON "projectAssetLinks"."assetId" = assets.id
+            WHERE assets.id = @assetId AND assets."userId" = @userId
+              AND assets.category = @category AND "projectAssetLinks"."projectId" = @projectId
             LIMIT 1
             """,
             new { assetId, userId, category = AssetCategory.AssetCategoryCharacter, projectId },
@@ -53,7 +53,7 @@ public sealed partial class Repository
         return await QueryAsync<AssetRepresentation>(
             connection,
             SqlBuilder.Select<AssetRepresentation>(
-                "asset_version_id = @assetVersionId", "role ASC, created_at ASC"),
+                "\"assetVersionId\" = @assetVersionId", "role ASC, \"createdAt\" ASC"),
             new { assetVersionId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -66,7 +66,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CharacterVoiceBinding>(
             connection,
             SqlBuilder.Select<CharacterVoiceBinding>(
-                "asset_version_id = @assetVersionId", limitOffset: " LIMIT 1"),
+                "\"assetVersionId\" = @assetVersionId", limitOffset: " LIMIT 1"),
             new { assetVersionId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -78,7 +78,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<VoiceProfile>(
             connection,
-            SqlBuilder.Select<VoiceProfile>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<VoiceProfile>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -91,7 +91,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<VoiceProfile>(
             connection,
             SqlBuilder.Select<VoiceProfile>(
-                "user_id = @userId AND sample_resource_id = @sampleResourceId AND status = 'active'",
+                "\"userId\" = @userId AND \"sampleResourceId\" = @sampleResourceId AND status = 'active'",
                 limitOffset: " LIMIT 1"),
             new { userId, sampleResourceId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -119,7 +119,7 @@ public sealed partial class Repository
         }
 
         string statement = SqlBuilder.Insert(typeof(VoiceProfile))
-            + Dialect.OnConflictDoNothing("\"user_id\", \"provider\", \"voice_key\"");
+            + Dialect.OnConflictDoNothing("\"userId\", \"provider\", \"voiceKey\"");
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         foreach (VoiceProfile profile in profiles)
         {
@@ -151,7 +151,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE projects SET revision = revision + 1, updated_at = @updatedAt
+            UPDATE projects SET revision = revision + 1, "updatedAt" = @updatedAt
             WHERE id = @projectId
             """,
             new { updatedAt = asset.UpdatedAt, projectId },
@@ -197,9 +197,9 @@ public sealed partial class Repository
             """
             UPDATE assets SET
                 kind = @Kind, category = @Category, status = @Status,
-                primary_version_id = @PrimaryVersionID, title = @Title,
-                payload_json = @PayloadJSON, updated_at = @UpdatedAt
-            WHERE id = @ID AND user_id = @UserID
+                "primaryVersionId" = @PrimaryVersionID, title = @Title,
+                "payloadJson" = @PayloadJSON, "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "userId" = @UserID
             """,
             asset,
             transaction,

@@ -17,7 +17,11 @@ namespace OpenAICanvas.Persistence;
 public static class SchemaMigrationCatalog
 {
     /// <summary>对应 Go: <c>database.CurrentSchemaVersion</c>。</summary>
-    public const long CurrentSchemaVersion = 34;
+    /// <remarks>
+    /// 35 是 .NET 侧独有的 <c>camel_case_identifiers</c>（库内标识符 snake_case → camelCase），
+    /// 排在 Go 的 v34 之后，因此不占用 Go 的号段。
+    /// </remarks>
+    public const long CurrentSchemaVersion = 35;
 
     /// <summary>PostgreSQL 迁移排他锁 ID。对应 Go: <c>postgresSchemaMigrationLockID</c>。</summary>
     public const long PostgresMigrationLockId = 73123910420260830;
@@ -57,6 +61,7 @@ public static class SchemaMigrationCatalog
     private const string ChannelModelTagsChecksum = "sha256:channel-model-tags-v32";
     private const string OAuthStateAcceptedTermsChecksum = "sha256:oauth-state-accepted-terms-v33";
     private const string TaskMediaRecoveryChecksum = "sha256:task-media-recovery-v34";
+    private const string CamelCaseIdentifiersChecksum = "sha256:camel-case-identifiers-v35-20260929";
 
     /// <summary>标准顺序的迁移计划。</summary>
     public static IReadOnlyList<SchemaMigration> Plan { get; } = BuildPlan();
@@ -422,6 +427,13 @@ public static class SchemaMigrationCatalog
             {
                 await AddColumnsIfMissingAsync(ctx, "tasks", "media_recovery_json", "media_stage").ConfigureAwait(false);
             },
+        },
+        new SchemaMigration
+        {
+            Version = 35,
+            Name = "camel_case_identifiers",
+            Checksum = CamelCaseIdentifiersChecksum,
+            Apply = Baseline.ApplyCamelCaseIdentifiersAsync,
         },
     ];
 

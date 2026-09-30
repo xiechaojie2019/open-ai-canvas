@@ -35,7 +35,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         List<AssetVersion> versions = (await QueryAsync<AssetVersion>(
             connection,
-            SqlBuilder.Select<AssetVersion>("asset_id = @assetId"),
+            SqlBuilder.Select<AssetVersion>("\"assetId\" = @assetId"),
             new { assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         if (versions.Count == 0)
@@ -44,7 +44,7 @@ public sealed partial class Repository
         }
         List<AssetRepresentation> representations = (await QueryAsync<AssetRepresentation>(
             connection,
-            SqlBuilder.Select<AssetRepresentation>("asset_version_id IN @versionIds"),
+            SqlBuilder.Select<AssetRepresentation>("\"assetVersionId\" IN @versionIds"),
             new { versionIds = versions.Select(version => version.ID).ToList() },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         return (versions, representations);
@@ -94,7 +94,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"resources\" WHERE \"endpoint\" = @endpoint AND \"bucket\" = @bucket AND \"object_key\" = @objectKey AND " +
+            "SELECT COUNT(*) FROM \"resources\" WHERE \"endpoint\" = @endpoint AND \"bucket\" = @bucket AND \"objectKey\" = @objectKey AND " +
             providerCondition + excludeCondition,
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -121,7 +121,7 @@ public sealed partial class Repository
 
         foreach (Asset asset in await QueryAsync<Asset>(
                      connection,
-                     SqlBuilder.Select<Asset>("user_id = @userId AND id <> @excludingAssetId"),
+                     SqlBuilder.Select<Asset>("\"userId\" = @userId AND id <> @excludingAssetId"),
                      new { userId, excludingAssetId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -130,7 +130,7 @@ public sealed partial class Repository
 
         foreach (CanvasProject canvas in await QueryAsync<CanvasProject>(
                      connection,
-                     SqlBuilder.Select<CanvasProject>("user_id = @userId"),
+                     SqlBuilder.Select<CanvasProject>("\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -140,7 +140,7 @@ public sealed partial class Repository
         foreach (TaskEntity task in await QueryAsync<TaskEntity>(
                      connection,
                      SqlBuilder.SelectColumns<TaskEntity>(
-                         ["ID", "Prompt", "Status", "InputJSON", "ResultJSON"], "user_id = @userId"),
+                         ["ID", "Prompt", "Status", "InputJSON", "ResultJSON"], "\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -154,7 +154,7 @@ public sealed partial class Repository
 
         foreach (TaskLog taskLog in await QueryAsync<TaskLog>(
                      connection,
-                     SqlBuilder.SelectColumns<TaskLog>(["ID", "TaskID", "Message", "Payload"], "user_id = @userId"),
+                     SqlBuilder.SelectColumns<TaskLog>(["ID", "TaskID", "Message", "Payload"], "\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -165,7 +165,7 @@ public sealed partial class Repository
 
         foreach (Result result in await QueryAsync<Result>(
                      connection,
-                     SqlBuilder.SelectColumns<Result>(["ID", "TaskID", "Kind", "URL", "Payload"], "user_id = @userId"),
+                     SqlBuilder.SelectColumns<Result>(["ID", "TaskID", "Kind", "URL", "Payload"], "\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -175,7 +175,7 @@ public sealed partial class Repository
         }
         foreach (CreationRun run in await QueryAsync<CreationRun>(
                      connection,
-                     SqlBuilder.Select<CreationRun>("user_id = @userId"),
+                     SqlBuilder.Select<CreationRun>("\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -184,7 +184,7 @@ public sealed partial class Repository
 
         foreach (CreationSubmission submission in await QueryAsync<CreationSubmission>(
                      connection,
-                     SqlBuilder.Select<CreationSubmission>("user_id = @userId AND revoked_at IS NULL"),
+                     SqlBuilder.Select<CreationSubmission>("\"userId\" = @userId AND \"revokedAt\" IS NULL"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -193,7 +193,7 @@ public sealed partial class Repository
 
         foreach (Project project in await QueryAsync<Project>(
                      connection,
-                     SqlBuilder.Select<Project>("user_id = @userId"),
+                     SqlBuilder.Select<Project>("\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -206,7 +206,7 @@ public sealed partial class Repository
 
         foreach (StyleProfile style in await QueryAsync<StyleProfile>(
                      connection,
-                     SqlBuilder.Select<StyleProfile>("user_id = @userId"),
+                     SqlBuilder.Select<StyleProfile>("\"userId\" = @userId"),
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -217,11 +217,11 @@ public sealed partial class Repository
         foreach (var version in await QueryAsync<JoinedDoc>(
                      connection,
                      """
-                     SELECT "asset_versions"."id" AS "ID", "assets"."title" AS "Title",
-                            "asset_versions"."definition_json" AS "PrimaryJSON",
+                     SELECT "assetVersions"."id" AS "ID", "assets"."title" AS "Title",
+                            "assetVersions"."definitionJson" AS "PrimaryJSON",
                             '' AS "SecondaryJSON"
-                     FROM "asset_versions" JOIN "assets" ON "assets"."id" = "asset_versions"."asset_id"
-                     WHERE "assets"."user_id" = @userId AND "assets"."id" <> @excludingAssetId
+                     FROM "assetVersions" JOIN "assets" ON "assets"."id" = "assetVersions"."assetId"
+                     WHERE "assets"."userId" = @userId AND "assets"."id" <> @excludingAssetId
                      """,
                      new { userId, excludingAssetId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -232,11 +232,11 @@ public sealed partial class Repository
         foreach (var candidate in await QueryAsync<JoinedDoc>(
                      connection,
                      """
-                     SELECT "project_asset_candidates"."id" AS "ID", "projects"."name" AS "Title",
-                            "project_asset_candidates"."details_json" AS "PrimaryJSON",
+                     SELECT "projectAssetCandidates"."id" AS "ID", "projects"."name" AS "Title",
+                            "projectAssetCandidates"."detailsJson" AS "PrimaryJSON",
                             '' AS "SecondaryJSON"
-                     FROM "project_asset_candidates" JOIN "projects" ON "projects"."id" = "project_asset_candidates"."project_id"
-                     WHERE "projects"."user_id" = @userId
+                     FROM "projectAssetCandidates" JOIN "projects" ON "projects"."id" = "projectAssetCandidates"."projectId"
+                     WHERE "projects"."userId" = @userId
                      """,
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -247,13 +247,13 @@ public sealed partial class Repository
         foreach (var step in await QueryAsync<JoinedDoc>(
                      connection,
                      """
-                     SELECT "workflow_step_instances"."id" AS "ID", "workflow_step_instances"."name" AS "Title",
-                            "workflow_step_instances"."input_json" AS "PrimaryJSON",
-                            "workflow_step_instances"."output_json" AS "SecondaryJSON"
-                     FROM "workflow_step_instances"
-                     JOIN "workflow_instances" ON "workflow_instances"."id" = "workflow_step_instances"."workflow_instance_id"
-                     JOIN "projects" ON "projects"."id" = "workflow_instances"."project_id"
-                     WHERE "projects"."user_id" = @userId
+                     SELECT "workflowStepInstances"."id" AS "ID", "workflowStepInstances"."name" AS "Title",
+                            "workflowStepInstances"."inputJson" AS "PrimaryJSON",
+                            "workflowStepInstances"."outputJson" AS "SecondaryJSON"
+                     FROM "workflowStepInstances"
+                     JOIN "workflowInstances" ON "workflowInstances"."id" = "workflowStepInstances"."workflowInstanceId"
+                     JOIN "projects" ON "projects"."id" = "workflowInstances"."projectId"
+                     WHERE "projects"."userId" = @userId
                      """,
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -264,13 +264,13 @@ public sealed partial class Repository
         foreach (var artifact in await QueryAsync<JoinedDoc>(
                      connection,
                      """
-                     SELECT "shot_artifacts"."id" AS "ID", "shots"."title" AS "Title",
-                            "shot_artifacts"."metadata_json" AS "PrimaryJSON",
+                     SELECT "shotArtifacts"."id" AS "ID", "shots"."title" AS "Title",
+                            "shotArtifacts"."metadataJson" AS "PrimaryJSON",
                             '' AS "SecondaryJSON"
-                     FROM "shot_artifacts"
-                     JOIN "shots" ON "shots"."id" = "shot_artifacts"."shot_id"
-                     JOIN "projects" ON "projects"."id" = "shots"."project_id"
-                     WHERE "projects"."user_id" = @userId
+                     FROM "shotArtifacts"
+                     JOIN "shots" ON "shots"."id" = "shotArtifacts"."shotId"
+                     JOIN "projects" ON "projects"."id" = "shots"."projectId"
+                     WHERE "projects"."userId" = @userId
                      """,
                      new { userId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -282,14 +282,14 @@ public sealed partial class Repository
         foreach (var representation in await QueryAsync<JoinedDoc>(
                      connection,
                      """
-                     SELECT "asset_representations"."id" AS "ID", "assets"."title" AS "Title",
-                            "asset_representations"."resource_id" AS "ResourceID",
+                     SELECT "assetRepresentations"."id" AS "ID", "assets"."title" AS "Title",
+                            "assetRepresentations"."resourceId" AS "ResourceID",
                             '' AS "SecondaryJSON"
-                     FROM "asset_representations"
-                     JOIN "asset_versions" ON "asset_versions"."id" = "asset_representations"."asset_version_id"
-                     JOIN "assets" ON "assets"."id" = "asset_versions"."asset_id"
-                     WHERE "assets"."user_id" = @userId AND "assets"."id" <> @excludingAssetId
-                       AND "asset_representations"."resource_id" IN @resourceIds
+                     FROM "assetRepresentations"
+                     JOIN "assetVersions" ON "assetVersions"."id" = "assetRepresentations"."assetVersionId"
+                     JOIN "assets" ON "assets"."id" = "assetVersions"."assetId"
+                     WHERE "assets"."userId" = @userId AND "assets"."id" <> @excludingAssetId
+                       AND "assetRepresentations"."resourceId" IN @resourceIds
                      """,
                      new { userId, excludingAssetId, resourceIds },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -299,7 +299,7 @@ public sealed partial class Repository
 
         foreach (VoiceProfile voice in await QueryAsync<VoiceProfile>(
                      connection,
-                     SqlBuilder.Select<VoiceProfile>("user_id = @userId AND sample_resource_id IN @resourceIds"),
+                     SqlBuilder.Select<VoiceProfile>("\"userId\" = @userId AND \"sampleResourceId\" IN @resourceIds"),
                      new { userId, resourceIds },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -309,13 +309,13 @@ public sealed partial class Repository
         foreach (var artifact in await QueryAsync<JoinedDoc>(
                      connection,
                      """
-                     SELECT "shot_artifacts"."id" AS "ID", "shots"."title" AS "Title",
-                            "shot_artifacts"."resource_id" AS "ResourceID",
+                     SELECT "shotArtifacts"."id" AS "ID", "shots"."title" AS "Title",
+                            "shotArtifacts"."resourceId" AS "ResourceID",
                             '' AS "SecondaryJSON"
-                     FROM "shot_artifacts"
-                     JOIN "shots" ON "shots"."id" = "shot_artifacts"."shot_id"
-                     JOIN "projects" ON "projects"."id" = "shots"."project_id"
-                     WHERE "projects"."user_id" = @userId AND "shot_artifacts"."resource_id" IN @resourceIds
+                     FROM "shotArtifacts"
+                     JOIN "shots" ON "shots"."id" = "shotArtifacts"."shotId"
+                     JOIN "projects" ON "projects"."id" = "shots"."projectId"
+                     WHERE "projects"."userId" = @userId AND "shotArtifacts"."resourceId" IN @resourceIds
                      """,
                      new { userId, resourceIds },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -325,7 +325,7 @@ public sealed partial class Repository
 
         foreach (Announcement announcement in await QueryAsync<Announcement>(
                      connection,
-                     SqlBuilder.Select<Announcement>("created_by = @userId AND image_resource_id IN @resourceIds"),
+                     SqlBuilder.Select<Announcement>("\"createdBy\" = @userId AND \"imageResourceId\" IN @resourceIds"),
                      new { userId, resourceIds },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -334,7 +334,7 @@ public sealed partial class Repository
 
         foreach (AnnouncementImageDraft draft in await QueryAsync<AnnouncementImageDraft>(
                      connection,
-                     SqlBuilder.Select<AnnouncementImageDraft>("user_id = @userId AND resource_id IN @resourceIds"),
+                     SqlBuilder.Select<AnnouncementImageDraft>("\"userId\" = @userId AND \"resourceId\" IN @resourceIds"),
                      new { userId, resourceIds },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
         {
@@ -358,8 +358,8 @@ public sealed partial class Repository
                      """
                      SELECT DISTINCT "projects"."id" AS "ID", "projects"."name" AS "Title",
                             '' AS "PrimaryJSON", '' AS "SecondaryJSON"
-                     FROM "project_asset_links" JOIN "projects" ON "projects"."id" = "project_asset_links"."project_id"
-                     WHERE "projects"."user_id" = @userId AND "project_asset_links"."asset_id" = @assetId
+                     FROM "projectAssetLinks" JOIN "projects" ON "projects"."id" = "projectAssetLinks"."projectId"
+                     WHERE "projects"."userId" = @userId AND "projectAssetLinks"."assetId" = @assetId
                      """,
                      new { userId, assetId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -372,11 +372,11 @@ public sealed partial class Repository
                      """
                      SELECT DISTINCT "projects"."id" AS "ID", "projects"."name" AS "Title",
                             '' AS "PrimaryJSON", '' AS "SecondaryJSON"
-                     FROM "shot_asset_references"
-                     JOIN "asset_versions" ON "asset_versions"."id" = "shot_asset_references"."asset_version_id"
-                     JOIN "shots" ON "shots"."id" = "shot_asset_references"."shot_id"
-                     JOIN "projects" ON "projects"."id" = "shots"."project_id"
-                     WHERE "projects"."user_id" = @userId AND "asset_versions"."asset_id" = @assetId
+                     FROM "shotAssetReferences"
+                     JOIN "assetVersions" ON "assetVersions"."id" = "shotAssetReferences"."assetVersionId"
+                     JOIN "shots" ON "shots"."id" = "shotAssetReferences"."shotId"
+                     JOIN "projects" ON "projects"."id" = "shots"."projectId"
+                     WHERE "projects"."userId" = @userId AND "assetVersions"."assetId" = @assetId
                      """,
                      new { userId, assetId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -389,8 +389,8 @@ public sealed partial class Repository
                      """
                      SELECT DISTINCT "projects"."id" AS "ID", "projects"."name" AS "Title",
                             '' AS "PrimaryJSON", '' AS "SecondaryJSON"
-                     FROM "project_asset_candidates" JOIN "projects" ON "projects"."id" = "project_asset_candidates"."project_id"
-                     WHERE "projects"."user_id" = @userId AND "project_asset_candidates"."resolved_asset_id" = @assetId
+                     FROM "projectAssetCandidates" JOIN "projects" ON "projects"."id" = "projectAssetCandidates"."projectId"
+                     WHERE "projects"."userId" = @userId AND "projectAssetCandidates"."resolvedAssetId" = @assetId
                      """,
                      new { userId, assetId },
                      cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -416,7 +416,7 @@ public sealed partial class Repository
         {
             List<string> versionIds = (await QueryAsync<string>(
                 connection,
-                "SELECT \"id\" FROM \"asset_versions\" WHERE \"asset_id\" = @assetId",
+                "SELECT \"id\" FROM \"assetVersions\" WHERE \"assetId\" = @assetId",
                 new { assetId },
                 transaction,
                 cancellationToken).ConfigureAwait(false)).ToList();
@@ -424,26 +424,26 @@ public sealed partial class Repository
             if (versionIds.Count > 0)
             {
                 await ExecuteAsync(connection,
-                    "DELETE FROM \"shot_asset_references\" WHERE \"asset_version_id\" IN @versionIds",
+                    "DELETE FROM \"shotAssetReferences\" WHERE \"assetVersionId\" IN @versionIds",
                     new { versionIds }, transaction, cancellationToken).ConfigureAwait(false);
                 await ExecuteAsync(connection,
-                    "DELETE FROM \"character_voice_bindings\" WHERE \"asset_version_id\" IN @versionIds",
+                    "DELETE FROM \"characterVoiceBindings\" WHERE \"assetVersionId\" IN @versionIds",
                     new { versionIds }, transaction, cancellationToken).ConfigureAwait(false);
                 await ExecuteAsync(connection,
-                    "DELETE FROM \"asset_representations\" WHERE \"asset_version_id\" IN @versionIds",
+                    "DELETE FROM \"assetRepresentations\" WHERE \"assetVersionId\" IN @versionIds",
                     new { versionIds }, transaction, cancellationToken).ConfigureAwait(false);
             }
             await ExecuteAsync(connection,
-                "DELETE FROM \"project_asset_links\" WHERE \"asset_id\" = @assetId",
+                "DELETE FROM \"projectAssetLinks\" WHERE \"assetId\" = @assetId",
                 new { assetId }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"project_asset_candidates\" WHERE \"resolved_asset_id\" = @assetId",
+                "DELETE FROM \"projectAssetCandidates\" WHERE \"resolvedAssetId\" = @assetId",
                 new { assetId }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"asset_versions\" WHERE \"asset_id\" = @assetId",
+                "DELETE FROM \"assetVersions\" WHERE \"assetId\" = @assetId",
                 new { assetId }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"assets\" WHERE \"id\" = @assetId AND \"user_id\" = @userId",
+                "DELETE FROM \"assets\" WHERE \"id\" = @assetId AND \"userId\" = @userId",
                 new { assetId, userId }, transaction, cancellationToken).ConfigureAwait(false);
 
             foreach (ResourceDeletionJob job in deletionJobs)
@@ -460,10 +460,10 @@ public sealed partial class Repository
                 return;
             }
             await ExecuteAsync(connection,
-                "DELETE FROM \"ark_private_asset_bindings\" WHERE \"resource_id\" IN @resourceIds",
+                "DELETE FROM \"arkPrivateAssetBindings\" WHERE \"resourceId\" IN @resourceIds",
                 new { resourceIds }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"resources\" WHERE \"user_id\" = @userId AND \"id\" IN @resourceIds",
+                "DELETE FROM \"resources\" WHERE \"userId\" = @userId AND \"id\" IN @resourceIds",
                 new { userId, resourceIds }, transaction, cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -475,7 +475,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ResourceDeletionJob>(
             connection,
-            SqlBuilder.Select<ResourceDeletionJob>("status = @status", "next_attempt_at ASC"),
+            SqlBuilder.Select<ResourceDeletionJob>("status = @status", "\"nextAttemptAt\" ASC"),
             new { status = "pending" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -488,7 +488,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE \"resource_deletion_jobs\" SET \"status\" = @status, \"last_error\" = @lastError, \"attempts\" = \"attempts\" + 1, \"next_attempt_at\" = @nextAttemptAt WHERE \"id\" = @id",
+            "UPDATE \"resourceDeletionJobs\" SET \"status\" = @status, \"lastError\" = @lastError, \"attempts\" = \"attempts\" + 1, \"nextAttemptAt\" = @nextAttemptAt WHERE \"id\" = @id",
             new { id, status, lastError, nextAttemptAt },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

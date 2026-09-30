@@ -56,40 +56,40 @@ public sealed partial class Repository
         switch (filter.Scope)
         {
             case "mine":
-                joins.Add("LEFT JOIN user_skill_states ON user_skill_states.skill_id = skills.id AND user_skill_states.user_id = @scopeUserId");
-                conditions.Add("(skills.owner_id = @scopeUserId OR (user_skill_states.added = @addedTrue AND skills.is_private = @privateFalse))");
+                joins.Add("LEFT JOIN \"userSkillStates\" ON \"userSkillStates\".\"skillId\" = skills.id AND \"userSkillStates\".\"userId\" = @scopeUserId");
+                conditions.Add("(skills.\"ownerId\" = @scopeUserId OR (\"userSkillStates\".added = @addedTrue AND skills.\"isPrivate\" = @privateFalse))");
                 parameters.Add("scopeUserId", filter.UserID);
                 parameters.Add("addedTrue", true);
                 parameters.Add("privateFalse", false);
                 break;
 
             case "created":
-                conditions.Add("skills.owner_id = @scopeUserId");
+                conditions.Add("skills.\"ownerId\" = @scopeUserId");
                 parameters.Add("scopeUserId", filter.UserID);
                 break;
 
             case "favorites":
-                joins.Add("JOIN user_skill_states ON user_skill_states.skill_id = skills.id AND user_skill_states.user_id = @scopeUserId AND user_skill_states.liked = @likedTrue");
-                conditions.Add("(skills.owner_id = @scopeUserId OR skills.is_private = @privateFalse)");
+                joins.Add("JOIN \"userSkillStates\" ON \"userSkillStates\".\"skillId\" = skills.id AND \"userSkillStates\".\"userId\" = @scopeUserId AND \"userSkillStates\".liked = @likedTrue");
+                conditions.Add("(skills.\"ownerId\" = @scopeUserId OR skills.\"isPrivate\" = @privateFalse)");
                 parameters.Add("scopeUserId", filter.UserID);
                 parameters.Add("likedTrue", true);
                 parameters.Add("privateFalse", false);
                 break;
 
             default:
-                conditions.Add("skills.is_private = @privateFalse");
+                conditions.Add("skills.\"isPrivate\" = @privateFalse");
                 parameters.Add("privateFalse", false);
                 break;
         }
 
         if (filter.Search.Length > 0)
         {
-            joins.Add("LEFT JOIN users skill_owners ON skill_owners.id = skills.owner_id");
+            joins.Add("LEFT JOIN users skill_owners ON skill_owners.id = skills.\"ownerId\"");
             conditions.Add("""
                 (lower(skills.name) LIKE @pattern
                  OR lower(skills.description) LIKE @pattern
-                 OR lower(skills.author_name) LIKE @pattern
-                 OR lower(skill_owners.display_name) LIKE @pattern
+                 OR lower(skills."authorName") LIKE @pattern
+                 OR lower(skill_owners."displayName") LIKE @pattern
                  OR lower(skill_owners.username) LIKE @pattern)
                 """);
             parameters.Add("pattern", "%" + filter.Search.ToLowerInvariant() + "%");
@@ -111,14 +111,14 @@ public sealed partial class Repository
         // 热门排序用「内置初始值 + 实时加入数」，与 Go 的子查询写法一致。
         string order = filter.Sort switch
         {
-            "new" => "skills.created_at DESC",
+            "new" => "skills.\"createdAt\" DESC",
             "popular" => """
-                (skills.initial_added_count
-                 + (SELECT COUNT(*) FROM user_skill_states metric_states
-                    WHERE metric_states.skill_id = skills.id AND metric_states.added = true)) DESC,
-                skills.updated_at DESC
+                (skills."initialAddedCount"
+                 + (SELECT COUNT(*) FROM "userSkillStates" metric_states
+                    WHERE metric_states."skillId" = skills.id AND metric_states.added = true)) DESC,
+                skills."updatedAt" DESC
                 """,
-            _ => "skills.sort_weight DESC, skills.updated_at DESC",
+            _ => "skills.\"sortWeight\" DESC, skills.\"updatedAt\" DESC",
         };
 
         string limitSql = filter.Limit < 0
@@ -159,7 +159,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<UserSkillState>(
             connection,
-            SqlBuilder.Select<UserSkillState>("user_id = @userId AND skill_id = @skillId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<UserSkillState>("\"userId\" = @userId AND \"skillId\" = @skillId", limitOffset: " LIMIT 1"),
             new { userId, skillId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -176,7 +176,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<UserSkillState>(
             connection,
-            SqlBuilder.Select<UserSkillState>("user_id = @userId AND skill_id IN @skillIds"),
+            SqlBuilder.Select<UserSkillState>("\"userId\" = @userId AND \"skillId\" IN @skillIds"),
             new { userId, skillIds },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -191,11 +191,11 @@ public sealed partial class Repository
         await connection.ExecuteAsync(new CommandDefinition(
             $"""
             {SqlBuilder.Insert<UserSkillState>()}
-            ON CONFLICT ("user_id", "skill_id") DO UPDATE SET
+            ON CONFLICT ("userId", "skillId") DO UPDATE SET
                 "added" = excluded."added",
-                "installed_version_id" = excluded."installed_version_id",
-                "auto_update" = excluded."auto_update",
-                "updated_at" = excluded."updated_at"
+                "installedVersionId" = excluded."installedVersionId",
+                "autoUpdate" = excluded."autoUpdate",
+                "updatedAt" = excluded."updatedAt"
             """,
             state,
             cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -211,9 +211,9 @@ public sealed partial class Repository
         await connection.ExecuteAsync(new CommandDefinition(
             $"""
             {SqlBuilder.Insert<UserSkillState>()}
-            ON CONFLICT ("user_id", "skill_id") DO UPDATE SET
+            ON CONFLICT ("userId", "skillId") DO UPDATE SET
                 "liked" = excluded."liked",
-                "updated_at" = excluded."updated_at"
+                "updatedAt" = excluded."updatedAt"
             """,
             state,
             cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -236,12 +236,12 @@ public sealed partial class Repository
             connection,
             """
             SELECT
-                skill_id AS "SkillID",
+                "skillId" AS "SkillID",
                 SUM(CASE WHEN added THEN 1 ELSE 0 END) AS "AddedCount",
                 SUM(CASE WHEN liked THEN 1 ELSE 0 END) AS "LikeCount"
-            FROM user_skill_states
-            WHERE skill_id IN @skillIds
-            GROUP BY skill_id
+            FROM "userSkillStates"
+            WHERE "skillId" IN @skillIds
+            GROUP BY "skillId"
             """,
             new { skillIds },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -292,7 +292,7 @@ public sealed partial class Repository
         IReadOnlyList<UserIdentity> identities = await QueryAsync<UserIdentity>(
             connection,
             SqlBuilder.Select<UserIdentity>(
-                "user_id IN @ownerIds AND avatar_url <> ''", orderBy: "updated_at DESC"),
+                "\"userId\" IN @ownerIds AND \"avatarUrl\" <> ''", orderBy: "\"updatedAt\" DESC"),
             new { ownerIds },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -318,22 +318,22 @@ public sealed partial class Repository
         await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await ExecuteAsync(
-            connection, "DELETE FROM user_skill_states WHERE skill_id = @id", new { id }, transaction, cancellationToken)
+            connection, "DELETE FROM \"userSkillStates\" WHERE \"skillId\" = @id", new { id }, transaction, cancellationToken)
             .ConfigureAwait(false);
 
         // 先删文件再删版本，避免留下孤儿文件行。
         await ExecuteAsync(
             connection,
             """
-            DELETE FROM skill_files
-            WHERE skill_version_id IN (SELECT id FROM skill_versions WHERE skill_id = @id)
+            DELETE FROM "skillFiles"
+            WHERE "skillVersionId" IN (SELECT id FROM "skillVersions" WHERE "skillId" = @id)
             """,
             new { id },
             transaction,
             cancellationToken).ConfigureAwait(false);
 
         await ExecuteAsync(
-            connection, "DELETE FROM skill_versions WHERE skill_id = @id", new { id }, transaction, cancellationToken)
+            connection, "DELETE FROM \"skillVersions\" WHERE \"skillId\" = @id", new { id }, transaction, cancellationToken)
             .ConfigureAwait(false);
 
         await ExecuteAsync(
@@ -382,15 +382,15 @@ public sealed partial class Repository
             """
             UPDATE skills SET
               name = @Name, description = @Description, instruction = @Instruction,
-              tag = @Tag, markdown_url = @MarkdownURL,
-              showcase_media_json = @ShowcaseMediaJSON, extra_info = @ExtraInfo,
-              current_version_id = @CurrentVersionID, version_label = @VersionLabel,
-              content_hash = @ContentHash, file_count = @FileCount, total_bytes = @TotalBytes,
-              source_type = @SourceType, source_url = @SourceURL, source_ref = @SourceRef,
-              source_subdir = @SourceSubdir, source_commit = @SourceCommit,
-              sync_status = @SyncStatus, sync_error = @SyncError, auto_update = @AutoUpdate,
-              last_checked_at = @LastCheckedAt, last_synced_at = @LastSyncedAt,
-              updated_at = @UpdatedAt
+              tag = @Tag, "markdownUrl" = @MarkdownURL,
+              "showcaseMediaJson" = @ShowcaseMediaJSON, "extraInfo" = @ExtraInfo,
+              "currentVersionId" = @CurrentVersionID, "versionLabel" = @VersionLabel,
+              "contentHash" = @ContentHash, "fileCount" = @FileCount, "totalBytes" = @TotalBytes,
+              "sourceType" = @SourceType, "sourceUrl" = @SourceURL, "sourceRef" = @SourceRef,
+              "sourceSubdir" = @SourceSubdir, "sourceCommit" = @SourceCommit,
+              "syncStatus" = @SyncStatus, "syncError" = @SyncError, "autoUpdate" = @AutoUpdate,
+              "lastCheckedAt" = @LastCheckedAt, "lastSyncedAt" = @LastSyncedAt,
+              "updatedAt" = @UpdatedAt
             WHERE id = @ID
             """,
             skill,
@@ -408,16 +408,16 @@ public sealed partial class Repository
             """
             UPDATE skills SET
               name = @Name, description = @Description, instruction = @Instruction,
-              tag = @Tag, markdown_url = @MarkdownURL,
-              showcase_media_json = @ShowcaseMediaJSON, extra_info = @ExtraInfo,
-              current_version_id = @CurrentVersionID, version_label = @VersionLabel,
-              content_hash = @ContentHash, file_count = @FileCount, total_bytes = @TotalBytes,
-              source_type = @SourceType, source_url = @SourceURL, source_ref = @SourceRef,
-              source_subdir = @SourceSubdir, source_commit = @SourceCommit,
-              sync_status = @SyncStatus, sync_error = @SyncError, auto_update = @AutoUpdate,
-              last_checked_at = @LastCheckedAt, last_synced_at = @LastSyncedAt,
-              status = @Status, source = @Source, is_private = @IsPrivate,
-              updated_at = @UpdatedAt
+              tag = @Tag, "markdownUrl" = @MarkdownURL,
+              "showcaseMediaJson" = @ShowcaseMediaJSON, "extraInfo" = @ExtraInfo,
+              "currentVersionId" = @CurrentVersionID, "versionLabel" = @VersionLabel,
+              "contentHash" = @ContentHash, "fileCount" = @FileCount, "totalBytes" = @TotalBytes,
+              "sourceType" = @SourceType, "sourceUrl" = @SourceURL, "sourceRef" = @SourceRef,
+              "sourceSubdir" = @SourceSubdir, "sourceCommit" = @SourceCommit,
+              "syncStatus" = @SyncStatus, "syncError" = @SyncError, "autoUpdate" = @AutoUpdate,
+              "lastCheckedAt" = @LastCheckedAt, "lastSyncedAt" = @LastSyncedAt,
+              status = @Status, source = @Source, "isPrivate" = @IsPrivate,
+              "updatedAt" = @UpdatedAt
             WHERE id = @ID
             """,
             skill,

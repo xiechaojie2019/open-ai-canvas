@@ -25,7 +25,7 @@ public sealed partial class Repository
         ChannelModel? item = await FirstOrDefaultAsync<ChannelModel>(
             connection,
             SqlBuilder.Select<ChannelModel>(
-                SoftDelete.Apply("channel_models", "id = @id"),
+                SoftDelete.Apply("channelModels", "id = @id"),
                 limitOffset: " LIMIT 1"),
             new { id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -52,7 +52,7 @@ public sealed partial class Repository
         ChannelModel? item = await FirstOrDefaultAsync<ChannelModel>(
             connection,
             SqlBuilder.Select<ChannelModel>(
-                SoftDelete.Apply("channel_models", "channel_id = @channelId AND model_key = @modelKey AND enabled = @enabled"),
+                SoftDelete.Apply("channelModels", "\"channelId\" = @channelId AND \"modelKey\" = @modelKey AND enabled = @enabled"),
                 limitOffset: " LIMIT 1"),
             new { channelId, modelKey, enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -102,15 +102,15 @@ public sealed partial class Repository
                 int updated = await ExecuteAsync(
                     connection,
                     """
-                    UPDATE "logical_models" SET
+                    UPDATE "logicalModels" SET
                         "code" = @Code, "name" = @Name, "icon" = @Icon, "description" = @Description,
-                        "capability" = @Capability, "enabled" = @Enabled, "sort_order" = @SortOrder,
-                        "source_channel_model_id" = @SourceChannelModelID, "price_policy" = @PricePolicy,
-                        "billing_mode" = @BillingMode, "unit_price_microcredits" = @UnitPriceMicrocredits,
-                        "input_price_microcredits" = @InputPriceMicrocredits,
-                        "output_price_microcredits" = @OutputPriceMicrocredits,
-                        "cached_price_microcredits" = @CachedPriceMicrocredits,
-                        "legacy_model_ids_json" = @LegacyModelIDsJSON, "updated_at" = @UpdatedAt
+                        "capability" = @Capability, "enabled" = @Enabled, "sortOrder" = @SortOrder,
+                        "sourceChannelModelId" = @SourceChannelModelID, "pricePolicy" = @PricePolicy,
+                        "billingMode" = @BillingMode, "unitPriceMicrocredits" = @UnitPriceMicrocredits,
+                        "inputPriceMicrocredits" = @InputPriceMicrocredits,
+                        "outputPriceMicrocredits" = @OutputPriceMicrocredits,
+                        "cachedPriceMicrocredits" = @CachedPriceMicrocredits,
+                        "legacyModelIdsJson" = @LegacyModelIDsJSON, "updatedAt" = @UpdatedAt
                     WHERE "id" = @ID
                     """,
                     item,
@@ -126,7 +126,7 @@ public sealed partial class Repository
             // 版本号必须由模型行原子递增，保证并发保存的版本单调。
             int bumped = await ExecuteAsync(
                 connection,
-                "UPDATE \"logical_models\" SET \"revision_sequence\" = \"revision_sequence\" + 1 WHERE \"id\" = @ID",
+                "UPDATE \"logicalModels\" SET \"revisionSequence\" = \"revisionSequence\" + 1 WHERE \"id\" = @ID",
                 item,
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -138,7 +138,7 @@ public sealed partial class Repository
 
             long sequence = await ScalarAsync<long>(
                 connection,
-                "SELECT \"revision_sequence\" FROM \"logical_models\" WHERE \"id\" = @ID",
+                "SELECT \"revisionSequence\" FROM \"logicalModels\" WHERE \"id\" = @ID",
                 item,
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -162,7 +162,7 @@ public sealed partial class Repository
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"logical_models\" SET \"active_revision_id\" = @ActiveRevisionID, \"updated_at\" = @UpdatedAt WHERE \"id\" = @ID",
+                "UPDATE \"logicalModels\" SET \"activeRevisionId\" = @ActiveRevisionID, \"updatedAt\" = @UpdatedAt WHERE \"id\" = @ID",
                 new { ActiveRevisionID = revision.ID, item.UpdatedAt, item.ID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -196,7 +196,7 @@ public sealed partial class Repository
             string lockClause = Dialect.ForUpdate();
             LogicalModel? item = await FirstOrDefaultAsync<LogicalModel>(
                 connection,
-                SqlBuilder.Select<LogicalModel>("id = @id AND archived_at IS NULL", limitOffset: " LIMIT 1") + lockClause,
+                SqlBuilder.Select<LogicalModel>("id = @id AND \"archivedAt\" IS NULL", limitOffset: " LIMIT 1") + lockClause,
                 new { id },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -207,7 +207,7 @@ public sealed partial class Repository
 
             long activeTasks = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"tasks\" WHERE \"logical_model_id\" = @id AND \"status\" IN @statuses",
+                "SELECT COUNT(*) FROM \"tasks\" WHERE \"logicalModelId\" = @id AND \"status\" IN @statuses",
                 new
                 {
                     id,
@@ -226,7 +226,7 @@ public sealed partial class Repository
 
             int archived = await ExecuteAsync(
                 connection,
-                "UPDATE \"logical_models\" SET \"enabled\" = @disabled, \"archived_at\" = @now, \"updated_at\" = @now WHERE \"id\" = @id AND \"archived_at\" IS NULL",
+                "UPDATE \"logicalModels\" SET \"enabled\" = @disabled, \"archivedAt\" = @now, \"updatedAt\" = @now WHERE \"id\" = @id AND \"archivedAt\" IS NULL",
                 new { disabled = Dialect.Boolean(false), now, id },
                 transaction,
                 cancellationToken).ConfigureAwait(false);

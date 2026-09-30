@@ -44,19 +44,19 @@ public sealed partial class Repository : RepositoryBase
         {
             // 先确保序列行存在（并发下靠唯一键冲突忽略），再原子自增。
             await connection.ExecuteAsync(new CommandDefinition(
-                $"INSERT INTO \"id_sequences\" (name, value, updated_at) VALUES (@name, 0, @now){Dialect.OnConflictDoNothing(string.Empty)}",
+                $"INSERT INTO \"idSequences\" (name, value, \"updatedAt\") VALUES (@name, 0, @now){Dialect.OnConflictDoNothing(string.Empty)}",
                 new { name = sequence, now = DateTime.UtcNow },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             await connection.ExecuteAsync(new CommandDefinition(
-                "UPDATE \"id_sequences\" SET value = value + 1, updated_at = @now WHERE name = @name",
+                "UPDATE \"idSequences\" SET value = value + 1, \"updatedAt\" = @now WHERE name = @name",
                 new { name = sequence, now = DateTime.UtcNow },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             long value = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
-                "SELECT value FROM \"id_sequences\" WHERE name = @name",
+                "SELECT value FROM \"idSequences\" WHERE name = @name",
                 new { name = sequence },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -121,7 +121,7 @@ public sealed partial class Repository : RepositoryBase
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<User>(
             connection,
-            SqlBuilder.Select<User>(orderBy: "created_at DESC"),
+            SqlBuilder.Select<User>(orderBy: "\"createdAt\" DESC"),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -140,7 +140,7 @@ public sealed partial class Repository : RepositoryBase
         string trimmed = keyword.Trim();
         if (trimmed.Length > 0)
         {
-            conditions.Add("(lower(username) LIKE @pattern OR lower(display_name) LIKE @pattern OR lower(email) LIKE @pattern)");
+            conditions.Add("(lower(username) LIKE @pattern OR lower(\"displayName\") LIKE @pattern OR lower(email) LIKE @pattern)");
             parameters.Add("pattern", "%" + trimmed.ToLowerInvariant() + "%");
         }
 
@@ -169,7 +169,7 @@ public sealed partial class Repository : RepositoryBase
         parameters.Add("offset", offset);
         IReadOnlyList<User> users = await QueryAsync<User>(
             connection,
-            SqlBuilder.Select<User>(where.Length == 0 ? null : where[7..], "created_at DESC", Dialect.LimitOffset(limit, offset)),
+            SqlBuilder.Select<User>(where.Length == 0 ? null : where[7..], "\"createdAt\" DESC", Dialect.LimitOffset(limit, offset)),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -182,7 +182,7 @@ public sealed partial class Repository : RepositoryBase
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<User>(
             connection,
-            SqlBuilder.SelectColumns<User>(["ID", "Username", "DisplayName", "Role", "Status", "Email", "CreatedAt", "UpdatedAt"], orderBy: "created_at DESC", limitOffset: " LIMIT 100"),
+            SqlBuilder.SelectColumns<User>(["ID", "Username", "DisplayName", "Role", "Status", "Email", "CreatedAt", "UpdatedAt"], orderBy: "\"createdAt\" DESC", limitOffset: " LIMIT 100"),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -223,21 +223,21 @@ public sealed partial class Repository : RepositoryBase
     public async Task DeleteAuthSessionAsync(string id, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DELETE FROM \"auth_sessions\" WHERE id = @id", new { id },
+        await ExecuteAsync(connection, "DELETE FROM \"authSessions\" WHERE id = @id", new { id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteExpiredAuthSessionsAsync(CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DELETE FROM \"auth_sessions\" WHERE expires_at <= @now",
+        await ExecuteAsync(connection, "DELETE FROM \"authSessions\" WHERE \"expiresAt\" <= @now",
             new { now = DateTime.UtcNow }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteUserAuthSessionsAsync(string userId, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DELETE FROM \"auth_sessions\" WHERE user_id = @userId", new { userId },
+        await ExecuteAsync(connection, "DELETE FROM \"authSessions\" WHERE \"userId\" = @userId", new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -251,7 +251,7 @@ public sealed partial class Repository : RepositoryBase
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<EmailVerificationCode>(
             connection,
-            SqlBuilder.Select<EmailVerificationCode>("email = @email AND purpose = @purpose AND used_at IS NULL", "created_at DESC", " LIMIT 1"),
+            SqlBuilder.Select<EmailVerificationCode>("email = @email AND purpose = @purpose AND \"usedAt\" IS NULL", "\"createdAt\" DESC", " LIMIT 1"),
             new { email, purpose },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -265,7 +265,7 @@ public sealed partial class Repository : RepositoryBase
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int affected = await ExecuteAsync(
             connection,
-            "UPDATE \"email_verification_codes\" SET used_at = @usedAt WHERE id = @id AND used_at IS NULL",
+            "UPDATE \"emailVerificationCodes\" SET \"usedAt\" = @usedAt WHERE id = @id AND \"usedAt\" IS NULL",
             new { id, usedAt },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return affected == 1;
@@ -274,7 +274,7 @@ public sealed partial class Repository : RepositoryBase
     public async Task DeleteEmailVerificationCodeAsync(string id, CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteAsync(connection, "DELETE FROM \"email_verification_codes\" WHERE id = @id", new { id },
+        await ExecuteAsync(connection, "DELETE FROM \"emailVerificationCodes\" WHERE id = @id", new { id },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -285,7 +285,7 @@ public sealed partial class Repository : RepositoryBase
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "DELETE FROM \"email_verification_codes\" WHERE expires_at <= @now OR used_at IS NOT NULL",
+            "DELETE FROM \"emailVerificationCodes\" WHERE \"expiresAt\" <= @now OR \"usedAt\" IS NOT NULL",
             new { now },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -303,7 +303,7 @@ public sealed partial class Repository : RepositoryBase
         {
             int consumed = await ExecuteAsync(
                 connection,
-                "UPDATE \"email_verification_codes\" SET used_at = @usedAt WHERE id = @id AND used_at IS NULL AND expires_at > @usedAt",
+                "UPDATE \"emailVerificationCodes\" SET \"usedAt\" = @usedAt WHERE id = @id AND \"usedAt\" IS NULL AND \"expiresAt\" > @usedAt",
                 new { id = verificationCodeId, usedAt },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -335,7 +335,7 @@ public sealed partial class Repository : RepositoryBase
         {
             int consumed = await ExecuteAsync(
                 connection,
-                "UPDATE \"email_verification_codes\" SET used_at = @usedAt WHERE id = @id AND email = @email AND purpose = @purpose AND used_at IS NULL AND expires_at > @usedAt",
+                "UPDATE \"emailVerificationCodes\" SET \"usedAt\" = @usedAt WHERE id = @id AND email = @email AND purpose = @purpose AND \"usedAt\" IS NULL AND \"expiresAt\" > @usedAt",
                 new { id = verificationCodeId, email, purpose, usedAt },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -347,7 +347,7 @@ public sealed partial class Repository : RepositoryBase
 
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE \"users\" SET password_hash = @passwordHash, updated_at = @usedAt WHERE id = @userId AND email <> '' AND lower(email) = lower(@email) AND status = @status AND password_hash <> ''",
+                "UPDATE \"users\" SET \"passwordHash\" = @passwordHash, \"updatedAt\" = @usedAt WHERE id = @userId AND email <> '' AND lower(email) = lower(@email) AND status = @status AND \"passwordHash\" <> ''",
                 new { passwordHash, usedAt, userId, email, status = "active" },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -357,12 +357,12 @@ public sealed partial class Repository : RepositoryBase
                 throw new AppError(400, "email verification code is no longer valid");
             }
 
-            await ExecuteAsync(connection, "DELETE FROM \"auth_sessions\" WHERE user_id = @userId",
+            await ExecuteAsync(connection, "DELETE FROM \"authSessions\" WHERE \"userId\" = @userId",
                 new { userId }, transaction, cancellationToken).ConfigureAwait(false);
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"email_verification_codes\" SET used_at = @usedAt WHERE email = @email AND purpose = @purpose AND used_at IS NULL",
+                "UPDATE \"emailVerificationCodes\" SET \"usedAt\" = @usedAt WHERE email = @email AND purpose = @purpose AND \"usedAt\" IS NULL",
                 new { email, purpose, usedAt },
                 transaction,
                 cancellationToken).ConfigureAwait(false);

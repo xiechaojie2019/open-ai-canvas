@@ -15,7 +15,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<StyleProfile>(
             connection,
-            SqlBuilder.Select<StyleProfile>("user_id = @userId", "favorite DESC, updated_at DESC"),
+            SqlBuilder.Select<StyleProfile>("\"userId\" = @userId", "favorite DESC, \"updatedAt\" DESC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -26,7 +26,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"style_profiles\" WHERE \"user_id\" = @userId",
+            "SELECT COUNT(*) FROM \"styleProfiles\" WHERE \"userId\" = @userId",
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -38,7 +38,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<StyleProfile>(
             connection,
-            SqlBuilder.Select<StyleProfile>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<StyleProfile>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -61,10 +61,10 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE "style_profiles" SET "name" = @Name, "description" = @Description,
-              "cover_url" = @CoverURL, "tags_json" = @TagsJSON, "profile_json" = @ProfileJSON,
-              "revision" = @Revision, "updated_at" = @UpdatedAt
-            WHERE "id" = @ID AND "user_id" = @UserID
+            UPDATE "styleProfiles" SET "name" = @Name, "description" = @Description,
+              "coverUrl" = @CoverURL, "tagsJson" = @TagsJSON, "profileJson" = @ProfileJSON,
+              "revision" = @Revision, "updatedAt" = @UpdatedAt
+            WHERE "id" = @ID AND "userId" = @UserID
             """,
             profile,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -77,7 +77,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"style_profiles\" SET \"favorite\" = @favorite WHERE \"id\" = @id AND \"user_id\" = @userId",
+            "UPDATE \"styleProfiles\" SET \"favorite\" = @favorite WHERE \"id\" = @id AND \"userId\" = @userId",
             new { favorite, id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated > 0;
@@ -90,7 +90,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"style_profiles\" SET \"last_used_at\" = @usedAt WHERE \"id\" = @id AND \"user_id\" = @userId",
+            "UPDATE \"styleProfiles\" SET \"lastUsedAt\" = @usedAt WHERE \"id\" = @id AND \"userId\" = @userId",
             new { usedAt, id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated > 0;
@@ -103,7 +103,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int deleted = await ExecuteAsync(
             connection,
-            "DELETE FROM \"style_profiles\" WHERE \"id\" = @id AND \"user_id\" = @userId",
+            "DELETE FROM \"styleProfiles\" WHERE \"id\" = @id AND \"userId\" = @userId",
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return deleted > 0;
@@ -116,7 +116,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<VoiceProfile>(
             connection,
-            SqlBuilder.Select<VoiceProfile>("user_id = @userId AND status = @status", "created_at ASC"),
+            SqlBuilder.Select<VoiceProfile>("\"userId\" = @userId AND status = @status", "\"createdAt\" ASC"),
             new { userId, status = "active" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

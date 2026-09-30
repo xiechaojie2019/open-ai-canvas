@@ -28,9 +28,9 @@ public sealed partial class Repository
             $"""
             SELECT {SqlBuilder.Projection<Asset>("assets")}
             FROM assets
-            JOIN project_asset_links ON project_asset_links.asset_id = assets.id
-            WHERE assets.user_id = @userId AND project_asset_links.project_id = @projectId
-            ORDER BY assets.updated_at DESC
+            JOIN "projectAssetLinks" ON "projectAssetLinks"."assetId" = assets.id
+            WHERE assets."userId" = @userId AND "projectAssetLinks"."projectId" = @projectId
+            ORDER BY assets."updatedAt" DESC
             """,
             new { userId, projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -43,7 +43,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<AssetVersion>(
             connection,
-            SqlBuilder.Select<AssetVersion>("asset_id = @assetId", orderBy: "version DESC"),
+            SqlBuilder.Select<AssetVersion>("\"assetId\" = @assetId", orderBy: "version DESC"),
             new { assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -56,7 +56,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ProjectAssetLink>(
             connection,
             SqlBuilder.Select<ProjectAssetLink>(
-                "project_id = @projectId AND asset_id = @assetId", limitOffset: " LIMIT 1"),
+                "\"projectId\" = @projectId AND \"assetId\" = @assetId", limitOffset: " LIMIT 1"),
             new { projectId, assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -68,7 +68,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long count = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM project_asset_links WHERE project_id = @projectId AND asset_id = @assetId",
+            "SELECT COUNT(*) FROM \"projectAssetLinks\" WHERE \"projectId\" = @projectId AND \"assetId\" = @assetId",
             new { projectId, assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -87,12 +87,12 @@ public sealed partial class Repository
         IReadOnlyList<string> shotRoles = await QueryAsync<string>(
             connection,
             """
-            SELECT DISTINCT shot_asset_references.role
-            FROM shot_asset_references
-            JOIN shots ON shots.id = shot_asset_references.shot_id
-            JOIN asset_versions ON asset_versions.id = shot_asset_references.asset_version_id
-            WHERE shots.project_id = @projectId AND asset_versions.asset_id = @assetId
-            ORDER BY shot_asset_references.role ASC
+            SELECT DISTINCT "shotAssetReferences".role
+            FROM "shotAssetReferences"
+            JOIN shots ON shots.id = "shotAssetReferences"."shotId"
+            JOIN "assetVersions" ON "assetVersions".id = "shotAssetReferences"."assetVersionId"
+            WHERE shots."projectId" = @projectId AND "assetVersions"."assetId" = @assetId
+            ORDER BY "shotAssetReferences".role ASC
             """,
             new { projectId, assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -100,11 +100,11 @@ public sealed partial class Repository
         IReadOnlyList<string> representationRoles = await QueryAsync<string>(
             connection,
             """
-            SELECT DISTINCT asset_representations.role
-            FROM asset_representations
-            JOIN asset_versions ON asset_versions.id = asset_representations.asset_version_id
-            JOIN project_asset_links ON project_asset_links.asset_id = asset_versions.asset_id
-            WHERE project_asset_links.project_id = @projectId AND asset_versions.asset_id = @assetId
+            SELECT DISTINCT "assetRepresentations".role
+            FROM "assetRepresentations"
+            JOIN "assetVersions" ON "assetVersions".id = "assetRepresentations"."assetVersionId"
+            JOIN "projectAssetLinks" ON "projectAssetLinks"."assetId" = "assetVersions"."assetId"
+            WHERE "projectAssetLinks"."projectId" = @projectId AND "assetVersions"."assetId" = @assetId
             """,
             new { projectId, assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -127,10 +127,10 @@ public sealed partial class Repository
             connection,
             """
             SELECT COUNT(*)
-            FROM shot_asset_references
-            JOIN shots ON shots.id = shot_asset_references.shot_id
-            JOIN asset_versions ON asset_versions.id = shot_asset_references.asset_version_id
-            WHERE shots.project_id = @projectId AND asset_versions.asset_id = @assetId
+            FROM "shotAssetReferences"
+            JOIN shots ON shots.id = "shotAssetReferences"."shotId"
+            JOIN "assetVersions" ON "assetVersions".id = "shotAssetReferences"."assetVersionId"
+            WHERE shots."projectId" = @projectId AND "assetVersions"."assetId" = @assetId
             """,
             new { projectId, assetId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -150,8 +150,8 @@ public sealed partial class Repository
         long maximum = await ScalarAsync<long>(
             connection,
             """
-            SELECT COALESCE(MAX(position), -1) FROM project_asset_links
-            WHERE project_id = @projectId AND folder_id = @folderId
+            SELECT COALESCE(MAX(position), -1) FROM "projectAssetLinks"
+            WHERE "projectId" = @projectId AND "folderId" = @folderId
             """,
             new { projectId, folderId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -170,7 +170,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        List<string> conditions = ["assets.user_id = @userId", "project_asset_links.project_id = @projectId"];
+        List<string> conditions = ["assets.\"userId\" = @userId", "\"projectAssetLinks\".\"projectId\" = @projectId"];
         DynamicParameters parameters = new();
         parameters.Add("userId", userId);
         parameters.Add("projectId", projectId);
@@ -193,7 +193,7 @@ public sealed partial class Repository
         }
         if (folderId is not null)
         {
-            conditions.Add("project_asset_links.folder_id = @folderId");
+            conditions.Add("\"projectAssetLinks\".\"folderId\" = @folderId");
             parameters.Add("folderId", folderId.Trim());
         }
         if (queryText.Trim().Length > 0)
@@ -206,7 +206,7 @@ public sealed partial class Repository
 
         long total = await ScalarAsync<long>(
             connection,
-            $"SELECT COUNT(*) FROM assets JOIN project_asset_links ON project_asset_links.asset_id = assets.id{where}",
+            $"SELECT COUNT(*) FROM assets JOIN \"projectAssetLinks\" ON \"projectAssetLinks\".\"assetId\" = assets.id{where}",
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -215,9 +215,9 @@ public sealed partial class Repository
             $"""
             SELECT {SqlBuilder.Projection<Asset>("assets")}
             FROM assets
-            JOIN project_asset_links ON project_asset_links.asset_id = assets.id
+            JOIN "projectAssetLinks" ON "projectAssetLinks"."assetId" = assets.id
             {where}
-            ORDER BY assets.updated_at DESC
+            ORDER BY assets."updatedAt" DESC
             {Dialect.LimitOffset(pageSize, (page - 1) * pageSize)}
             """,
             parameters,
@@ -243,8 +243,8 @@ public sealed partial class Repository
             """
             SELECT assets.category AS "Key", COUNT(*) AS "Count"
             FROM assets
-            JOIN project_asset_links pal ON pal.asset_id = assets.id
-            WHERE pal.project_id = @projectId
+            JOIN "projectAssetLinks" pal ON pal."assetId" = assets.id
+            WHERE pal."projectId" = @projectId
             GROUP BY assets.category
             """,
             new { projectId },
@@ -253,10 +253,10 @@ public sealed partial class Repository
         IReadOnlyList<CountRow> folderRows = await QueryAsync<CountRow>(
             connection,
             """
-            SELECT folder_id AS "Key", COUNT(*) AS "Count"
-            FROM project_asset_links
-            WHERE project_id = @projectId
-            GROUP BY folder_id
+            SELECT "folderId" AS "Key", COUNT(*) AS "Count"
+            FROM "projectAssetLinks"
+            WHERE "projectId" = @projectId
+            GROUP BY "folderId"
             """,
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -301,7 +301,7 @@ public sealed partial class Repository
 
         int linkCreated = await ExecuteAsync(
             connection,
-            SqlBuilder.Insert<ProjectAssetLink>() + Dialect.OnConflictDoNothing("\"project_id\", \"asset_id\""),
+            SqlBuilder.Insert<ProjectAssetLink>() + Dialect.OnConflictDoNothing("\"projectId\", \"assetId\""),
             link,
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -325,8 +325,8 @@ public sealed partial class Repository
             """
             UPDATE assets SET
                 category = @Category, status = @Status,
-                primary_version_id = @PrimaryVersionID, updated_at = @UpdatedAt
-            WHERE id = @ID AND user_id = @UserID
+                "primaryVersionId" = @PrimaryVersionID, "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "userId" = @UserID
             """,
             asset,
             transaction,
@@ -359,8 +359,8 @@ public sealed partial class Repository
         int affected = await ExecuteAsync(
             connection,
             """
-            UPDATE project_asset_links SET folder_id = @folderId, position = @position
-            WHERE project_id = @projectId AND asset_id = @assetId
+            UPDATE "projectAssetLinks" SET "folderId" = @folderId, position = @position
+            WHERE "projectId" = @projectId AND "assetId" = @assetId
             """,
             new { folderId, position, projectId, assetId },
             transaction,
@@ -388,8 +388,8 @@ public sealed partial class Repository
             """
             UPDATE assets SET
                 category = @Category, status = @Status,
-                primary_version_id = @PrimaryVersionID, updated_at = @UpdatedAt
-            WHERE id = @ID AND user_id = @UserID
+                "primaryVersionId" = @PrimaryVersionID, "updatedAt" = @UpdatedAt
+            WHERE id = @ID AND "userId" = @UserID
             """,
             asset,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -410,7 +410,7 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            UPDATE projects SET revision = revision + 1, updated_at = @now
+            UPDATE projects SET revision = revision + 1, "updatedAt" = @now
             WHERE id = @projectId
             """,
             new { now = DateTime.UtcNow, projectId },

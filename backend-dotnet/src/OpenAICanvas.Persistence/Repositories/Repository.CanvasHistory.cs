@@ -35,7 +35,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<CanvasProject>(
             connection,
-            ProjectionWithoutPayload<CanvasProject>(null) + " FROM \"canvas_projects\" WHERE \"id\" = @id AND \"user_id\" = @userID LIMIT 1",
+            ProjectionWithoutPayload<CanvasProject>(null) + " FROM \"canvasProjects\" WHERE \"id\" = @id AND \"userId\" = @userID LIMIT 1",
             new { id, userID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -47,8 +47,8 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         List<CanvasSnapshot> items = (await QueryAsync<CanvasSnapshot>(
             connection,
-            ProjectionWithoutPayload<CanvasSnapshot>(null) + " FROM \"canvas_snapshots\" " +
-            "WHERE \"user_id\" = @userID AND \"canvas_id\" = @canvasID ORDER BY \"revision\" DESC LIMIT @limit",
+            ProjectionWithoutPayload<CanvasSnapshot>(null) + " FROM \"canvasSnapshots\" " +
+            "WHERE \"userId\" = @userID AND \"canvasId\" = @canvasID ORDER BY \"revision\" DESC LIMIT @limit",
             new { userID, canvasID, limit },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         return items;
@@ -62,7 +62,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<CanvasSnapshot>(
             connection,
             SqlBuilder.Select<CanvasSnapshot>(
-                "\"id\" = @id AND \"user_id\" = @userID AND \"canvas_id\" = @canvasID", limitOffset: " LIMIT 1"),
+                "\"id\" = @id AND \"userId\" = @userID AND \"canvasId\" = @canvasID", limitOffset: " LIMIT 1"),
             new { id, userID, canvasID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -95,8 +95,8 @@ public sealed partial class Repository
 
             CanvasSnapshot? last = await FirstOrDefaultAsync<CanvasSnapshot>(
                 connection,
-                "SELECT \"id\" AS \"ID\", \"revision\" AS \"Revision\", \"created_at\" AS \"CreatedAt\" " +
-                "FROM \"canvas_snapshots\" WHERE \"canvas_id\" = @canvasID ORDER BY \"revision\" DESC LIMIT 1",
+                "SELECT \"id\" AS \"ID\", \"revision\" AS \"Revision\", \"createdAt\" AS \"CreatedAt\" " +
+                "FROM \"canvasSnapshots\" WHERE \"canvasId\" = @canvasID ORDER BY \"revision\" DESC LIMIT 1",
                 new { canvasID = project.ID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -136,8 +136,8 @@ public sealed partial class Repository
             {
                 await ExecuteAsync(
                     connection,
-                    "INSERT INTO \"canvas_snapshot_resources\" (\"snapshot_id\", \"resource_id\") VALUES (@snapshotID, @resourceID) " +
-                    "ON CONFLICT (\"snapshot_id\", \"resource_id\") DO NOTHING",
+                    "INSERT INTO \"canvasSnapshotResources\" (\"snapshotId\", \"resourceId\") VALUES (@snapshotID, @resourceID) " +
+                    "ON CONFLICT (\"snapshotId\", \"resourceId\") DO NOTHING",
                     new { snapshotID = snapshot.ID, resourceID },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
@@ -146,8 +146,8 @@ public sealed partial class Repository
             // 保留最近 limit 个版本：超出部分连引用一起删除。
             // SQLite 的 OFFSET 必须带 LIMIT 子句（-1 表示不限制）；PostgreSQL 单独使用 OFFSET。
             string retentionSql = Dialect.IsPostgres
-                ? "SELECT \"id\" FROM \"canvas_snapshots\" WHERE \"canvas_id\" = @canvasID ORDER BY \"revision\" DESC OFFSET @limit"
-                : "SELECT \"id\" FROM \"canvas_snapshots\" WHERE \"canvas_id\" = @canvasID ORDER BY \"revision\" DESC LIMIT -1 OFFSET @limit";
+                ? "SELECT \"id\" FROM \"canvasSnapshots\" WHERE \"canvasId\" = @canvasID ORDER BY \"revision\" DESC OFFSET @limit"
+                : "SELECT \"id\" FROM \"canvasSnapshots\" WHERE \"canvasId\" = @canvasID ORDER BY \"revision\" DESC LIMIT -1 OFFSET @limit";
             List<string> expired = (await QueryAsync<string>(
                 connection,
                 retentionSql,
@@ -158,13 +158,13 @@ public sealed partial class Repository
             {
                 await ExecuteAsync(
                     connection,
-                    "DELETE FROM \"canvas_snapshot_resources\" WHERE \"snapshot_id\" IN @ids",
+                    "DELETE FROM \"canvasSnapshotResources\" WHERE \"snapshotId\" IN @ids",
                     new { ids = expired },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
                 await ExecuteAsync(
                     connection,
-                    "DELETE FROM \"canvas_snapshots\" WHERE \"id\" IN @ids",
+                    "DELETE FROM \"canvasSnapshots\" WHERE \"id\" IN @ids",
                     new { ids = expired },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
@@ -183,11 +183,11 @@ public sealed partial class Repository
         long? count = await ScalarAsync<long?>(
             connection,
             """
-            SELECT COUNT(*) FROM "canvas_snapshot_resources"
-            WHERE "resource_id" = @id
-               OR "resource_id" IN (
+            SELECT COUNT(*) FROM "canvasSnapshotResources"
+            WHERE "resourceId" = @id
+               OR "resourceId" IN (
                     SELECT "id" FROM "resources"
-                    WHERE "endpoint" = @endpoint AND "bucket" = @bucket AND "object_key" = @objectKey)
+                    WHERE "endpoint" = @endpoint AND "bucket" = @bucket AND "objectKey" = @objectKey)
             """,
             new { id = resource.ID, endpoint = resource.Endpoint, bucket = resource.Bucket, objectKey = resource.ObjectKey },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -206,10 +206,10 @@ public sealed partial class Repository
         List<CanvasHistoryReferenceRow> refs = (await QueryAsync<CanvasHistoryReferenceRow>(
             connection,
             """
-            SELECT DISTINCT '画布历史版本' AS "Kind", snapshots."canvas_id" AS "ID", snapshots."title" AS "Title", refs."resource_id" AS "ResourceID"
-            FROM "canvas_snapshot_resources" AS refs
-            JOIN "canvas_snapshots" AS snapshots ON snapshots."id" = refs."snapshot_id"
-            WHERE refs."resource_id" IN @resourceIDs
+            SELECT DISTINCT '画布历史版本' AS "Kind", snapshots."canvasId" AS "ID", snapshots."title" AS "Title", refs."resourceId" AS "ResourceID"
+            FROM "canvasSnapshotResources" AS refs
+            JOIN "canvasSnapshots" AS snapshots ON snapshots."id" = refs."snapshotId"
+            WHERE refs."resourceId" IN @resourceIDs
             """,
             new { resourceIDs },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
@@ -245,9 +245,9 @@ public sealed partial class Repository
         await ExecuteAsync(
             connection,
             """
-            INSERT INTO "canvas_snapshots"
-                ("id", "canvas_id", "user_id", "revision", "title", "node_count", "connection_count",
-                 "payload_json", "payload_bytes", "reason", "content_updated_at", "created_at")
+            INSERT INTO "canvasSnapshots"
+                ("id", "canvasId", "userId", "revision", "title", "nodeCount", "connectionCount",
+                 "payloadJson", "payloadBytes", "reason", "contentUpdatedAt", "createdAt")
             VALUES (@id, @canvasID, @userID, @revision, 'seed', 0, 0, '{}', 2, 'automatic', @now, @now)
             ON CONFLICT ("id") DO NOTHING
             """,
@@ -263,7 +263,7 @@ public sealed partial class Repository
         StringBuilder builder = new();
         foreach (ColumnMap column in map.Columns)
         {
-            if (column.Column == "payload_json")
+            if (column.Column == "payloadJson")
             {
                 continue;
             }

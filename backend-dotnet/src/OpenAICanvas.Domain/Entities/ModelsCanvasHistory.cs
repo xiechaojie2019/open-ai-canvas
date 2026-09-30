@@ -12,16 +12,16 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>CanvasSnapshotResource</c>，数据库表 <c>canvas_snapshot_resources</c>。
+/// 对应 Go <c>CanvasSnapshotResource</c>，数据库表 <c>canvasSnapshotResources</c>。
 /// 源文件：internal/model/models_canvas_history.go
 /// </summary>
 public class CanvasSnapshotResource
 {
-    /// <summary>数据库列 <c>snapshot_id</c>（maxLength=36，主键）</summary>
+    /// <summary>数据库列 <c>snapshotId</c>（maxLength=36，主键）</summary>
     [JsonIgnore]
     public string SnapshotID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>resource_id</c>（maxLength=36，主键）</summary>
+    /// <summary>数据库列 <c>resourceId</c>（maxLength=36，主键）</summary>
     [JsonIgnore]
     public string ResourceID { get; set; } = string.Empty;
 
@@ -31,7 +31,7 @@ public class CanvasSnapshotResource
 }
 
 /// <summary>
-/// 对应 Go <c>CanvasSnapshot</c>，数据库表 <c>canvas_snapshots</c>。
+/// 对应 Go <c>CanvasSnapshot</c>，数据库表 <c>canvasSnapshots</c>。
 /// 源文件：internal/model/models_canvas_history.go
 /// </summary>
 public class CanvasSnapshot
@@ -40,11 +40,11 @@ public class CanvasSnapshot
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>canvas_id</c>（maxLength=80，not null）</summary>
+    /// <summary>数据库列 <c>canvasId</c>（maxLength=80，not null）</summary>
     [JsonPropertyName("canvasId")]
     public string CanvasID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36，not null）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36，not null）</summary>
     [JsonIgnore]
     public string UserID { get; set; } = string.Empty;
 
@@ -56,19 +56,19 @@ public class CanvasSnapshot
     [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>node_count</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>nodeCount</c>（maxLength=64）</summary>
     [JsonPropertyName("nodeCount")]
     public long NodeCount { get; set; }
 
-    /// <summary>数据库列 <c>connection_count</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>connectionCount</c>（maxLength=64）</summary>
     [JsonPropertyName("connectionCount")]
     public long ConnectionCount { get; set; }
 
-    /// <summary>数据库列 <c>payload_bytes</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>payloadBytes</c>（maxLength=64）</summary>
     [JsonPropertyName("payloadBytes")]
     public long PayloadBytes { get; set; }
 
-    /// <summary>数据库列 <c>payload_json</c>（not null）</summary>
+    /// <summary>数据库列 <c>payloadJson</c>（not null）</summary>
     [JsonIgnore]
     public string PayloadJSON { get; set; } = string.Empty;
 
@@ -76,11 +76,11 @@ public class CanvasSnapshot
     [JsonPropertyName("reason")]
     public string Reason { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>content_updated_at</c></summary>
+    /// <summary>数据库列 <c>contentUpdatedAt</c></summary>
     [JsonPropertyName("contentUpdatedAt")]
     public DateTime ContentUpdatedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c>（not null）</summary>
+    /// <summary>数据库列 <c>createdAt</c>（not null）</summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 }

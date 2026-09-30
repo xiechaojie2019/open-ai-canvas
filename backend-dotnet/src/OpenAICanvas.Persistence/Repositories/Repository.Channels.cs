@@ -25,7 +25,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ModelChannel>(
             connection,
             SqlBuilder.Select<ModelChannel>(
-                SoftDelete.Apply("model_channels", "id = @id AND scope = @scope AND enabled = @enabled"),
+                SoftDelete.Apply("modelChannels", "id = @id AND scope = @scope AND enabled = @enabled"),
                 limitOffset: " LIMIT 1"),
             new { id, scope = "system", enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -43,8 +43,8 @@ public sealed partial class Repository
         return await QueryAsync<ModelChannel>(
             connection,
             SqlBuilder.Select<ModelChannel>(
-                SoftDelete.Apply("model_channels", condition),
-                "sort_order ASC, created_at ASC, id ASC"),
+                SoftDelete.Apply("modelChannels", condition),
+                "\"sortOrder\" ASC, \"createdAt\" ASC, id ASC"),
             new { scope = "system", enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -58,8 +58,8 @@ public sealed partial class Repository
             connection,
             SqlBuilder.SelectColumns<ModelChannel>(
                 ["ID", "Name", "Enabled"],
-                SoftDelete.Apply("model_channels", "scope = @scope"),
-                "created_at ASC"),
+                SoftDelete.Apply("modelChannels", "scope = @scope"),
+                "\"createdAt\" ASC"),
             new { scope = "system" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -71,7 +71,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ModelChannel>(
             connection,
             SqlBuilder.Select<ModelChannel>(
-                SoftDelete.Apply("model_channels", "id = @id AND scope = @scope AND enabled = @enabled"),
+                SoftDelete.Apply("modelChannels", "id = @id AND scope = @scope AND enabled = @enabled"),
                 limitOffset: " LIMIT 1"),
             new { id, scope = "system", enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -84,7 +84,7 @@ public sealed partial class Repository
         return await FirstOrDefaultAsync<ModelChannel>(
             connection,
             SqlBuilder.Select<ModelChannel>(
-                SoftDelete.Apply("model_channels", "id = @id AND scope = @scope"),
+                SoftDelete.Apply("modelChannels", "id = @id AND scope = @scope"),
                 limitOffset: " LIMIT 1"),
             new { id, scope = "system" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -104,7 +104,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int updated = await ExecuteAsync(
             connection,
-            "UPDATE \"model_channels\" SET \"public_alias\" = COALESCE(@publicAlias, \"public_alias\"), \"sort_order\" = COALESCE(@sortOrder, \"sort_order\"), \"updated_at\" = @now WHERE \"id\" = @id AND \"scope\" = @scope AND \"deleted_at\" IS NULL",
+            "UPDATE \"modelChannels\" SET \"publicAlias\" = COALESCE(@publicAlias, \"publicAlias\"), \"sortOrder\" = COALESCE(@sortOrder, \"sortOrder\"), \"updatedAt\" = @now WHERE \"id\" = @id AND \"scope\" = @scope AND \"deletedAt\" IS NULL",
             new { id, publicAlias, sortOrder, now, scope = "system" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated == 1;
@@ -121,15 +121,15 @@ public sealed partial class Repository
         CancellationToken cancellationToken = default)
     {
         string condition = enabledOnly
-            ? "channel_id = @channelId AND enabled = @enabled"
-            : "channel_id = @channelId";
+            ? "\"channelId\" = @channelId AND enabled = @enabled"
+            : "\"channelId\" = @channelId";
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<ChannelModel> items = await QueryAsync<ChannelModel>(
             connection,
             SqlBuilder.Select<ChannelModel>(
-                SoftDelete.Apply("channel_models", condition),
-                "sort_order ASC, created_at ASC, id ASC"),
+                SoftDelete.Apply("channelModels", condition),
+                "\"sortOrder\" ASC, \"createdAt\" ASC, id ASC"),
             new { channelId, enabled = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -155,7 +155,7 @@ public sealed partial class Repository
         string trimmed = keyword.Trim();
         if (trimmed.Length > 0)
         {
-            conditions.Add("(lower(name) LIKE @pattern OR lower(public_alias) LIKE @pattern OR lower(base_url) LIKE @pattern)");
+            conditions.Add("(lower(name) LIKE @pattern OR lower(\"publicAlias\") LIKE @pattern OR lower(\"baseUrl\") LIKE @pattern)");
             parameters.Add("pattern", "%" + trimmed.ToLowerInvariant() + "%");
         }
         if (status == "enabled")
@@ -174,15 +174,15 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long total = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"model_channels\" WHERE deleted_at IS NULL AND " + where,
+            "SELECT COUNT(*) FROM \"modelChannels\" WHERE \"deletedAt\" IS NULL AND " + where,
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         IReadOnlyList<ModelChannel> channels = await QueryAsync<ModelChannel>(
             connection,
             SqlBuilder.Select<ModelChannel>(
-                SoftDelete.Apply("model_channels", where),
-                "sort_order ASC, created_at ASC, id ASC",
+                SoftDelete.Apply("modelChannels", where),
+                "\"sortOrder\" ASC, \"createdAt\" ASC, id ASC",
                 Dialect.LimitOffset(limit, offset)),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -261,9 +261,9 @@ public sealed partial class Repository
         CancellationToken cancellationToken = default)
     {
         bool perChannel = channelId.Length > 0;
-        string table = perChannel ? "channel_models" : "model_channels";
+        string table = perChannel ? "channelModels" : "modelChannels";
         string condition = perChannel
-            ? SoftDelete.Apply(table, "channel_id = @channelId")
+            ? SoftDelete.Apply(table, "\"channelId\" = @channelId")
             : SoftDelete.Apply(table, "scope = @scope");
         object parameters = perChannel
             ? (object)new { channelId }
@@ -278,7 +278,7 @@ public sealed partial class Repository
                     connection,
                     SqlBuilder.SelectColumns<ModelChannel>(
                         ["ID"],
-                        SoftDelete.Apply("model_channels", "id = @channelId AND scope = @scope"),
+                        SoftDelete.Apply("modelChannels", "id = @channelId AND scope = @scope"),
                         limitOffset: " LIMIT 1") + Dialect.ForUpdate(),
                     new { channelId, scope = "system" },
                     transaction,
@@ -302,7 +302,7 @@ public sealed partial class Repository
 
             List<string> current = (await QueryAsync<string>(
                 connection,
-                $"SELECT \"id\" FROM \"{table}\" WHERE {condition} ORDER BY \"sort_order\" ASC, \"created_at\" ASC, \"id\" ASC",
+                $"SELECT \"id\" FROM \"{table}\" WHERE {condition} ORDER BY \"sortOrder\" ASC, \"createdAt\" ASC, \"id\" ASC",
                 parameters,
                 transaction,
                 cancellationToken).ConfigureAwait(false)).ToList();
@@ -326,7 +326,7 @@ public sealed partial class Repository
             {
                 await ExecuteAsync(
                     connection,
-                    $"UPDATE \"{table}\" SET \"sort_order\" = @sortOrder, \"updated_at\" = @now WHERE \"id\" = @id",
+                    $"UPDATE \"{table}\" SET \"sortOrder\" = @sortOrder, \"updatedAt\" = @now WHERE \"id\" = @id",
                     new { sortOrder = (long)index, now, id = ids[index] },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
@@ -364,7 +364,7 @@ public sealed partial class Repository
         ChannelModel? item = await FirstOrDefaultAsync<ChannelModel>(
             connection,
             SqlBuilder.Select<ChannelModel>(
-                SoftDelete.Apply("channel_models", "id = @id AND channel_id = @channelId"),
+                SoftDelete.Apply("channelModels", "id = @id AND \"channelId\" = @channelId"),
                 limitOffset: " LIMIT 1"),
             new { id, channelId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -389,7 +389,7 @@ public sealed partial class Repository
         ChannelModel? item = await FirstOrDefaultAsync<ChannelModel>(
             connection,
             SqlBuilder.Select<ChannelModel>(
-                SoftDelete.Apply("channel_models", "channel_id = @channelId AND model_key = @modelKey"),
+                SoftDelete.Apply("channelModels", "\"channelId\" = @channelId AND \"modelKey\" = @modelKey"),
                 limitOffset: " LIMIT 1"),
             new { channelId, modelKey },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -436,7 +436,7 @@ public sealed partial class Repository
             IReadOnlyList<ChannelModelPriceTier> existing = await QueryAsync<ChannelModelPriceTier>(
                 connection,
                 SqlBuilder.Select<ChannelModelPriceTier>(
-                    SoftDelete.Apply("channel_model_price_tiers", "channel_model_id = @id")),
+                    SoftDelete.Apply("channelModelPriceTiers", "\"channelModelId\" = @id")),
                 new { id = item.ID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -484,7 +484,7 @@ public sealed partial class Repository
                 }
                 await ExecuteAsync(
                     connection,
-                    "UPDATE \"channel_model_price_tiers\" SET \"deleted_at\" = @now WHERE \"id\" = @id AND \"deleted_at\" IS NULL",
+                    "UPDATE \"channelModelPriceTiers\" SET \"deletedAt\" = @now WHERE \"id\" = @id AND \"deletedAt\" IS NULL",
                     new { now = DateTime.UtcNow, id = tier.ID },
                     transaction,
                     cancellationToken).ConfigureAwait(false);
@@ -532,7 +532,7 @@ public sealed partial class Repository
                 connection,
                 SqlBuilder.SelectColumns<ModelChannel>(
                     ["ID"],
-                    SoftDelete.Apply("model_channels", "id = @channelId AND scope = @scope"),
+                    SoftDelete.Apply("modelChannels", "id = @channelId AND scope = @scope"),
                     limitOffset: " LIMIT 1") + Dialect.ForUpdate(),
                 new { channelId, scope = "system" },
                 transaction,
@@ -544,7 +544,7 @@ public sealed partial class Repository
 
             long existing = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"channel_models\" WHERE \"channel_id\" = @channelId AND \"id\" IN @ids AND \"deleted_at\" IS NULL",
+                "SELECT COUNT(*) FROM \"channelModels\" WHERE \"channelId\" = @channelId AND \"id\" IN @ids AND \"deletedAt\" IS NULL",
                 new { channelId, ids = uniqueIds },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -556,9 +556,9 @@ public sealed partial class Repository
             long activeReferences = await ScalarAsync<long>(
                 connection,
                 """
-                SELECT COUNT(*) FROM "logical_model_routes" AS "route"
-                JOIN "logical_models" AS "logical_model" ON "logical_model"."active_revision_id" = "route"."logical_model_revision_id"
-                WHERE "route"."channel_model_id" IN @ids
+                SELECT COUNT(*) FROM "logicalModelRoutes" AS "route"
+                JOIN "logicalModels" AS "logical_model" ON "logical_model"."activeRevisionId" = "route"."logicalModelRevisionId"
+                WHERE "route"."channelModelId" IN @ids
                 """,
                 new { ids = uniqueIds },
                 transaction,
@@ -570,7 +570,7 @@ public sealed partial class Repository
 
             activeReferences = await ScalarAsync<long>(
                 connection,
-                "SELECT COUNT(*) FROM \"tasks\" WHERE \"channel_model_id\" IN @ids AND \"status\" IN @statuses",
+                "SELECT COUNT(*) FROM \"tasks\" WHERE \"channelModelId\" IN @ids AND \"status\" IN @statuses",
                 new { ids = uniqueIds, statuses = new[] { "queued", "running" } },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -581,7 +581,7 @@ public sealed partial class Repository
 
             int disabled = await ExecuteAsync(
                 connection,
-                "UPDATE \"channel_models\" SET \"enabled\" = @disabled, \"price_version\" = \"price_version\" + 1, \"updated_at\" = @now WHERE \"id\" IN @ids AND \"channel_id\" = @channelId AND \"deleted_at\" IS NULL",
+                "UPDATE \"channelModels\" SET \"enabled\" = @disabled, \"priceVersion\" = \"priceVersion\" + 1, \"updatedAt\" = @now WHERE \"id\" IN @ids AND \"channelId\" = @channelId AND \"deletedAt\" IS NULL",
                 new { disabled = Dialect.Boolean(false), now, ids = uniqueIds, channelId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -592,7 +592,7 @@ public sealed partial class Repository
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"channel_models\" SET \"deleted_at\" = @now WHERE \"id\" IN @ids AND \"channel_id\" = @channelId AND \"deleted_at\" IS NULL",
+                "UPDATE \"channelModels\" SET \"deletedAt\" = @now WHERE \"id\" IN @ids AND \"channelId\" = @channelId AND \"deletedAt\" IS NULL",
                 new { now, ids = uniqueIds, channelId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -618,7 +618,7 @@ public sealed partial class Repository
                 connection,
                 SqlBuilder.SelectColumns<ModelChannel>(
                     ["ID"],
-                    SoftDelete.Apply("model_channels", "id = @channelId AND scope = @scope"),
+                    SoftDelete.Apply("modelChannels", "id = @channelId AND scope = @scope"),
                     limitOffset: " LIMIT 1") + Dialect.ForUpdate(),
                 new { channelId, scope = "system" },
                 transaction,
@@ -658,7 +658,7 @@ public sealed partial class Repository
         {
             int channelUpdated = await ExecuteAsync(
                 connection,
-                "UPDATE \"model_channels\" SET \"api_key\" = '', \"secret_key\" = '', \"enabled\" = @disabled, \"updated_at\" = @now WHERE \"id\" = @id AND \"scope\" = @scope AND \"deleted_at\" IS NULL",
+                "UPDATE \"modelChannels\" SET \"apiKey\" = '', \"secretKey\" = '', \"enabled\" = @disabled, \"updatedAt\" = @now WHERE \"id\" = @id AND \"scope\" = @scope AND \"deletedAt\" IS NULL",
                 new { id, disabled = Dialect.Boolean(false), now, scope = "system" },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -669,21 +669,21 @@ public sealed partial class Repository
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"channel_models\" SET \"enabled\" = @disabled, \"updated_at\" = @now WHERE \"channel_id\" = @id AND \"deleted_at\" IS NULL",
+                "UPDATE \"channelModels\" SET \"enabled\" = @disabled, \"updatedAt\" = @now WHERE \"channelId\" = @id AND \"deletedAt\" IS NULL",
                 new { id, disabled = Dialect.Boolean(false), now },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"channel_models\" SET \"deleted_at\" = @now WHERE \"channel_id\" = @id AND \"deleted_at\" IS NULL",
+                "UPDATE \"channelModels\" SET \"deletedAt\" = @now WHERE \"channelId\" = @id AND \"deletedAt\" IS NULL",
                 new { id, now },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
 
             await ExecuteAsync(
                 connection,
-                "UPDATE \"model_channels\" SET \"deleted_at\" = @now WHERE \"id\" = @id AND \"scope\" = @scope AND \"deleted_at\" IS NULL",
+                "UPDATE \"modelChannels\" SET \"deletedAt\" = @now WHERE \"id\" = @id AND \"scope\" = @scope AND \"deletedAt\" IS NULL",
                 new { id, now, scope = "system" },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -709,7 +709,7 @@ public sealed partial class Repository
             object lockParameters = new { channelId, scope = "system" };
             ModelChannel? channel = await FirstOrDefaultAsync<ModelChannel>(
                 connection,
-                SqlBuilder.SelectColumns<ModelChannel>(["ID"], SoftDelete.Apply("model_channels", "id = @channelId AND scope = @scope"), limitOffset: " LIMIT 1") + Dialect.ForUpdate(),
+                SqlBuilder.SelectColumns<ModelChannel>(["ID"], SoftDelete.Apply("modelChannels", "id = @channelId AND scope = @scope"), limitOffset: " LIMIT 1") + Dialect.ForUpdate(),
                 lockParameters,
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -720,7 +720,7 @@ public sealed partial class Repository
 
             int updated = await ExecuteAsync(
                 connection,
-                "UPDATE \"channel_models\" SET \"sort_order\" = @sortOrder, \"updated_at\" = @now WHERE \"channel_id\" = @channelId AND \"id\" = @modelId AND \"deleted_at\" IS NULL",
+                "UPDATE \"channelModels\" SET \"sortOrder\" = @sortOrder, \"updatedAt\" = @now WHERE \"channelId\" = @channelId AND \"id\" = @modelId AND \"deletedAt\" IS NULL",
                 new { sortOrder, now, channelId, modelId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -747,7 +747,7 @@ public sealed partial class Repository
     {
         List<string> names = (await QueryAsync<string>(
             connection,
-            "SELECT \"model_key\" FROM \"channel_models\" WHERE \"channel_id\" = @channelId AND \"enabled\" = @enabled AND \"deleted_at\" IS NULL ORDER BY \"sort_order\" ASC, \"created_at\" ASC, \"id\" ASC",
+            "SELECT \"modelKey\" FROM \"channelModels\" WHERE \"channelId\" = @channelId AND \"enabled\" = @enabled AND \"deletedAt\" IS NULL ORDER BY \"sortOrder\" ASC, \"createdAt\" ASC, \"id\" ASC",
             new { channelId, enabled = Dialect.Boolean(true) },
             transaction,
             cancellationToken).ConfigureAwait(false)).ToList();
@@ -755,7 +755,7 @@ public sealed partial class Repository
         string encoded = JsonSerializer.Serialize(names);
         await ExecuteAsync(
             connection,
-            "UPDATE \"model_channels\" SET \"models_json\" = @encoded, \"updated_at\" = @now WHERE \"id\" = @channelId AND \"scope\" = @scope",
+            "UPDATE \"modelChannels\" SET \"modelsJson\" = @encoded, \"updatedAt\" = @now WHERE \"id\" = @channelId AND \"scope\" = @scope",
             new { encoded, now, channelId, scope = "system" },
             transaction,
             cancellationToken).ConfigureAwait(false);

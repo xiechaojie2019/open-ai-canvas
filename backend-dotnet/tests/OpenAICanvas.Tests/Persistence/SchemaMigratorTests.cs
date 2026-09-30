@@ -36,7 +36,7 @@ public class SchemaMigratorTests : IDisposable
     }
 
     [Fact]
-    public async Task 全新库迁移后写入全部_34_条迁移记录()
+    public async Task 全新库迁移后写入全部_35_条迁移记录()
     {
         SchemaMigrator migrator = new(_database);
         await migrator.MigrateAsync();
@@ -48,8 +48,10 @@ public class SchemaMigratorTests : IDisposable
                 "SELECT version, name, checksum FROM schema_migrations ORDER BY version"))
             .ToList();
 
-        Assert.Equal(34, records.Count);
-        Assert.Equal(Enumerable.Range(1, 34).Select(v => (long)v), records.Select(r => r.Version));
+        Assert.Equal((int)SchemaMigrationCatalog.CurrentSchemaVersion, records.Count);
+        Assert.Equal(
+            Enumerable.Range(1, (int)SchemaMigrationCatalog.CurrentSchemaVersion).Select(v => (long)v),
+            records.Select(r => r.Version));
 
         // 名称与校验和必须与 Go 完全一致，否则无法接管 Go 版已迁移的数据库。
         Assert.Equal("baseline_gorm_schema", records[0].Name);
@@ -62,6 +64,8 @@ public class SchemaMigratorTests : IDisposable
         Assert.Equal("sha256:canvas-revision-history-v23-20260918", records[22].Checksum);
         Assert.Equal("task_media_recovery", records[33].Name);
         Assert.Equal("sha256:task-media-recovery-v34", records[33].Checksum);
+        Assert.Equal("camel_case_identifiers", records[34].Name);
+        Assert.Equal("sha256:camel-case-identifiers-v35-20260929", records[34].Checksum);
     }
 
     [Fact]
@@ -72,8 +76,8 @@ public class SchemaMigratorTests : IDisposable
 
         SchemaStatus status = await migrator.ReadStatusAsync();
 
-        Assert.Equal(34, status.Current);
-        Assert.Equal(34, status.Expected);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, status.Current);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, status.Expected);
         Assert.True(status.Ready);
     }
 
@@ -89,7 +93,7 @@ public class SchemaMigratorTests : IDisposable
         await connection.OpenAsync();
         long count = await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM schema_migrations");
 
-        Assert.Equal(34, count);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, count);
     }
 
     [Fact]
@@ -99,7 +103,7 @@ public class SchemaMigratorTests : IDisposable
         SchemaStatus status = await migrator.ReadStatusAsync();
 
         Assert.Equal(0, status.Current);
-        Assert.Equal(34, status.Expected);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, status.Expected);
         Assert.False(status.Ready);
     }
 
@@ -212,9 +216,9 @@ public class SoftDeleteTests
     [Fact]
     public void 只对_Go_侧的_3_张表生效()
     {
-        Assert.True(SoftDelete.Applies("model_channels"));
-        Assert.True(SoftDelete.Applies("channel_models"));
-        Assert.True(SoftDelete.Applies("channel_model_price_tiers"));
+        Assert.True(SoftDelete.Applies("modelChannels"));
+        Assert.True(SoftDelete.Applies("channelModels"));
+        Assert.True(SoftDelete.Applies("channelModelPriceTiers"));
         Assert.False(SoftDelete.Applies("users"));
         Assert.False(SoftDelete.Applies("tasks"));
     }
@@ -222,16 +226,16 @@ public class SoftDeleteTests
     [Fact]
     public void 默认注入过滤()
     {
-        Assert.Equal("deleted_at IS NULL", SoftDelete.Apply("model_channels"));
-        Assert.Equal("mc.deleted_at IS NULL", SoftDelete.Apply("model_channels", alias: "mc"));
+        Assert.Equal("\"deletedAt\" IS NULL", SoftDelete.Apply("modelChannels"));
+        Assert.Equal("mc.\"deletedAt\" IS NULL", SoftDelete.Apply("modelChannels", alias: "mc"));
     }
 
     [Fact]
     public void 与已有条件用_AND_组合()
     {
         Assert.Equal(
-            "deleted_at IS NULL AND (user_id = @userId)",
-            SoftDelete.Apply("channel_models", "user_id = @userId"));
+            "\"deletedAt\" IS NULL AND (\"userId\" = @userId)",
+            SoftDelete.Apply("channelModels", "\"userId\" = @userId"));
     }
 
     [Fact]
@@ -246,14 +250,14 @@ public class SoftDeleteTests
     {
         Assert.Equal(
             "id = @id",
-            SoftDelete.Apply("model_channels", "id = @id", includeDeleted: true));
+            SoftDelete.Apply("modelChannels", "id = @id", includeDeleted: true));
     }
 
     [Fact]
     public void 软删除写入的是_UPDATE_而非_DELETE()
     {
-        string sql = SoftDelete.SoftDeleteStatement("model_channels", "id");
+        string sql = SoftDelete.SoftDeleteStatement("modelChannels", "id");
         Assert.StartsWith("UPDATE", sql, StringComparison.Ordinal);
-        Assert.Contains("deleted_at = @deletedAt", sql, StringComparison.Ordinal);
+        Assert.Contains("\"deletedAt\" = @deletedAt", sql, StringComparison.Ordinal);
     }
 }

@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>AuthVerification</c>，数据库表 <c>auth_verifications</c>。
+/// 对应 Go <c>AuthVerification</c>，数据库表 <c>authVerifications</c>。
 /// 源文件：internal/model/models_notifications.go
 /// </summary>
 public class AuthVerification
@@ -21,7 +21,7 @@ public class AuthVerification
     [JsonPropertyName("")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>token_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>tokenHash</c>（maxLength=64）</summary>
     [JsonPropertyName("")]
     public string TokenHash { get; set; } = string.Empty;
 
@@ -33,7 +33,7 @@ public class AuthVerification
     [JsonPropertyName("")]
     public string Method { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("")]
     public string UserID { get; set; } = string.Empty;
 
@@ -45,15 +45,15 @@ public class AuthVerification
     [JsonPropertyName("")]
     public string Phone { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>email_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>emailHash</c>（maxLength=64）</summary>
     [JsonPropertyName("")]
     public string EmailHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>phone_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>phoneHash</c>（maxLength=64）</summary>
     [JsonPropertyName("")]
     public string PhoneHash { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>policy_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>policyHash</c>（maxLength=64）</summary>
     [JsonPropertyName("")]
     public string PolicyHash { get; set; } = string.Empty;
 
@@ -65,21 +65,21 @@ public class AuthVerification
     [JsonPropertyName("")]
     public long Attempts { get; set; }
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("")]
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>数据库列 <c>used_at</c></summary>
+    /// <summary>数据库列 <c>usedAt</c></summary>
     [JsonPropertyName("")]
     public DateTime? UsedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("")]
     public DateTime CreatedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>NotificationQuota</c>，数据库表 <c>notification_quota</c>。
+/// 对应 Go <c>NotificationQuota</c>，数据库表 <c>notificationQuota</c>。
 /// 源文件：internal/model/models_notifications.go
 /// </summary>
 public class NotificationQuota
@@ -92,17 +92,17 @@ public class NotificationQuota
     [JsonPropertyName("")]
     public long Count { get; set; }
 
-    /// <summary>数据库列 <c>next_at</c></summary>
+    /// <summary>数据库列 <c>nextAt</c></summary>
     [JsonPropertyName("")]
     public DateTime NextAt { get; set; }
 
-    /// <summary>数据库列 <c>expires_at</c></summary>
+    /// <summary>数据库列 <c>expiresAt</c></summary>
     [JsonPropertyName("")]
     public DateTime ExpiresAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>SMSChannel</c>，数据库表 <c>sms_channels</c>。
+/// 对应 Go <c>SMSChannel</c>，数据库表 <c>smsChannels</c>。
 /// 源文件：internal/model/models_notifications.go
 /// </summary>
 public class SMSChannel
@@ -127,15 +127,15 @@ public class SMSChannel
     [JsonPropertyName("priority")]
     public long Priority { get; set; }
 
-    /// <summary>数据库列 <c>daily_limit</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>dailyLimit</c>（maxLength=64）</summary>
     [JsonPropertyName("dailyLimit")]
     public long DailyLimit { get; set; }
 
-    /// <summary>数据库列 <c>sign_name</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>signName</c>（maxLength=80）</summary>
     [JsonPropertyName("signName")]
     public string SignName { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>app_id</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>appId</c>（maxLength=80）</summary>
     [JsonPropertyName("appId")]
     public string AppID { get; set; } = string.Empty;
 
@@ -143,7 +143,7 @@ public class SMSChannel
     [JsonIgnore]
     public string Credentials { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>templates_json</c></summary>
+    /// <summary>数据库列 <c>templatesJson</c></summary>
     [JsonIgnore]
     public string TemplatesJSON { get; set; } = string.Empty;
 
@@ -151,21 +151,21 @@ public class SMSChannel
     [JsonPropertyName("version")]
     public long Version { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 
-    /// <summary>数据库列 <c>deleted_at</c></summary>
+    /// <summary>数据库列 <c>deletedAt</c></summary>
     [JsonIgnore]
     public DateTime? DeletedAt { get; set; }
 }
 
 /// <summary>
-/// 对应 Go <c>SMSRecord</c>，数据库表 <c>sms_records</c>。
+/// 对应 Go <c>SMSRecord</c>，数据库表 <c>smsRecords</c>。
 /// 源文件：internal/model/models_notifications.go
 /// </summary>
 public class SMSRecord
@@ -174,11 +174,11 @@ public class SMSRecord
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_name</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>channelName</c>（maxLength=80）</summary>
     [JsonPropertyName("channelName")]
     public string ChannelName { get; set; } = string.Empty;
 
@@ -190,11 +190,11 @@ public class SMSRecord
     [JsonPropertyName("purpose")]
     public string Purpose { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>masked_phone</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>maskedPhone</c>（maxLength=32）</summary>
     [JsonPropertyName("maskedPhone")]
     public string MaskedPhone { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>target_hash</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>targetHash</c>（maxLength=64）</summary>
     [JsonIgnore]
     public string TargetHash { get; set; } = string.Empty;
 
@@ -202,27 +202,27 @@ public class SMSRecord
     [JsonPropertyName("state")]
     public string State { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>requestId</c>（maxLength=160）</summary>
     [JsonPropertyName("requestId")]
     public string RequestID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>message_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>messageId</c>（maxLength=160）</summary>
     [JsonPropertyName("messageId")]
     public string MessageID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>error_code</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>errorCode</c>（maxLength=160）</summary>
     [JsonPropertyName("errorCode")]
     public string ErrorCode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>duration_ms</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>durationMs</c>（maxLength=64）</summary>
     [JsonPropertyName("durationMs")]
     public long DurationMS { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

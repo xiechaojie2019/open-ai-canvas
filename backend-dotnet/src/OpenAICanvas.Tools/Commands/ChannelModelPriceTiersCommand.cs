@@ -111,7 +111,7 @@ internal static class ChannelModelPriceTiersCommand
         string[] channelIds = plans.Select(plan => plan.ChannelModel.ID).ToArray();
         await using DbConnection connection = await database.OpenAsync(cancellationToken).ConfigureAwait(false);
         long active = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
-            "SELECT COUNT(*) FROM tasks WHERE (logical_model_id IN @logicalIds OR channel_model_id IN @channelIds) AND status IN @statuses",
+            "SELECT COUNT(*) FROM tasks WHERE (\"logicalModelId\" IN @logicalIds OR \"channelModelId\" IN @channelIds) AND status IN @statuses",
             new { logicalIds, channelIds, statuses = new[] { OpenAICanvas.Domain.Entities.TaskStatus.TaskStatusQueued, OpenAICanvas.Domain.Entities.TaskStatus.TaskStatusRunning } },
             cancellationToken: cancellationToken)).ConfigureAwait(false);
         if (active > 0) throw new InvalidOperationException($"仍有 {active} 个排队或运行中的任务引用迁移模型，稍后重试");

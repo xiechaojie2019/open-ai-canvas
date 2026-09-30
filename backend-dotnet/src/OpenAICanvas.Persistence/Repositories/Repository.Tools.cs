@@ -56,10 +56,10 @@ public sealed partial class Repository
 
     /// <summary>工具 upsert 语句：冲突时仅覆盖内置工具行，保留 created_at。</summary>
     private string UpsertToolSql => string.Join('\n',
-        $"INSERT INTO {Quote("tools")} ({Quote("id")}, {Quote("type")}, {Quote("label_en")}, {Quote("label")}, {Quote("desc")}, {Quote("tag")}, {Quote("cover")}, {Quote("extra_info_json")}, {Quote("prompt")}, {Quote("ratio")}, {Quote("media_url")}, {Quote("owner_id")}, {Quote("source")}, {Quote("enabled")}, {Quote("visibility")}, {Quote("sort_weight")}, {Quote("created_at")}, {Quote("updated_at")})",
+        $"INSERT INTO {Quote("tools")} ({Quote("id")}, {Quote("type")}, {Quote("labelEn")}, {Quote("label")}, {Quote("desc")}, {Quote("tag")}, {Quote("cover")}, {Quote("extraInfoJson")}, {Quote("prompt")}, {Quote("ratio")}, {Quote("mediaUrl")}, {Quote("ownerId")}, {Quote("source")}, {Quote("enabled")}, {Quote("visibility")}, {Quote("sortWeight")}, {Quote("createdAt")}, {Quote("updatedAt")})",
         $"VALUES (@ID, @Type, @LabelEn, @Label, @Desc, @Tag, @Cover, @ExtraInfoJSON, @Prompt, @Ratio, @MediaURL, @OwnerID, @Source, @Enabled, @Visibility, @SortWeight, @CreatedAt, @UpdatedAt)",
         $"ON CONFLICT ({Quote("id")}) DO UPDATE SET",
-        $"{Quote("type")} = excluded.{Quote("type")}, {Quote("label_en")} = excluded.{Quote("label_en")}, {Quote("label")} = excluded.{Quote("label")}, {Quote("desc")} = excluded.{Quote("desc")}, {Quote("tag")} = excluded.{Quote("tag")}, {Quote("cover")} = excluded.{Quote("cover")}, {Quote("extra_info_json")} = excluded.{Quote("extra_info_json")}, {Quote("prompt")} = excluded.{Quote("prompt")}, {Quote("ratio")} = excluded.{Quote("ratio")}, {Quote("media_url")} = excluded.{Quote("media_url")}, {Quote("owner_id")} = excluded.{Quote("owner_id")}, {Quote("source")} = excluded.{Quote("source")}, {Quote("enabled")} = excluded.{Quote("enabled")}, {Quote("visibility")} = excluded.{Quote("visibility")}, {Quote("sort_weight")} = excluded.{Quote("sort_weight")}, {Quote("updated_at")} = excluded.{Quote("updated_at")}",
+        $"{Quote("type")} = excluded.{Quote("type")}, {Quote("labelEn")} = excluded.{Quote("labelEn")}, {Quote("label")} = excluded.{Quote("label")}, {Quote("desc")} = excluded.{Quote("desc")}, {Quote("tag")} = excluded.{Quote("tag")}, {Quote("cover")} = excluded.{Quote("cover")}, {Quote("extraInfoJson")} = excluded.{Quote("extraInfoJson")}, {Quote("prompt")} = excluded.{Quote("prompt")}, {Quote("ratio")} = excluded.{Quote("ratio")}, {Quote("mediaUrl")} = excluded.{Quote("mediaUrl")}, {Quote("ownerId")} = excluded.{Quote("ownerId")}, {Quote("source")} = excluded.{Quote("source")}, {Quote("enabled")} = excluded.{Quote("enabled")}, {Quote("visibility")} = excluded.{Quote("visibility")}, {Quote("sortWeight")} = excluded.{Quote("sortWeight")}, {Quote("updatedAt")} = excluded.{Quote("updatedAt")}",
         $"WHERE {Quote("tools")}.{Quote("source")} = 'builtin'");
 
     /// <summary>
@@ -72,7 +72,7 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         string where =
-            $"{Quote("tools")}.{Quote("enabled")} = @enabled AND ({Quote("tools")}.{Quote("visibility")} = 'public' OR {Quote("tools")}.{Quote("owner_id")} = @userID)";
+            $"{Quote("tools")}.{Quote("enabled")} = @enabled AND ({Quote("tools")}.{Quote("visibility")} = 'public' OR {Quote("tools")}.{Quote("ownerId")} = @userID)";
         Dictionary<string, object?> parameters = new(StringComparer.Ordinal)
         {
             ["enabled"] = Dialect.Boolean(true),
@@ -82,15 +82,15 @@ public sealed partial class Repository
         switch (scope)
         {
             case "favorites":
-                join = $"JOIN {Quote("tool_favorites")} tf ON tf.{Quote("tool_id")} = {Quote("tools")}.{Quote("id")} AND tf.{Quote("user_id")} = @userID";
-                where += $" AND tf.{Quote("user_id")} = @userID";
+                join = $"JOIN {Quote("toolFavorites")} tf ON tf.{Quote("toolId")} = {Quote("tools")}.{Quote("id")} AND tf.{Quote("userId")} = @userID";
+                where += $" AND tf.{Quote("userId")} = @userID";
                 break;
             case "custom":
-                join = $"LEFT JOIN {Quote("tool_favorites")} tf ON tf.{Quote("tool_id")} = {Quote("tools")}.{Quote("id")} AND tf.{Quote("user_id")} = @userID";
-                where += $" AND {Quote("tools")}.{Quote("owner_id")} = @userID AND {Quote("tools")}.{Quote("source")} = 'user'";
+                join = $"LEFT JOIN {Quote("toolFavorites")} tf ON tf.{Quote("toolId")} = {Quote("tools")}.{Quote("id")} AND tf.{Quote("userId")} = @userID";
+                where += $" AND {Quote("tools")}.{Quote("ownerId")} = @userID AND {Quote("tools")}.{Quote("source")} = 'user'";
                 break;
             default: // public
-                join = $"LEFT JOIN {Quote("tool_favorites")} tf ON tf.{Quote("tool_id")} = {Quote("tools")}.{Quote("id")} AND tf.{Quote("user_id")} = @userID";
+                join = $"LEFT JOIN {Quote("toolFavorites")} tf ON tf.{Quote("toolId")} = {Quote("tools")}.{Quote("id")} AND tf.{Quote("userId")} = @userID";
                 where += $" AND {Quote("tools")}.{Quote("visibility")} = 'public'";
                 break;
         }
@@ -106,7 +106,7 @@ public sealed partial class Repository
         }
         if (search.Length > 0)
         {
-            where += $" AND (LOWER({Quote("tools")}.{Quote("label")}) LIKE @keyword OR LOWER({Quote("tools")}.{Quote("label_en")}) LIKE @keyword OR LOWER({Quote("tools")}.{Quote("desc")}) LIKE @keyword)";
+            where += $" AND (LOWER({Quote("tools")}.{Quote("label")}) LIKE @keyword OR LOWER({Quote("tools")}.{Quote("labelEn")}) LIKE @keyword OR LOWER({Quote("tools")}.{Quote("desc")}) LIKE @keyword)";
             parameters["keyword"] = "%" + search.ToLowerInvariant() + "%";
         }
 
@@ -117,8 +117,8 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         string orderBy = scope == "favorites"
-            ? $"tf.{Quote("created_at")} DESC, {Quote("tools")}.{Quote("id")} DESC"
-            : $"{Quote("tools")}.{Quote("sort_weight")} ASC, {Quote("tools")}.{Quote("id")} ASC";
+            ? $"tf.{Quote("createdAt")} DESC, {Quote("tools")}.{Quote("id")} DESC"
+            : $"{Quote("tools")}.{Quote("sortWeight")} ASC, {Quote("tools")}.{Quote("id")} ASC";
         parameters["limit"] = pageSize;
         parameters["offset"] = (page - 1) * pageSize;
 
@@ -126,22 +126,22 @@ public sealed partial class Repository
         string columns = string.Join(", ",
             $"{Quote("tools")}.{Quote("id")} AS {Quote("ID")}",
             $"{Quote("tools")}.{Quote("type")} AS {Quote("Type")}",
-            $"{Quote("tools")}.{Quote("label_en")} AS {Quote("LabelEn")}",
+            $"{Quote("tools")}.{Quote("labelEn")} AS {Quote("LabelEn")}",
             $"{Quote("tools")}.{Quote("label")} AS {Quote("Label")}",
             $"{Quote("tools")}.{Quote("desc")} AS {Quote("Desc")}",
             $"{Quote("tools")}.{Quote("tag")} AS {Quote("Tag")}",
             $"{Quote("tools")}.{Quote("cover")} AS {Quote("Cover")}",
             $"{Quote("tools")}.{Quote("ratio")} AS {Quote("Ratio")}",
-            $"{Quote("tools")}.{Quote("media_url")} AS {Quote("MediaURL")}",
-            $"{Quote("tools")}.{Quote("owner_id")} AS {Quote("OwnerID")}",
+            $"{Quote("tools")}.{Quote("mediaUrl")} AS {Quote("MediaURL")}",
+            $"{Quote("tools")}.{Quote("ownerId")} AS {Quote("OwnerID")}",
             $"{Quote("tools")}.{Quote("source")} AS {Quote("Source")}",
             $"{Quote("tools")}.{Quote("enabled")} AS {Quote("Enabled")}",
             $"{Quote("tools")}.{Quote("visibility")} AS {Quote("Visibility")}",
-            $"{Quote("tools")}.{Quote("sort_weight")} AS {Quote("SortWeight")}",
-            $"{Quote("tools")}.{Quote("created_at")} AS {Quote("CreatedAt")}",
-            $"{Quote("tools")}.{Quote("updated_at")} AS {Quote("UpdatedAt")}",
+            $"{Quote("tools")}.{Quote("sortWeight")} AS {Quote("SortWeight")}",
+            $"{Quote("tools")}.{Quote("createdAt")} AS {Quote("CreatedAt")}",
+            $"{Quote("tools")}.{Quote("updatedAt")} AS {Quote("UpdatedAt")}",
             $"tf.{Quote("id")} AS {Quote("FavoriteRowID")}",
-            $"tf.{Quote("created_at")} AS {Quote("FavoritedAt")}");
+            $"tf.{Quote("createdAt")} AS {Quote("FavoritedAt")}");
         List<ToolListRow> items = (await QueryAsync<ToolListRow>(
             connection,
             $"SELECT {columns} FROM {Quote("tools")} {join} WHERE {where} ORDER BY {orderBy} LIMIT @limit OFFSET @offset",
@@ -158,7 +158,7 @@ public sealed partial class Repository
         Tool? tool = await FirstOrDefaultAsync<Tool>(
             connection,
             SqlBuilder.Select<Tool>(
-                $"{Quote("id")} = @toolID AND {Quote("enabled")} = @enabled AND ({Quote("visibility")} = 'public' OR {Quote("owner_id")} = @userID)",
+                $"{Quote("id")} = @toolID AND {Quote("enabled")} = @enabled AND ({Quote("visibility")} = 'public' OR {Quote("ownerId")} = @userID)",
                 limitOffset: " LIMIT 1"),
             new { toolID, enabled = Dialect.Boolean(true), userID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -178,7 +178,7 @@ public sealed partial class Repository
         ToolFavorite? favorite = await FirstOrDefaultAsync<ToolFavorite>(
             connection,
             SqlBuilder.Select<ToolFavorite>(
-                $"{Quote("user_id")} = @userID AND {Quote("tool_id")} = @toolID", limitOffset: " LIMIT 1"),
+                $"{Quote("userId")} = @userID AND {Quote("toolId")} = @toolID", limitOffset: " LIMIT 1"),
             new { userID, toolID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return (tool, favorite?.CreatedAt);
@@ -190,11 +190,11 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         string conflict = Dialect.IsPostgres
-            ? "ON CONFLICT (\"user_id\", \"tool_id\") DO NOTHING"
-            : "ON CONFLICT (\"user_id\", \"tool_id\") DO NOTHING";
+            ? "ON CONFLICT (\"userId\", \"toolId\") DO NOTHING"
+            : "ON CONFLICT (\"userId\", \"toolId\") DO NOTHING";
         await ExecuteAsync(
             connection,
-            $"INSERT INTO {Quote("tool_favorites")} ({Quote("user_id")}, {Quote("tool_id")}, {Quote("created_at")}) VALUES (@userID, @toolID, @now) {conflict}",
+            $"INSERT INTO {Quote("toolFavorites")} ({Quote("userId")}, {Quote("toolId")}, {Quote("createdAt")}) VALUES (@userID, @toolID, @now) {conflict}",
             new { userID, toolID, now = DateTime.UtcNow },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -206,7 +206,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            $"DELETE FROM {Quote("tool_favorites")} WHERE {Quote("user_id")} = @userID AND {Quote("tool_id")} = @toolID",
+            $"DELETE FROM {Quote("toolFavorites")} WHERE {Quote("userId")} = @userID AND {Quote("toolId")} = @toolID",
             new { userID, toolID },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -220,10 +220,10 @@ public sealed partial class Repository
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         string columns = string.Join(", ",
-            Quote("type"), Quote("label_en"), Quote("label"), Quote("desc"), Quote("tag"), Quote("cover"),
-            Quote("extra_info_json"), Quote("prompt"), Quote("ratio"), Quote("media_url"), Quote("owner_id"),
-            Quote("source"), Quote("enabled"), Quote("visibility"), Quote("sort_weight"),
-            Quote("created_at"), Quote("updated_at"));
+            Quote("type"), Quote("labelEn"), Quote("label"), Quote("desc"), Quote("tag"), Quote("cover"),
+            Quote("extraInfoJson"), Quote("prompt"), Quote("ratio"), Quote("mediaUrl"), Quote("ownerId"),
+            Quote("source"), Quote("enabled"), Quote("visibility"), Quote("sortWeight"),
+            Quote("createdAt"), Quote("updatedAt"));
         string values = "@Type, @LabelEn, @Label, @Desc, @Tag, @Cover, @ExtraInfoJSON, @Prompt, @Ratio, " +
                         "@MediaURL, @OwnerID, @Source, @Enabled, @Visibility, @SortWeight, @CreatedAt, @UpdatedAt";
         if (Dialect.IsPostgres)
@@ -258,7 +258,7 @@ public sealed partial class Repository
             Tool? tool = await FirstOrDefaultAsync<Tool>(
                 connection,
                 SqlBuilder.Select<Tool>(
-                    $"{Quote("id")} = @toolID AND {Quote("owner_id")} = @userID AND {Quote("source")} = 'user'",
+                    $"{Quote("id")} = @toolID AND {Quote("ownerId")} = @userID AND {Quote("source")} = 'user'",
                     limitOffset: " LIMIT 1"),
                 new { toolID, userID },
                 transaction,
@@ -269,7 +269,7 @@ public sealed partial class Repository
             }
             await ExecuteAsync(
                 connection,
-                $"DELETE FROM {Quote("tool_favorites")} WHERE {Quote("tool_id")} = @toolID",
+                $"DELETE FROM {Quote("toolFavorites")} WHERE {Quote("toolId")} = @toolID",
                 new { toolID },
                 transaction,
                 cancellationToken).ConfigureAwait(false);

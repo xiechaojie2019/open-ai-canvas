@@ -82,7 +82,7 @@ public sealed class CanvasHistoryTests : IDisposable
         Assert.Equal("automatic", snapshots[0].Reason);
 
         // 快照摘要不含 payload。
-        Assert.DoesNotContain("payload_json", snapshots[0].GetType().GetProperties().ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("payloadJson", snapshots[0].GetType().GetProperties().ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -233,7 +233,7 @@ public sealed class CanvasHistoryTests : IDisposable
         await using Microsoft.Data.Sqlite.SqliteConnection connection =
             (Microsoft.Data.Sqlite.SqliteConnection)_database.CreateConnection();
         await connection.OpenAsync();
-        long? count = await connection.ExecuteScalarAsync<long?>("SELECT COUNT(*) FROM canvas_snapshots");
+        long? count = await connection.ExecuteScalarAsync<long?>("SELECT COUNT(*) FROM \"canvasSnapshots\"");
         return count ?? 0;
     }
 }

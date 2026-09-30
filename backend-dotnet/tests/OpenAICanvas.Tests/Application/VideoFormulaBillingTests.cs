@@ -212,7 +212,7 @@ public sealed class VideoFormulaBillingTests : IDisposable
         await using SqliteConnection connection = (SqliteConnection)_database.CreateConnection();
         await connection.OpenAsync();
         return (await connection.QueryAsync<CreditLedgerEntry>(
-            "SELECT * FROM credit_ledger_entries WHERE billing_order_id = @orderID",
+            "SELECT * FROM \"creditLedgerEntries\" WHERE \"billingOrderId\" = @orderID",
             new { orderID })).AsList();
     }
 }

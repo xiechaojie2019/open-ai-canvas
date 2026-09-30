@@ -12,7 +12,7 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>ApiCallLog</c>，数据库表 <c>api_call_logs</c>。
+/// 对应 Go <c>ApiCallLog</c>，数据库表 <c>apiCallLogs</c>。
 /// 源文件：internal/model/models_channel.go
 /// </summary>
 public class ApiCallLog
@@ -21,30 +21,30 @@ public class ApiCallLog
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>trace_id</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>traceId</c>（maxLength=96）</summary>
     [JsonPropertyName("traceId")]
     [GoOmitEmpty]
     public string TraceID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_id</c>（maxLength=96）</summary>
+    /// <summary>数据库列 <c>requestId</c>（maxLength=96）</summary>
     [JsonPropertyName("requestId")]
     [GoOmitEmpty]
     public string RequestID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>taskId</c>（maxLength=36）</summary>
     [JsonPropertyName("taskId")]
     [GoOmitEmpty]
     public string TaskID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>billing_order_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>billingOrderId</c>（maxLength=36）</summary>
     [JsonPropertyName("billingOrderId")]
     [GoOmitEmpty]
     public string BillingOrderID { get; set; } = string.Empty;
@@ -61,7 +61,7 @@ public class ApiCallLog
     [JsonPropertyName("operation")]
     public string Operation { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_kind</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>requestKind</c>（maxLength=24）</summary>
     [JsonPropertyName("requestKind")]
     public string RequestKind { get; set; } = string.Empty;
 
@@ -69,7 +69,7 @@ public class ApiCallLog
     [JsonPropertyName("billable")]
     public bool Billable { get; set; }
 
-    /// <summary>数据库列 <c>api_format</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>apiFormat</c>（maxLength=24）</summary>
     [JsonPropertyName("apiFormat")]
     public string APIFormat { get; set; } = string.Empty;
 
@@ -89,56 +89,56 @@ public class ApiCallLog
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>status_code</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>statusCode</c>（maxLength=64）</summary>
     [JsonPropertyName("statusCode")]
     public long StatusCode { get; set; }
 
-    /// <summary>数据库列 <c>duration_ms</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>durationMs</c>（maxLength=64）</summary>
     [JsonPropertyName("durationMs")]
     public long DurationMs { get; set; }
 
-    /// <summary>数据库列 <c>poll_count</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>pollCount</c>（maxLength=64）</summary>
     [JsonPropertyName("pollCount")]
     public long PollCount { get; set; }
 
-    /// <summary>数据库列 <c>provider_status</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>providerStatus</c>（maxLength=32）</summary>
     [JsonPropertyName("providerStatus")]
     [GoOmitEmpty]
     public string ProviderStatus { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>input_tokens</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputTokens</c>（maxLength=64）</summary>
     [JsonPropertyName("inputTokens")]
     public long InputTokens { get; set; }
 
-    /// <summary>数据库列 <c>output_tokens</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputTokens</c>（maxLength=64）</summary>
     [JsonPropertyName("outputTokens")]
     public long OutputTokens { get; set; }
 
-    /// <summary>数据库列 <c>cached_tokens</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedTokens</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedTokens")]
     public long CachedTokens { get; set; }
 
-    /// <summary>数据库列 <c>usage_available</c></summary>
+    /// <summary>数据库列 <c>usageAvailable</c></summary>
     [JsonPropertyName("usageAvailable")]
     public bool UsageAvailable { get; set; }
 
-    /// <summary>数据库列 <c>media_count</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>mediaCount</c>（maxLength=64）</summary>
     [JsonPropertyName("mediaCount")]
     public long MediaCount { get; set; }
 
-    /// <summary>数据库列 <c>video_seconds</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>videoSeconds</c>（maxLength=64）</summary>
     [JsonPropertyName("videoSeconds")]
     public long VideoSeconds { get; set; }
 
-    /// <summary>数据库列 <c>provider_request_id</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>providerRequestId</c>（maxLength=160）</summary>
     [JsonPropertyName("providerRequestId")]
     public string ProviderRequestID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>estimated_cost_micros</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>estimatedCostMicros</c>（maxLength=64）</summary>
     [JsonPropertyName("estimatedCostMicros")]
     public long EstimatedCostMicros { get; set; }
 
-    /// <summary>数据库列 <c>cost_available</c></summary>
+    /// <summary>数据库列 <c>costAvailable</c></summary>
     [JsonPropertyName("costAvailable")]
     public bool CostAvailable { get; set; }
 
@@ -146,7 +146,7 @@ public class ApiCallLog
     [JsonPropertyName("currency")]
     public string Currency { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>error_code</c>（maxLength=80）</summary>
+    /// <summary>数据库列 <c>errorCode</c>（maxLength=80）</summary>
     [JsonPropertyName("errorCode")]
     [GoOmitEmpty]
     public string ErrorCode { get; set; } = string.Empty;
@@ -155,34 +155,34 @@ public class ApiCallLog
     [JsonPropertyName("error")]
     public string Error { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>concurrency_limit</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>concurrencyLimit</c>（maxLength=64）</summary>
     [JsonPropertyName("concurrencyLimit")]
     public long ConcurrencyLimit { get; set; }
 
-    /// <summary>数据库列 <c>upstream_url</c></summary>
+    /// <summary>数据库列 <c>upstreamUrl</c></summary>
     [JsonPropertyName("upstreamUrl")]
     public string UpstreamURL { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_content_type</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>requestContentType</c>（maxLength=160）</summary>
     [JsonPropertyName("requestContentType")]
     [GoOmitEmpty]
     public string RequestContentType { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>request_body</c></summary>
+    /// <summary>数据库列 <c>requestBody</c></summary>
     [JsonPropertyName("requestBody")]
     [GoOmitEmpty]
     public string RequestBody { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>response_body</c></summary>
+    /// <summary>数据库列 <c>responseBody</c></summary>
     [JsonPropertyName("responseBody")]
     [GoOmitEmpty]
     public string ResponseBody { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>started_at</c></summary>
+    /// <summary>数据库列 <c>startedAt</c></summary>
     [JsonPropertyName("startedAt")]
     public DateTime StartedAt { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
@@ -244,28 +244,28 @@ public class ApiCallLog
 }
 
 /// <summary>
-/// 对应 Go <c>ChannelModelPriceTier</c>，数据库表 <c>channel_model_price_tiers</c>。
+/// 对应 Go <c>ChannelModelPriceTier</c>，数据库表 <c>channelModelPriceTiers</c>。
 /// 源文件：internal/model/models_channel.go
 /// </summary>
 public class ChannelModelPriceTier
 {
-    /// <summary>数据库列 <c>cost_configured</c>（not null）</summary>
+    /// <summary>数据库列 <c>costConfigured</c>（not null）</summary>
     [JsonIgnore]
     public bool CostConfigured { get; set; }
 
-    /// <summary>数据库列 <c>cost_unit_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costUnitPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostUnitPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_input_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costInputTokenPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostInputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_output_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costOutputTokenPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostOutputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cost_cached_token_price_microcredits</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>costCachedTokenPriceMicrocredits</c>（maxLength=64，not null）</summary>
     [JsonIgnore]
     public long CostCachedTokenPriceMicrocredits { get; set; }
 
@@ -273,15 +273,15 @@ public class ChannelModelPriceTier
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelModelId")]
     public string ChannelModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>selector_key</c>（maxLength=500，not null）</summary>
+    /// <summary>数据库列 <c>selectorKey</c>（maxLength=500，not null）</summary>
     [JsonPropertyName("selectorKey")]
     public string SelectorKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>selector_json</c>（not null）</summary>
+    /// <summary>数据库列 <c>selectorJson</c>（not null）</summary>
     [JsonIgnore]
     public string SelectorJSON { get; set; } = string.Empty;
 
@@ -289,35 +289,35 @@ public class ChannelModelPriceTier
     [JsonPropertyName("resolution")]
     public string Resolution { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>video_seconds</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>videoSeconds</c>（maxLength=64，not null）</summary>
     [JsonPropertyName("videoSeconds")]
     public long VideoSeconds { get; set; }
 
-    /// <summary>数据库列 <c>provider_model_key</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>providerModelKey</c>（maxLength=120）</summary>
     [JsonPropertyName("providerModelKey")]
     public string ProviderModelKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>billing_mode</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>billingMode</c>（maxLength=32）</summary>
     [JsonPropertyName("billingMode")]
     public string BillingMode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>unit_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>unitPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("unitPriceMicrocredits")]
     public long UnitPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>input_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("inputTokenPriceMicrocredits")]
     public long InputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>output_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("outputTokenPriceMicrocredits")]
     public long OutputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cached_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedTokenPriceMicrocredits")]
     public long CachedTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>price_configured</c></summary>
+    /// <summary>数据库列 <c>priceConfigured</c></summary>
     [JsonPropertyName("priceConfigured")]
     public bool PriceConfigured { get; set; }
 
@@ -325,19 +325,19 @@ public class ChannelModelPriceTier
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
-    /// <summary>数据库列 <c>price_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>priceVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("priceVersion")]
     public long PriceVersion { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 
-    /// <summary>数据库列 <c>deleted_at</c></summary>
+    /// <summary>数据库列 <c>deletedAt</c></summary>
     [JsonIgnore]
     public DateTime? DeletedAt { get; set; }
 
@@ -348,7 +348,7 @@ public class ChannelModelPriceTier
 }
 
 /// <summary>
-/// 对应 Go <c>ChannelModel</c>，数据库表 <c>channel_models</c>。
+/// 对应 Go <c>ChannelModel</c>，数据库表 <c>channelModels</c>。
 /// 源文件：internal/model/models_channel.go
 /// </summary>
 public class ChannelModel
@@ -357,23 +357,23 @@ public class ChannelModel
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>model_key</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>modelKey</c>（maxLength=120）</summary>
     [JsonPropertyName("modelKey")]
     public string ModelKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>provider_model_key</c>（maxLength=120）</summary>
+    /// <summary>数据库列 <c>providerModelKey</c>（maxLength=120）</summary>
     [JsonPropertyName("providerModelKey")]
     public string ProviderModelKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>display_name</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>displayName</c>（maxLength=160）</summary>
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_label</c>（maxLength=80，not null）</summary>
+    /// <summary>数据库列 <c>channelLabel</c>（maxLength=80，not null）</summary>
     [JsonPropertyName("channelLabel")]
     public string ChannelLabel { get; set; } = string.Empty;
 
@@ -385,7 +385,7 @@ public class ChannelModel
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>sort_order</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>sortOrder</c>（maxLength=64，not null）</summary>
     [JsonPropertyName("sortOrder")]
     public long SortOrder { get; set; }
 
@@ -401,27 +401,27 @@ public class ChannelModel
     [JsonPropertyName("protocol")]
     public string Protocol { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>billing_mode</c>（maxLength=32）</summary>
+    /// <summary>数据库列 <c>billingMode</c>（maxLength=32）</summary>
     [JsonPropertyName("billingMode")]
     public string BillingMode { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>unit_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>unitPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("unitPriceMicrocredits")]
     public long UnitPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>input_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>inputTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("inputTokenPriceMicrocredits")]
     public long InputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>output_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>outputTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("outputTokenPriceMicrocredits")]
     public long OutputTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>cached_token_price_microcredits</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>cachedTokenPriceMicrocredits</c>（maxLength=64）</summary>
     [JsonPropertyName("cachedTokenPriceMicrocredits")]
     public long CachedTokenPriceMicrocredits { get; set; }
 
-    /// <summary>数据库列 <c>price_configured</c></summary>
+    /// <summary>数据库列 <c>priceConfigured</c></summary>
     [JsonPropertyName("priceConfigured")]
     public bool PriceConfigured { get; set; }
 
@@ -429,27 +429,27 @@ public class ChannelModel
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; }
 
-    /// <summary>数据库列 <c>price_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>priceVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("priceVersion")]
     public long PriceVersion { get; set; }
 
-    /// <summary>数据库列 <c>capability_config_json</c></summary>
+    /// <summary>数据库列 <c>capabilityConfigJson</c></summary>
     [JsonIgnore]
     public string CapabilityConfigJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>capability_version</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>capabilityVersion</c>（maxLength=64）</summary>
     [JsonPropertyName("capabilityVersion")]
     public long CapabilityVersion { get; set; }
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 
-    /// <summary>数据库列 <c>deleted_at</c></summary>
+    /// <summary>数据库列 <c>deletedAt</c></summary>
     [JsonIgnore]
     public DateTime? DeletedAt { get; set; }
 
@@ -464,7 +464,7 @@ public class ChannelModel
 }
 
 /// <summary>
-/// 对应 Go <c>ModelChannel</c>，数据库表 <c>model_channels</c>。
+/// 对应 Go <c>ModelChannel</c>，数据库表 <c>modelChannels</c>。
 /// 源文件：internal/model/models_channel.go
 /// </summary>
 public class ModelChannel
@@ -473,7 +473,7 @@ public class ModelChannel
     [JsonPropertyName("id")]
     public string ID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
@@ -489,55 +489,55 @@ public class ModelChannel
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>public_alias</c>（maxLength=80，not null）</summary>
+    /// <summary>数据库列 <c>publicAlias</c>（maxLength=80，not null）</summary>
     [JsonIgnore]
     public string PublicAlias { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>sort_order</c>（maxLength=64，not null）</summary>
+    /// <summary>数据库列 <c>sortOrder</c>（maxLength=64，not null）</summary>
     [JsonPropertyName("sortOrder")]
     public long SortOrder { get; set; }
 
-    /// <summary>数据库列 <c>base_url</c></summary>
+    /// <summary>数据库列 <c>baseUrl</c></summary>
     [JsonPropertyName("baseUrl")]
     public string BaseURL { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>api_key</c></summary>
+    /// <summary>数据库列 <c>apiKey</c></summary>
     [JsonIgnore]
     public string APIKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>secret_key</c></summary>
+    /// <summary>数据库列 <c>secretKey</c></summary>
     [JsonIgnore]
     public string SecretKey { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>api_format</c>（maxLength=24）</summary>
+    /// <summary>数据库列 <c>apiFormat</c>（maxLength=24）</summary>
     [JsonPropertyName("apiFormat")]
     public string APIFormat { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>concurrency_limit</c>（maxLength=64）</summary>
+    /// <summary>数据库列 <c>concurrencyLimit</c>（maxLength=64）</summary>
     [JsonPropertyName("concurrencyLimit")]
     public long ConcurrencyLimit { get; set; }
 
-    /// <summary>数据库列 <c>models_json</c></summary>
+    /// <summary>数据库列 <c>modelsJson</c></summary>
     [JsonPropertyName("modelsJson")]
     public string ModelsJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>retired_models_json</c></summary>
+    /// <summary>数据库列 <c>retiredModelsJson</c></summary>
     [JsonIgnore]
     public string RetiredModelsJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>headers_json</c></summary>
+    /// <summary>数据库列 <c>headersJson</c></summary>
     [JsonIgnore]
     public string HeadersJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 
-    /// <summary>数据库列 <c>deleted_at</c></summary>
+    /// <summary>数据库列 <c>deletedAt</c></summary>
     [JsonIgnore]
     public DateTime? DeletedAt { get; set; }
 }

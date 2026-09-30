@@ -376,7 +376,7 @@ public class RepositoryTests : IDisposable
 
         await using System.Data.Common.DbConnection connection = await _database.OpenAsync();
         long loginCount = await connection.ExecuteScalarAsync<long>(
-            "SELECT \"login_count\" FROM \"user_daily_activities\" WHERE \"user_id\" = 'USR_UPSERT'");
+            "SELECT \"loginCount\" FROM \"userDailyActivities\" WHERE \"userId\" = 'USR_UPSERT'");
         Assert.Equal(2, loginCount);
     }
 

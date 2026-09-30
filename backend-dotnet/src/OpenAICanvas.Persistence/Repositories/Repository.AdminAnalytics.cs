@@ -73,14 +73,14 @@ public sealed partial class Repository
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long total = await ScalarAsync<long>(
-            connection, "SELECT COUNT(*) FROM \"api_call_logs\" WHERE " + where, parameters,
+            connection, "SELECT COUNT(*) FROM \"apiCallLogs\" WHERE " + where, parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         parameters.Add("limit", filter.Limit);
         parameters.Add("offset", (filter.Page - 1) * filter.Limit);
         IReadOnlyList<ApiCallLog> logs = await QueryAsync<ApiCallLog>(
             connection,
-            SqlBuilder.Select<ApiCallLog>(where, "created_at DESC", Dialect.LimitOffset(filter.Limit, (filter.Page - 1) * filter.Limit)),
+            SqlBuilder.Select<ApiCallLog>(where, "\"createdAt\" DESC", Dialect.LimitOffset(filter.Limit, (filter.Page - 1) * filter.Limit)),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return (logs, total);
@@ -95,20 +95,20 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<ApiCallLog>(
             connection,
-            SqlBuilder.Select<ApiCallLog>(where, "created_at DESC", " LIMIT @limit"),
+            SqlBuilder.Select<ApiCallLog>(where, "\"createdAt\" DESC", " LIMIT @limit"),
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private (string Where, DynamicParameters Parameters) BuildApiCallLogFilter(ApiCallLogFilter filter)
     {
-        List<string> conditions = ["\"created_at\" >= @from", "\"created_at\" < @to"];
+        List<string> conditions = ["\"createdAt\" >= @from", "\"createdAt\" < @to"];
         DynamicParameters parameters = new();
         parameters.Add("from", filter.Analytics.From);
         parameters.Add("to", filter.Analytics.To);
         if (filter.Analytics.UserID.Length > 0)
         {
-            conditions.Add("\"user_id\" = @userId");
+            conditions.Add("\"userId\" = @userId");
             parameters.Add("userId", filter.Analytics.UserID);
         }
         if (filter.Analytics.Model.Length > 0)
@@ -118,7 +118,7 @@ public sealed partial class Repository
         }
         if (filter.Analytics.ChannelID.Length > 0)
         {
-            conditions.Add("\"channel_id\" = @channelId");
+            conditions.Add("\"channelId\" = @channelId");
             parameters.Add("channelId", filter.Analytics.ChannelID);
         }
         if (filter.Analytics.Capability.Length > 0)
@@ -132,13 +132,13 @@ public sealed partial class Repository
         switch (filter.RecordType)
         {
             case "download":
-                conditions.Add("\"request_kind\" = @requestKindDownload");
+                conditions.Add("\"requestKind\" = @requestKindDownload");
                 parameters.Add("requestKindDownload", "download");
                 break;
             case "all":
                 break;
             default:
-                conditions.Add("(\"request_kind\" IS NULL OR (\"request_kind\" <> @requestKindPoll AND \"request_kind\" <> @requestKindDownload))");
+                conditions.Add("(\"requestKind\" IS NULL OR (\"requestKind\" <> @requestKindPoll AND \"requestKind\" <> @requestKindDownload))");
                 parameters.Add("requestKindPoll", "poll");
                 parameters.Add("requestKindDownload", "download");
                 break;
@@ -213,7 +213,7 @@ public sealed partial class Repository
         return await QueryAsync<ModelChannel>(
             connection,
             SqlBuilder.SelectColumns<ModelChannel>(
-                ["ID", "Name", "Enabled"], "scope = @scope", "created_at ASC"),
+                ["ID", "Name", "Enabled"], "scope = @scope", "\"createdAt\" ASC"),
             new { scope = "system" },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -251,7 +251,7 @@ public sealed partial class Repository
                   SELECT {ResourceProviderExpression} AS "Provider", MAX("size") AS "Size"
                   FROM "resources"
                   WHERE "status" = @ready
-                  GROUP BY {ResourceProviderExpression}, "endpoint", "bucket", "object_key"
+                  GROUP BY {ResourceProviderExpression}, "endpoint", "bucket", "objectKey"
                 )
                 SELECT
                   CAST(COUNT(*) AS BIGINT) AS "ResourceCount",
@@ -285,7 +285,7 @@ public sealed partial class Repository
               SELECT "kind" AS "Kind", MAX("size") AS "Size"
               FROM "resources"
               WHERE "status" = @ready
-              GROUP BY "kind", {ResourceProviderExpression}, "endpoint", "bucket", "object_key"
+              GROUP BY "kind", {ResourceProviderExpression}, "endpoint", "bucket", "objectKey"
             ), "physical_stats" AS (
               SELECT "Kind", CAST(COALESCE(SUM("Size"), 0) AS BIGINT) AS "PhysicalBytes"
               FROM "physical_resources"
@@ -323,7 +323,7 @@ public sealed partial class Repository
               SELECT {ResourceProviderExpression} AS "Provider", MAX("size") AS "Size"
               FROM "resources"
               WHERE "status" = @ready
-              GROUP BY {ResourceProviderExpression}, "endpoint", "bucket", "object_key"
+              GROUP BY {ResourceProviderExpression}, "endpoint", "bucket", "objectKey"
             ), "physical_stats" AS (
               SELECT "Provider", CAST(COALESCE(SUM("Size"), 0) AS BIGINT) AS "PhysicalBytes"
               FROM "physical_resources"

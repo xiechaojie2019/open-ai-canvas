@@ -27,7 +27,7 @@ public sealed partial class Repository
 
         await ExecuteAsync(
             connection,
-            "DELETE FROM canvas_unit_links WHERE project_id = @projectId AND canvas_id = @canvasId",
+            "DELETE FROM \"canvasUnitLinks\" WHERE \"projectId\" = @projectId AND \"canvasId\" = @canvasId",
             new { projectId, canvasId },
             transaction,
             cancellationToken).ConfigureAwait(false);
@@ -35,8 +35,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE canvas_projects SET project_id = '', payload_json = @payloadJson, updated_at = @updatedAt, revision = @nextRevision
-            WHERE id = @canvasId AND user_id = @userId AND project_id = @projectId AND revision = @revision
+            UPDATE "canvasProjects" SET "projectId" = '', "payloadJson" = @payloadJson, "updatedAt" = @updatedAt, revision = @nextRevision
+            WHERE id = @canvasId AND "userId" = @userId AND "projectId" = @projectId AND revision = @revision
             """,
             new { canvasId, userId, projectId, payloadJson, updatedAt, revision, nextRevision = revision + 1 },
             transaction,
@@ -49,7 +49,7 @@ public sealed partial class Repository
 
         await ExecuteAsync(
             connection,
-            "UPDATE projects SET revision = revision + 1, updated_at = @updatedAt WHERE id = @projectId",
+            "UPDATE projects SET revision = revision + 1, \"updatedAt\" = @updatedAt WHERE id = @projectId",
             new { updatedAt, projectId },
             transaction,
             cancellationToken).ConfigureAwait(false);

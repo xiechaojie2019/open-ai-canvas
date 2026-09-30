@@ -54,7 +54,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<ProjectKeyValueRow> rows = await QueryAsync<ProjectKeyValueRow>(
             connection,
-            "SELECT unit_id AS KeyValue, COUNT(DISTINCT canvas_id) AS CountValue FROM canvas_unit_links WHERE project_id = @projectId GROUP BY unit_id",
+            "SELECT \"unitId\" AS KeyValue, COUNT(DISTINCT \"canvasId\") AS CountValue FROM \"canvasUnitLinks\" WHERE \"projectId\" = @projectId GROUP BY \"unitId\"",
             new { projectId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         Dictionary<string, long> counts = new(StringComparer.Ordinal);
@@ -74,20 +74,20 @@ public sealed partial class Repository
             connection,
             $"""
             SELECT
-                (SELECT COUNT(*) FROM project_units WHERE project_id = @projectId) AS UnitCount,
-                (SELECT COUNT(*) FROM project_units WHERE project_id = @projectId AND status = 'completed') AS CompletedUnitCount,
-                (SELECT COALESCE(SUM(word_count), 0) FROM project_units WHERE project_id = @projectId) AS TotalWordCount,
-                (SELECT COUNT(*) FROM project_units WHERE project_id = @projectId AND word_count = 0) AS UnitsWithoutText,
-                (SELECT COUNT(*) FROM project_units pu WHERE pu.project_id = @projectId AND pu.status <> 'draft' AND NOT EXISTS (SELECT 1 FROM shots s WHERE s.project_id = pu.project_id AND s.unit_id = pu.id)) AS UnitsWithoutShots,
-                (SELECT COUNT(*) FROM canvas_projects WHERE project_id = @projectId) AS CanvasCount,
-                (SELECT COUNT(*) FROM project_asset_links WHERE project_id = @projectId) AS AssetCount,
-                (SELECT COUNT(*) FROM shots WHERE project_id = @projectId) AS ShotCount,
-                (SELECT COUNT(*) FROM project_asset_candidates WHERE project_id = @projectId AND status = 'pending_confirmation') AS PendingCandidateCount,
-                (SELECT COUNT(DISTINCT shot_id) FROM shot_artifacts WHERE project_id = @projectId AND type = 'storyboard' AND selected = @selectedTrue AND status = 'ready') AS ReadyStoryboardCount,
-                (SELECT COUNT(DISTINCT shot_id) FROM shot_artifacts WHERE project_id = @projectId AND type = 'action_board' AND selected = @selectedTrue AND status = 'ready') AS ReadyPrevizCount,
-                (SELECT COUNT(DISTINCT shot_id) FROM shot_artifacts WHERE project_id = @projectId AND type = 'video' AND selected = @selectedTrue AND status = 'ready') AS ReadyVideoCount,
-                (SELECT COUNT(*) FROM tasks WHERE project_id = @projectId AND type = 'timeline_render' AND status = 'succeeded') AS TimelineRenderSucceededCount,
-                (SELECT COUNT(*) FROM shot_artifacts WHERE project_id = @projectId AND status = 'stale') AS StaleArtifactCount
+                (SELECT COUNT(*) FROM "projectUnits" WHERE "projectId" = @projectId) AS UnitCount,
+                (SELECT COUNT(*) FROM "projectUnits" WHERE "projectId" = @projectId AND status = 'completed') AS CompletedUnitCount,
+                (SELECT COALESCE(SUM("wordCount"), 0) FROM "projectUnits" WHERE "projectId" = @projectId) AS TotalWordCount,
+                (SELECT COUNT(*) FROM "projectUnits" WHERE "projectId" = @projectId AND "wordCount" = 0) AS UnitsWithoutText,
+                (SELECT COUNT(*) FROM "projectUnits" pu WHERE pu."projectId" = @projectId AND pu.status <> 'draft' AND NOT EXISTS (SELECT 1 FROM shots s WHERE s."projectId" = pu."projectId" AND s."unitId" = pu.id)) AS UnitsWithoutShots,
+                (SELECT COUNT(*) FROM "canvasProjects" WHERE "projectId" = @projectId) AS CanvasCount,
+                (SELECT COUNT(*) FROM "projectAssetLinks" WHERE "projectId" = @projectId) AS AssetCount,
+                (SELECT COUNT(*) FROM shots WHERE "projectId" = @projectId) AS ShotCount,
+                (SELECT COUNT(*) FROM "projectAssetCandidates" WHERE "projectId" = @projectId AND status = 'pending_confirmation') AS PendingCandidateCount,
+                (SELECT COUNT(DISTINCT "shotId") FROM "shotArtifacts" WHERE "projectId" = @projectId AND type = 'storyboard' AND selected = @selectedTrue AND status = 'ready') AS ReadyStoryboardCount,
+                (SELECT COUNT(DISTINCT "shotId") FROM "shotArtifacts" WHERE "projectId" = @projectId AND type = 'action_board' AND selected = @selectedTrue AND status = 'ready') AS ReadyPrevizCount,
+                (SELECT COUNT(DISTINCT "shotId") FROM "shotArtifacts" WHERE "projectId" = @projectId AND type = 'video' AND selected = @selectedTrue AND status = 'ready') AS ReadyVideoCount,
+                (SELECT COUNT(*) FROM tasks WHERE "projectId" = @projectId AND type = 'timeline_render' AND status = 'succeeded') AS TimelineRenderSucceededCount,
+                (SELECT COUNT(*) FROM "shotArtifacts" WHERE "projectId" = @projectId AND status = 'stale') AS StaleArtifactCount
             """,
             new { projectId, selectedTrue = Dialect.Boolean(true) },
             cancellationToken: cancellationToken).ConfigureAwait(false) ?? new ProjectOverviewMetricsRow();
@@ -105,14 +105,14 @@ public sealed partial class Repository
         return await QueryAsync<ProjectOverviewUnitRow>(
             connection,
             """
-            SELECT pu.id, pu.project_id, pu.parent_id, pu.kind, pu.title, pu.word_count, pu.status, pu.position,
-                pu.created_at, pu.updated_at,
-                (SELECT COUNT(*) FROM shots s WHERE s.project_id = pu.project_id AND s.unit_id = pu.id) AS ShotCount,
-                (SELECT COUNT(*) FROM project_asset_candidates pac WHERE pac.project_id = pu.project_id AND pac.unit_id = pu.id) AS CandidateCount,
-                (SELECT COUNT(DISTINCT cul.canvas_id) FROM canvas_unit_links cul WHERE cul.project_id = pu.project_id AND cul.unit_id = pu.id) AS CanvasCount
-            FROM project_units pu
-            WHERE pu.project_id = @projectId
-            ORDER BY pu.position ASC, pu.created_at ASC
+            SELECT pu.id, pu."projectId", pu."parentId", pu.kind, pu.title, pu."wordCount", pu.status, pu.position,
+                pu."createdAt", pu."updatedAt",
+                (SELECT COUNT(*) FROM shots s WHERE s."projectId" = pu."projectId" AND s."unitId" = pu.id) AS ShotCount,
+                (SELECT COUNT(*) FROM "projectAssetCandidates" pac WHERE pac."projectId" = pu."projectId" AND pac."unitId" = pu.id) AS CandidateCount,
+                (SELECT COUNT(DISTINCT cul."canvasId") FROM "canvasUnitLinks" cul WHERE cul."projectId" = pu."projectId" AND cul."unitId" = pu.id) AS CanvasCount
+            FROM "projectUnits" pu
+            WHERE pu."projectId" = @projectId
+            ORDER BY pu.position ASC, pu."createdAt" ASC
             LIMIT @limit
             """,
             new { projectId, limit },

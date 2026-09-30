@@ -33,8 +33,8 @@ public sealed partial class Repository
     /// </summary>
     private static string TaskLeaseWriterCondition(string owner) =>
         owner.Length == 0
-            ? "(lease_owner = '' OR lease_owner IS NULL)"
-            : "lease_owner = @owner AND lease_expires_at > @now";
+            ? "(\"leaseOwner\" = '' OR \"leaseOwner\" IS NULL)"
+            : "\"leaseOwner\" = @owner AND \"leaseExpiresAt\" > @now";
 
     private static object TaskLeaseWriterParameters(string owner) =>
         owner.Length == 0
@@ -62,11 +62,11 @@ public sealed partial class Repository
 
         DateTime now = DateTime.UtcNow;
         string claimCondition =
-            "(status = @queued OR (status = @running AND (lease_expires_at IS NULL OR lease_expires_at <= @now))) "
-            + "AND (next_poll_at IS NULL OR next_poll_at <= @now)";
+            "(status = @queued OR (status = @running AND (\"leaseExpiresAt\" IS NULL OR \"leaseExpiresAt\" <= @now))) "
+            + "AND (\"nextPollAt\" IS NULL OR \"nextPollAt\" <= @now)";
         var claimParams = new { queued = TaskStatus.TaskStatusQueued, running = TaskStatus.TaskStatusRunning, now };
 
-        string selectSql = SqlBuilder.Select<TaskEntity>(claimCondition, orderBy: "created_at ASC", limitOffset: " LIMIT 1");
+        string selectSql = SqlBuilder.Select<TaskEntity>(claimCondition, orderBy: "\"createdAt\" ASC", limitOffset: " LIMIT 1");
         if (Dialect.IsPostgres)
         {
             selectSql += " FOR UPDATE SKIP LOCKED";
@@ -88,8 +88,8 @@ public sealed partial class Repository
         }
         string updateSql =
             "UPDATE tasks SET status = @running, stage = @stage, progress = @progress, "
-            + "attempts = attempts + 1, started_at = COALESCE(started_at, @now), "
-            + "lease_owner = @owner, lease_expires_at = @leaseExpiresAt, next_poll_at = NULL, updated_at = @now "
+            + "attempts = attempts + 1, \"startedAt\" = COALESCE(\"startedAt\", @now), "
+            + "\"leaseOwner\" = @owner, \"leaseExpiresAt\" = @leaseExpiresAt, \"nextPollAt\" = NULL, \"updatedAt\" = @now "
             + "WHERE " + updateWhere;
         int affected = await ExecuteAsync(
             connection,
@@ -133,8 +133,8 @@ public sealed partial class Repository
         DateTime now = DateTime.UtcNow;
         int affected = await ExecuteAsync(
             connection,
-            "UPDATE tasks SET lease_expires_at = @newExpiresAt, updated_at = @now "
-            + "WHERE id = @id AND status = @running AND lease_owner = @owner AND lease_expires_at > @now",
+            "UPDATE tasks SET \"leaseExpiresAt\" = @newExpiresAt, \"updatedAt\" = @now "
+            + "WHERE id = @id AND status = @running AND \"leaseOwner\" = @owner AND \"leaseExpiresAt\" > @now",
             new
             {
                 id,
@@ -157,8 +157,8 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await ExecuteAsync(
             connection,
-            "UPDATE tasks SET lease_owner = '', lease_expires_at = NULL, updated_at = @now "
-            + "WHERE id = @id AND status = @running AND lease_owner = @owner",
+            "UPDATE tasks SET \"leaseOwner\" = '', \"leaseExpiresAt\" = NULL, \"updatedAt\" = @now "
+            + "WHERE id = @id AND status = @running AND \"leaseOwner\" = @owner",
             new { id, owner, now = DateTime.UtcNow, running = TaskStatus.TaskStatusRunning },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -176,8 +176,8 @@ public sealed partial class Repository
         DateTime now = DateTime.UtcNow;
         int affected = await ExecuteAsync(
             connection,
-            "UPDATE tasks SET stage = @stage, error = '', completed_at = NULL, next_poll_at = @nextPollAt, "
-            + "lease_owner = '', lease_expires_at = NULL, updated_at = @now "
+            "UPDATE tasks SET stage = @stage, error = '', \"completedAt\" = NULL, \"nextPollAt\" = @nextPollAt, "
+            + "\"leaseOwner\" = '', \"leaseExpiresAt\" = NULL, \"updatedAt\" = @now "
             + "WHERE id = @id AND status = @running AND " + TaskLeaseWriterCondition(owner),
             MergeParameters(
                 new { id, stage, nextPollAt = now.Add(delay), now, running = TaskStatus.TaskStatusRunning },
@@ -196,7 +196,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int affected = await ExecuteAsync(
             connection,
-            "UPDATE tasks SET stage = @stage, progress = @progress, updated_at = @now "
+            "UPDATE tasks SET stage = @stage, progress = @progress, \"updatedAt\" = @now "
             + "WHERE id = @id AND status = @running AND " + TaskLeaseWriterCondition(owner),
             MergeParameters(
                 new { id, stage, progress, now = DateTime.UtcNow, running = TaskStatus.TaskStatusRunning },
@@ -226,8 +226,8 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         int affected = await ExecuteAsync(
             connection,
-            "UPDATE tasks SET status = @status, stage = @stage, error = @error, completed_at = @completedAt, "
-            + "lease_owner = '', lease_expires_at = NULL, updated_at = @completedAt "
+            "UPDATE tasks SET status = @status, stage = @stage, error = @error, \"completedAt\" = @completedAt, "
+            + "\"leaseOwner\" = '', \"leaseExpiresAt\" = NULL, \"updatedAt\" = @completedAt "
             + "WHERE id = @id AND status = @expected AND " + TaskLeaseWriterCondition(owner),
             MergeParameters(
                 new
@@ -296,13 +296,13 @@ public sealed partial class Repository
             new[]
             {
                 "status = @status", "stage = @stage", "progress = @progress", "prompt = @prompt",
-                "error = @error", "input_json = @inputJson", "result_json = @resultJson",
-                "text_draft = @textDraft", "provider_request_id = @providerRequestId",
-                "provider_cancel_status = @providerCancelStatus", "provider_cancel_error = @providerCancelError",
-                "provider_cancel_attempts = @providerCancelAttempts", "poll_stage = @pollStage",
-                "completed_at = @completedAt", "started_at = @startedAt",
-                "lease_owner = @leaseOwner", "lease_expires_at = @leaseExpiresAt",
-                "next_poll_at = @nextPollAt", "updated_at = @updatedAt",
+                "error = @error", "\"inputJson\" = @inputJson", "\"resultJson\" = @resultJson",
+                "\"textDraft\" = @textDraft", "\"providerRequestId\" = @providerRequestId",
+                "\"providerCancelStatus\" = @providerCancelStatus", "\"providerCancelError\" = @providerCancelError",
+                "\"providerCancelAttempts\" = @providerCancelAttempts", "\"pollStage\" = @pollStage",
+                "\"completedAt\" = @completedAt", "\"startedAt\" = @startedAt",
+                "\"leaseOwner\" = @leaseOwner", "\"leaseExpiresAt\" = @leaseExpiresAt",
+                "\"nextPollAt\" = @nextPollAt", "\"updatedAt\" = @updatedAt",
             });
         int affected = await ExecuteAsync(
             connection,

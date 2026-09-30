@@ -12,28 +12,28 @@ using OpenAICanvas.Domain.Serialization;
 namespace OpenAICanvas.Domain.Entities;
 
 /// <summary>
-/// 对应 Go <c>AgentMemorySetting</c>，数据库表 <c>agent_memory_settings</c>。
+/// 对应 Go <c>AgentMemorySetting</c>，数据库表 <c>agentMemorySettings</c>。
 /// 源文件：internal/model/models_agent_memory_setting.go
 /// </summary>
 public class AgentMemorySetting
 {
-    /// <summary>数据库列 <c>user_id</c>（maxLength=36，主键）</summary>
+    /// <summary>数据库列 <c>userId</c>（maxLength=36，主键）</summary>
     [JsonPropertyName("userId")]
     public string UserID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>compact_interval</c>（maxLength=16）</summary>
+    /// <summary>数据库列 <c>compactInterval</c>（maxLength=16）</summary>
     [JsonPropertyName("compactInterval")]
     public string CompactInterval { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>logical_model_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>logicalModelId</c>（maxLength=36）</summary>
     [JsonPropertyName("logicalModelId")]
     public string LogicalModelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>channelId</c>（maxLength=36）</summary>
     [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>channel_model_key</c>（maxLength=160）</summary>
+    /// <summary>数据库列 <c>channelModelKey</c>（maxLength=160）</summary>
     [JsonPropertyName("channelModelKey")]
     public string ChannelModelKey { get; set; } = string.Empty;
 
@@ -41,39 +41,39 @@ public class AgentMemorySetting
     [JsonPropertyName("model")]
     public string Model { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>last_compact_at</c></summary>
+    /// <summary>数据库列 <c>lastCompactAt</c></summary>
     [JsonPropertyName("lastCompactAt")]
     [GoOmitEmpty]
     public DateTime? LastCompactAt { get; set; }
 
-    /// <summary>数据库列 <c>compact_started_at</c></summary>
+    /// <summary>数据库列 <c>compactStartedAt</c></summary>
     [JsonPropertyName("compactStartedAt")]
     [GoOmitEmpty]
     public DateTime? CompactStartedAt { get; set; }
 
-    /// <summary>数据库列 <c>compact_task_id</c>（maxLength=36）</summary>
+    /// <summary>数据库列 <c>compactTaskId</c>（maxLength=36）</summary>
     [JsonPropertyName("compactTaskId")]
     [GoOmitEmpty]
     public string CompactTaskID { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>last_status</c>（maxLength=16）</summary>
+    /// <summary>数据库列 <c>lastStatus</c>（maxLength=16）</summary>
     [JsonPropertyName("lastStatus")]
     public string LastStatus { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>last_summary_json</c></summary>
+    /// <summary>数据库列 <c>lastSummaryJson</c></summary>
     [JsonIgnore]
     public string LastSummaryJSON { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>last_error</c></summary>
+    /// <summary>数据库列 <c>lastError</c></summary>
     [JsonPropertyName("lastError")]
     [GoOmitEmpty]
     public string LastError { get; set; } = string.Empty;
 
-    /// <summary>数据库列 <c>created_at</c></summary>
+    /// <summary>数据库列 <c>createdAt</c></summary>
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>数据库列 <c>updated_at</c></summary>
+    /// <summary>数据库列 <c>updatedAt</c></summary>
     [JsonPropertyName("updatedAt")]
     public DateTime UpdatedAt { get; set; }
 }

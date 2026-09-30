@@ -285,5 +285,13 @@ public static class SqlBuilder
         return parameters;
     }
 
-    private static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"") + "\"";
+    /// <summary>
+    /// 引用标识符。两个 provider 都用双引号。
+    /// </summary>
+    /// <remarks>
+    /// camelCase 物理名必须始终带引号：PostgreSQL 会把未加引号的标识符折叠成小写，
+    /// 裸写 <c>userId</c> 会变成 <c>userid</c> 而找不到列。SQLite 虽然大小写不敏感，
+    /// 但统一带引号才能让两种方言行为一致。
+    /// </remarks>
+    public static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"") + "\"";
 }

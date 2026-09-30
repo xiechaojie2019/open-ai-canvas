@@ -56,12 +56,12 @@ public sealed partial class Repository
         }
         if (filter.UserID.Length > 0)
         {
-            conditions.Add("\"user_id\" = @userId");
+            conditions.Add("\"userId\" = @userId");
             parameters.Add("userId", filter.UserID);
         }
         if (filter.Keyword.Length > 0)
         {
-            conditions.Add("(lower(\"id\") LIKE @pattern OR lower(\"object_key\") LIKE @pattern)");
+            conditions.Add("(lower(\"id\") LIKE @pattern OR lower(\"objectKey\") LIKE @pattern)");
             parameters.Add("pattern", "%" + filter.Keyword.ToLowerInvariant() + "%");
         }
         string where = conditions.Count > 0 ? string.Join(" AND ", conditions) : "1 = 1";
@@ -79,7 +79,7 @@ public sealed partial class Repository
         // 必须走 SqlBuilder 的列名映射（Dapper 默认不会把 user_id 映射到 UserID）。
         IReadOnlyList<Resource> resources = await QueryAsync<Resource>(
             connection,
-            SqlBuilder.Select<Resource>(where, "created_at DESC, id DESC", Dialect.LimitOffset(filter.Limit, filter.Offset)),
+            SqlBuilder.Select<Resource>(where, "\"createdAt\" DESC, id DESC", Dialect.LimitOffset(filter.Limit, filter.Offset)),
             pageParameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return (resources, total);
@@ -115,7 +115,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<Announcement> announcements = await QueryAsync<Announcement>(
             connection,
-            SqlBuilder.Select<Announcement>("image_resource_id IN @resourceIds"),
+            SqlBuilder.Select<Announcement>("\"imageResourceId\" IN @resourceIds"),
             new { resourceIds },
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return [.. announcements.Select(announcement => new ResourceDirectReference(
@@ -159,10 +159,10 @@ public sealed partial class Repository
 
             foreach ((string table, string column) in new[]
                      {
-                         ("announcements", "image_resource_id"),
-                         ("asset_representations", "resource_id"),
-                         ("voice_profiles", "sample_resource_id"),
-                         ("shot_artifacts", "resource_id"),
+                         ("announcements", "imageResourceId"),
+                         ("assetRepresentations", "resourceId"),
+                         ("voiceProfiles", "sampleResourceId"),
+                         ("shotArtifacts", "resourceId"),
                      })
             {
                 long count = await ScalarAsync<long>(
@@ -178,10 +178,10 @@ public sealed partial class Repository
             }
 
             await ExecuteAsync(connection,
-                "DELETE FROM \"ark_private_asset_bindings\" WHERE \"resource_id\" IN @resourceIds",
+                "DELETE FROM \"arkPrivateAssetBindings\" WHERE \"resourceId\" IN @resourceIds",
                 new { resourceIds }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"announcement_image_drafts\" WHERE \"resource_id\" IN @resourceIds",
+                "DELETE FROM \"announcementImageDrafts\" WHERE \"resourceId\" IN @resourceIds",
                 new { resourceIds }, transaction, cancellationToken).ConfigureAwait(false);
 
             foreach (ResourceDeletionJob job in deletionJobs)

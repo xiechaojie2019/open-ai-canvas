@@ -33,7 +33,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<CanvasProject>(
             connection,
-            SqlBuilder.Select<CanvasProject>("user_id = @userId", "updated_at DESC"),
+            SqlBuilder.Select<CanvasProject>("\"userId\" = @userId", "\"updatedAt\" DESC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -47,7 +47,7 @@ public sealed partial class Repository
         return await QueryAsync<CanvasProject>(
             connection,
             SqlBuilder.SelectColumns<CanvasProject>(
-                ["ID", "Title", "CreatedAt", "UpdatedAt", "Revision"], "user_id = @userId", "updated_at DESC"),
+                ["ID", "Title", "CreatedAt", "UpdatedAt", "Revision"], "\"userId\" = @userId", "\"updatedAt\" DESC"),
             new { userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -61,7 +61,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await FirstOrDefaultAsync<CanvasProject>(
             connection,
-            SqlBuilder.Select<CanvasProject>("id = @id AND user_id = @userId", limitOffset: " LIMIT 1"),
+            SqlBuilder.Select<CanvasProject>("id = @id AND \"userId\" = @userId", limitOffset: " LIMIT 1"),
             new { id, userId },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -121,8 +121,8 @@ public sealed partial class Repository
         int updated = await ExecuteAsync(
             connection,
             """
-            UPDATE "canvas_projects" SET "project_id" = @ProjectID, "title" = @Title, "payload_json" = @PayloadJSON, "updated_at" = @UpdatedAt, "revision" = @NextRevision
-            WHERE "id" = @ID AND "user_id" = @UserID AND "revision" = @ExpectedRevision
+            UPDATE "canvasProjects" SET "projectId" = @ProjectID, "title" = @Title, "payloadJson" = @PayloadJSON, "updatedAt" = @UpdatedAt, "revision" = @NextRevision
+            WHERE "id" = @ID AND "userId" = @UserID AND "revision" = @ExpectedRevision
             """,
             new { project.ProjectID, project.Title, project.PayloadJSON, project.UpdatedAt, NextRevision = expected + 1, project.ID, project.UserID, ExpectedRevision = expected },
             transaction,
@@ -147,14 +147,14 @@ public sealed partial class Repository
         {
             await ExecuteAsync(
                 connection,
-                "DELETE FROM \"canvas_shares\" WHERE \"user_id\" = @userId AND \"project_id\" = @id",
+                "DELETE FROM \"canvasShares\" WHERE \"userId\" = @userId AND \"projectId\" = @id",
                 new { userId, id },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
 
             await ExecuteAsync(
                 connection,
-                "DELETE FROM \"canvas_unit_links\" WHERE \"canvas_id\" = @id",
+                "DELETE FROM \"canvasUnitLinks\" WHERE \"canvasId\" = @id",
                 new { id },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -162,14 +162,14 @@ public sealed partial class Repository
             // 任务是审计记录，不随独立画布实体保留归属 ID，避免删除后继续挂住画布上下文。
             await ExecuteAsync(
                 connection,
-                "UPDATE \"tasks\" SET \"project_id\" = '' WHERE \"user_id\" = @userId AND \"project_id\" = @id",
+                "UPDATE \"tasks\" SET \"projectId\" = '' WHERE \"userId\" = @userId AND \"projectId\" = @id",
                 new { userId, id },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
 
             await ExecuteAsync(
                 connection,
-                "DELETE FROM \"canvas_projects\" WHERE \"id\" = @id AND \"user_id\" = @userId",
+                "DELETE FROM \"canvasProjects\" WHERE \"id\" = @id AND \"userId\" = @userId",
                 new { id, userId },
                 transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -189,17 +189,17 @@ public sealed partial class Repository
         string sort,
         CancellationToken cancellationToken = default)
     {
-        List<string> conditions = ["user_id = @userId"];
+        List<string> conditions = ["\"userId\" = @userId"];
         DynamicParameters parameters = new();
         parameters.Add("userId", userId);
 
         if (projectId == "independent")
         {
-            conditions.Add("(project_id = '' OR project_id IS NULL)");
+            conditions.Add("(\"projectId\" = '' OR \"projectId\" IS NULL)");
         }
         else if (projectId.Length > 0 && projectId != "all")
         {
-            conditions.Add("project_id = @projectId");
+            conditions.Add("\"projectId\" = @projectId");
             parameters.Add("projectId", projectId);
         }
         string trimmedSearch = search.Trim();
@@ -211,7 +211,7 @@ public sealed partial class Repository
         string where = string.Join(" AND ", conditions);
 
         // sort=nodes 按 nodes 数组长度排序：SQLite json_array_length / PG jsonb_array_length。
-        string order = "updated_at DESC, id ASC";
+        string order = "\"updatedAt\" DESC, id ASC";
         if (sort == "name")
         {
             order = "title ASC, id ASC";
@@ -219,14 +219,14 @@ public sealed partial class Repository
         else if (sort == "nodes")
         {
             order = Dialect.IsPostgres
-                ? "COALESCE(jsonb_array_length(payload_json::jsonb->'nodes'), 0) DESC, id ASC"
-                : "COALESCE(json_array_length(payload_json, '$.nodes'), 0) DESC, id ASC";
+                ? "COALESCE(jsonb_array_length(\"payloadJson\"::jsonb->'nodes'), 0) DESC, id ASC"
+                : "COALESCE(json_array_length(\"payloadJson\", '$.nodes'), 0) DESC, id ASC";
         }
 
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         long total = await ScalarAsync<long>(
             connection,
-            "SELECT COUNT(*) FROM \"canvas_projects\" WHERE " + where,
+            "SELECT COUNT(*) FROM \"canvasProjects\" WHERE " + where,
             parameters,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -254,7 +254,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<Asset>(
             connection,
-            SqlBuilder.Select<Asset>("user_id = @userId AND id IN @ids"),
+            SqlBuilder.Select<Asset>("\"userId\" = @userId AND id IN @ids"),
             new { userId, ids },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
@@ -272,7 +272,7 @@ public sealed partial class Repository
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         return await QueryAsync<Resource>(
             connection,
-            SqlBuilder.Select<Resource>("user_id = @userId AND id IN @ids"),
+            SqlBuilder.Select<Resource>("\"userId\" = @userId AND id IN @ids"),
             new { userId, ids },
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
