@@ -64,9 +64,10 @@ public sealed class CanvasService
             repository,
             LogicalModels,
             declarativeAdapters: () => Plugins.RegistrySnapshot());
-        ResourceDomain = new ResourceDomainService(repository, RuntimePolicy, dataDir);
-        // 打破 StorageSettingsService 循环（其内部也持有 Repository）：构造完成后补上引用。
+        // StorageSettings 必须先于 ResourceDomain 构造：worker 路径经 ResourceDomain
+        // 读取平台公网地址（provider-input 签发），缺失会让本地存储报"未配置服务器访问地址"。
         StorageSettings = new StorageSettingsService(repository, dataDir ?? "data");
+        ResourceDomain = new ResourceDomainService(repository, RuntimePolicy, dataDir, storageSettings: StorageSettings);
         ResourceDelete = new ResourceDeleteService(repository, dataDir, StorageSettings);
         UserData = new UserDataService(repository, RuntimePolicy, ResourceDelete);
         CanvasShares = new CanvasShareService(repository);

@@ -3069,3 +3069,10 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 同类调用点排查：`redemption-codes-panel`（3 处兑换码复制，管理端 https 场景但统一改为 copy-to-clipboard 直调更稳）、`plugin-documentation-modals`（已有 navigator.clipboard 判空 + 明确报错文案，保持）。画布节点复制（project.tsx）已有完整三级回退。
 - [x] vite build 通过；TS 无新增错误；web 测试基线一致。
 - [ ] 部署后验收：http://192.168.0.211:5173 分享画布 → 创建分享链接应提示"分享链接已复制"且剪贴板有链接；若浏览器策略拦截 execCommand，则显示手动复制提示而非崩溃。
+
+### 组合根公网地址接线修复（2026-09-30 · 续十一）
+
+- **「服务器本地存储尚未配置服务器访问地址」**：`CanvasService` 内部构造的 `ResourceDomain` 没传 `storageSettings`——worker 路径（图片/视频参考素材的 provider-input 签发）经 `CanvasService.ResourceDomain` 读平台公网地址时恒为空，即使存储设置里已保存也报错（Program.cs 里带注入的单例 worker 并不使用）。修复：`StorageSettings` 先于 `ResourceDomain` 构造并同时注入两者；新增组合根接线回归测试（CanvasService.ResourceDomain.ProviderResourceUrlAsync 能解析平台公网地址并签出带签名 URL）。
+- 附带说明：provider-input（模型读取参考素材）的 HTTPS 要求与 Go 一致（resource_access.go:141）；测试站 http 地址只影响需要 URL 型参考素材的协议，multipart/字节路径协议不受影响。
+- 失败任务对照：07:03 的 audio_to_video 两个任务即此问题（存储设置 01:06 已保存但实例读不到）；修复后新任务读取正常。
+- [x] 相关 16 测试通过。
