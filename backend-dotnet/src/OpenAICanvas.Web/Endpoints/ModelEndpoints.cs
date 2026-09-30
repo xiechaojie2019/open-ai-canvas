@@ -41,6 +41,28 @@ public static class ModelEndpoints
             }
         });
 
+        api.MapPost("/model-catalog/quote", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User _ = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                ChannelModelQuoteRequestDto? request = await ReadJsonAsync<ChannelModelQuoteRequestDto>(
+                    context, cancellationToken).ConfigureAwait(false);
+                if (request is null)
+                {
+                    return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+                }
+                LogicalModelQuoteDto quote = await service.LogicalModels
+                    .QuoteChannelModelAsync(request, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(new { quote });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         api.MapGet("/model-catalog", async (HttpContext context, CancellationToken cancellationToken) =>
         {
             try
