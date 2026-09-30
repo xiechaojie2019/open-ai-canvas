@@ -3017,3 +3017,25 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 已知边界（对齐记录）：Go 的分布式健康阻断走 Redis（Coordinator.RouteBlockedUntil/BlockRoute），.NET 协调器接口暂无对应方法，当前为进程内阻断——单实例部署语义一致，多实例部署阻断不共享（单实例部署不受影响）。
 - [x] 存储通道 + 切线路 + 路由状态相关 10 测试通过；全量回归 1640/1641（1 失败为 TaskEndpointTests 并行时序噪音，单跑 19/19 通过）。
 - [ ] 测试站部署后验收：managed 任务在上游 401/404 时应自动切备用线路并在任务日志留“上游未创建任务，切换备用能力路由”，route_attempts 表出现多个尝试行。
+
+### 对象存储通道收尾接线（2026-09-30 · 续七）
+
+- **删除作业云分支**：`ResourceDeleteService` 注入 StorageSettingsService，云 provider（OSS/COS/Kodo/S3）删除任务经对象存储通道按资源绑定的存储位置远程删除（404 容忍，失败 pending 重试）——此前云任务永久 pending。复用“画布历史引用保护”守卫后再删。
+- **连接测试全 provider**：`TestAsync` 移除 S3-only 的 501 限制，阿里云/COS/七牛经 `StorageObjectChannel` 做写入-读取-删除回环测试（S3 保持 AWSSDK 路径）。管理端「测试连接」对四种 provider 均可用。
+- 注释同步：ResourceUploadService/ResourceDomainService 的“未移植/待确认 #25”标记已过时，更新为实际行为描述。
+- [x] StorageSettings/删除/存储通道/切线路 14 测试通过；solution 编译通过。
+- [ ] 部署后验收：配置阿里云/COS/七牛后「测试连接」应返回成功；删除云 provider 资源后 `resource_deletion_jobs` 应为 done。
+
+### 剩余未移植清单（全量核对 2026-09-30）
+
+逐项核对源码标记与 Go 侧对照后，真正的功能缺口只剩以下（其余标记为过时注释或已被本次工作覆盖）：
+
+1. **Ark 私有资产同步**（ResourceDomainService:187，待确认 #25）：火山方舟私有资产的上传绑定与同步依赖云 SDK；当前导入/直链路径可用，私有资产同步不可用。
+2. **画布分享云 provider 投递**（CanvasShareService）：公开分享资源下发目前仅支持本地 provider 文件流；云 provider 需要把 handler 改为按 ResolveAccess 307 重定向/代理。核心投递策略已在 ResolveRemoteAccessAsync 就绪，仅差分享 handler 接线。
+3. **Redis 协调器**（SystemPerformanceService）：多实例部署的分布式频控/路由健康阻断/协调器接口；单实例部署语义完整。
+4. **plan_update 工具与插值提醒**（CloudAgentLessons/interjections）：Agent 计划机制，见上轮记录。
+5. **外观设置（Appearance）与角色卡（Character）服务**：CanvasAuthHost 邮件品牌名恒为默认、ProjectAssetService 角色摘要恒为 null；均为占位实现不阻塞主流程。
+6. **插件扩展渠道目录**（ChannelModelCatalogService 阶段 10）： declarative 插件包的目录扩展面。
+7. **产物登记**（TaskTerminalService，PENDING-CONFIRMATIONS）：成功任务的产物资产登记由前端素材库覆盖，后端登记未移植。
+
+以上均不阻塞单实例部署的主流程；1/2 建议在 OSS 验收后接续，3 仅多实例部署需要。

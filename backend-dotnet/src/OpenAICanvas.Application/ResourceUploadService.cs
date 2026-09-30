@@ -16,10 +16,6 @@ namespace OpenAICanvas.Application;
 /// <c>detectUploadedMimeType</c> / <c>storeResource</c> / <c>storeResourceObject</c> /
 /// <c>writeLocalResourceObject</c> / <c>retryStoredResource</c>。
 /// </summary>
-/// <remarks>
-/// 对象存储（OSS/COS/Kodo/S3）通道未移植，见 PENDING-CONFIRMATIONS.md；
-/// 这里与 Go 的降级路径等价：始终以 local provider 落盘。
-/// </remarks>
 public sealed class ResourceUploadService
 {
     private readonly Repository _repository;

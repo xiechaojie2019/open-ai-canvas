@@ -65,7 +65,9 @@ public sealed class CanvasService
             LogicalModels,
             declarativeAdapters: () => Plugins.RegistrySnapshot());
         ResourceDomain = new ResourceDomainService(repository, RuntimePolicy, dataDir);
-        ResourceDelete = new ResourceDeleteService(repository, dataDir);
+        // 打破 StorageSettingsService 循环（其内部也持有 Repository）：构造完成后补上引用。
+        StorageSettings = new StorageSettingsService(repository, dataDir ?? "data");
+        ResourceDelete = new ResourceDeleteService(repository, dataDir, StorageSettings);
         UserData = new UserDataService(repository, RuntimePolicy, ResourceDelete);
         CanvasShares = new CanvasShareService(repository);
         ProjectUnits = new ProjectUnitService(repository);
@@ -124,6 +126,8 @@ public sealed class CanvasService
     public ChannelService Channels { get; }
 
     public LogicalModelService LogicalModels { get; }
+
+    public StorageSettingsService StorageSettings { get; }
 
     public ChannelAdminService ChannelAdmin { get; }
 

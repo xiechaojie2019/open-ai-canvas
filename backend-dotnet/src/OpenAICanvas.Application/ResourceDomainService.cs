@@ -338,7 +338,7 @@ public sealed class ResourceDomainService
 
     /// <summary>
     /// 解析单项访问描述。对应 Go: <c>resolveResourceAccess</c> + <c>assets.ResolveAccess</c>
-    /// 的本地存储路径；云 provider 投递与 Go 侧的 OSS/CDN 策略一致地依赖云 SDK（待确认 #25）。
+    /// 的本地存储路径；云 provider 投递走 <see cref="ResolveRemoteAccessAsync"/> 的 CDN/源站/代理策略。
     /// </summary>
     private async Task<ResourceAccess> ResolveAccessAsync(
         Resource resource, ResourceAccessOptions options, DateTime now, CancellationToken cancellationToken)

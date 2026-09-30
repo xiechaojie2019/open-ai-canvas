@@ -184,10 +184,6 @@ public sealed class StorageSettingsService
         StoredOSSSetting value, string scope, string ownerId, CancellationToken cancellationToken)
     {
         ValidateForTest(value);
-        if (value.Provider != "s3")
-        {
-            throw AppError.New(501, $"当前 .NET 后端尚未实现 {value.Provider} 对象存储连接测试，请使用通用 S3 兼容接口");
-        }
         string mutexKey = scope + ":" + ownerId;
         if (!ActiveTests.TryAdd(mutexKey, 0))
         {
@@ -196,6 +192,10 @@ public sealed class StorageSettingsService
         try
         {
             await OutboundGuard.ValidateOutboundUrlAsync(value.Endpoint).ConfigureAwait(false);
+            if (value.Provider != "s3")
+            {
+                return await TestViaChannelAsync(value, cancellationToken).ConfigureAwait(false);
+            }
             AWSCredentials credentials = string.IsNullOrEmpty(value.SessionToken)
                 ? new BasicAWSCredentials(value.AccessKeyId, value.AccessKeySecret)
                 : new SessionAWSCredentials(value.AccessKeyId, value.AccessKeySecret, value.SessionToken);
@@ -408,6 +408,49 @@ public sealed class StorageSettingsService
         encrypted.AccessKeySecret = SettingsCrypto.EncryptSecret(encrypted.AccessKeySecret, _dataDir);
         encrypted.SessionToken = SettingsCrypto.EncryptSecret(encrypted.SessionToken, _dataDir);
         return JsonSerializer.Serialize(encrypted, JsonOptions);
+    }
+
+    /// <summary>阿里云/COS/七牛经对象存储通道做写入-读取-删除回环测试。</summary>
+    private static async Task<OSSConnectionTestResult> TestViaChannelAsync(
+        StoredOSSSetting value, CancellationToken cancellationToken)
+    {
+        StorageChannelSettings setting = value.ToChannelSettings();
+        string key = BuildObjectKey(setting.PathPrefix, ".yingce-connection-test-" + Guid.NewGuid().ToString("N"));
+        byte[] marker = "yingce-storage-test"u8.ToArray();
+        await StorageObjectChannel.PutObjectAsync(
+            setting, key, "text/plain", marker.Length, new MemoryStream(marker), cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            using StorageObjectStream range = await StorageObjectChannel.GetOriginObjectRangeAsync(
+                setting, key, "bytes=0-3", cancellationToken).ConfigureAwait(false);
+            byte[] head = new byte[4];
+            int read = 0;
+            while (read < 4)
+            {
+                int n = await range.Body.ReadAsync(head, read, 4 - read, cancellationToken).ConfigureAwait(false);
+                if (n == 0)
+                {
+                    break;
+                }
+                read += n;
+            }
+            if (read != 4 || !head.AsSpan(0, 4).SequenceEqual(marker))
+            {
+                throw AppError.BadAuthRequest("对象存储连接测试读取校验失败");
+            }
+        }
+        finally
+        {
+            await StorageObjectChannel.DeleteObjectAsync(setting, key).ConfigureAwait(false);
+        }
+        return new OSSConnectionTestResult
+        {
+            Ok = true,
+            Message = "连接成功",
+            TestedAt = DateTime.UtcNow,
+            TestedDigest = TestDigest(value),
+        };
     }
 
     private static StoredOSSSetting Defaults() => new() { Provider = "aliyun", PathPrefix = "open-ai-canvas", S3Preset = "custom" };
