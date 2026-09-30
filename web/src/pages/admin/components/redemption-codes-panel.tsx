@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import copyToClipboard from "copy-to-clipboard";
 import { App, Button, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { Ban, Copy, Eye, KeyRound, RefreshCw, Search, TicketCheck } from "lucide-react";
@@ -576,7 +577,7 @@ function GeneratedCodesModal({ codes, batchId, onClose }: { codes: string[]; bat
     const previewContent = codes.slice(0, GENERATED_PREVIEW_LIMIT).join("\n");
     const copy = async () => {
         try {
-            await navigator.clipboard.writeText(content);
+            copyToClipboard(content);
             message.success("全部兑换码已复制");
         } catch {
             message.error("复制失败，请使用下载 TXT 保存兑换码");
@@ -672,7 +673,7 @@ function RedeemBatchCodesModal({ batch, onClose, onBatchChanged }: { batch: Rede
     const copyCode = async (code?: string) => {
         if (!code) return;
         try {
-            await navigator.clipboard.writeText(code);
+            copyToClipboard(code);
             message.success("兑换码已复制");
         } catch {
             message.error("复制失败，请检查浏览器剪贴板权限");
@@ -685,7 +686,7 @@ function RedeemBatchCodesModal({ batch, onClose, onBatchChanged }: { batch: Rede
             .join("\n");
         if (!content) return;
         try {
-            await navigator.clipboard.writeText(content);
+            copyToClipboard(content);
             message.success("本页兑换码已复制");
         } catch {
             message.error("复制失败，请检查浏览器剪贴板权限");

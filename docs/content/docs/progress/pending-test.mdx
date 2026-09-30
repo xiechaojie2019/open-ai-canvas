@@ -3062,3 +3062,10 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 测试 3 个：固定价格模型报价金额、缺渠道/模型 422、未登录 401。测试种子价格配置在 ChannelModel 本体（旧库默认档由 attach 按本体字段合成）。
 - [x] 全量回归 1646/1646 全绿。
 - [ ] 部署后验收：前端模型选择/报价刷新不再 404。
+
+### 分享弹窗剪贴板修复（2026-09-30 · 续十）
+
+- **分享画布报 `Cannot read properties of undefined (reading 'writeText')`**：测试站是 http 非安全上下文，浏览器不暴露 `navigator.clipboard`（undefined）。分享弹窗的 `copy()` 直接调用导致崩溃。改为：优先 `navigator.clipboard?.writeText`（https/localhost），失败或缺失时回退 `copy-to-clipboard`（execCommand 兜底，兼容 http），再失败提示手动复制链接。
+- 同类调用点排查：`redemption-codes-panel`（3 处兑换码复制，管理端 https 场景但统一改为 copy-to-clipboard 直调更稳）、`plugin-documentation-modals`（已有 navigator.clipboard 判空 + 明确报错文案，保持）。画布节点复制（project.tsx）已有完整三级回退。
+- [x] vite build 通过；TS 无新增错误；web 测试基线一致。
+- [ ] 部署后验收：http://192.168.0.211:5173 分享画布 → 创建分享链接应提示"分享链接已复制"且剪贴板有链接；若浏览器策略拦截 execCommand，则显示手动复制提示而非崩溃。
