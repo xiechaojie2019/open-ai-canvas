@@ -254,6 +254,63 @@ public sealed class CloudAgentVisionTests
         Assert.Equal(1, state.Canonical.Messages.Count(message => ImagePartCount(message) > 0));
     }
 
+    // ------------------------------------------------------------ 资源引用前缀
+
+    /// <summary>取出图片部件里的 url 字符串。</summary>
+    private static List<string> ImageURLs(Dictionary<string, JsonElement> message)
+    {
+        List<string> urls = [];
+        if (!message.TryGetValue("content", out JsonElement content)
+            || content.ValueKind != JsonValueKind.Array)
+        {
+            return urls;
+        }
+        foreach (JsonElement part in content.EnumerateArray())
+        {
+            if (part.ValueKind == JsonValueKind.Object
+                && part.TryGetProperty("type", out JsonElement type)
+                && type.ValueKind == JsonValueKind.String
+                && type.GetString() == "image_url"
+                && part.TryGetProperty("image_url", out JsonElement image)
+                && image.ValueKind == JsonValueKind.Object
+                && image.TryGetProperty("url", out JsonElement url)
+                && url.ValueKind == JsonValueKind.String)
+            {
+                urls.Add(url.GetString()!);
+            }
+        }
+        return urls;
+    }
+
+    /// <summary>
+    /// 回归：ImageURL 已是节点 metadata 的 storageKey（形如 <c>resource:&lt;id&gt;</c>），
+    /// ImageContentParts 必须原样写出，不能再拼一层前缀。
+    /// 拼两次会让回查时 <c>key["resource:".Length..]</c> 切出 <c>resource:&lt;id&gt;</c> 去查库，
+    /// 结果抛「看图资源不可用、尚未就绪或不属于当前用户」（线上 2026-10-08 事故）。
+    /// 对应 Go: <c>cloudAgentImageContentParts</c>（<c>url: inspection.ImageURL</c>）。
+    /// </summary>
+    [Fact]
+    public void 资源引用_图片URL必须原样写出_不得重复拼接前缀()
+    {
+        const string nodeID = "image-1791445565099-dxhba";
+        CloudAgentImageInspectionDto inspection = Inspection(nodeID);
+        Assert.Equal($"resource:{nodeID}", inspection.ImageURL);
+
+        List<string> urls = ImageURLs(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["role"] = JsonSerializer.SerializeToElement("user"),
+            ["content"] = JsonSerializer.SerializeToElement(
+                CloudAgentRuntimeVisionProbe.ImageContentParts([inspection])),
+        });
+
+        Assert.Single(urls);
+        Assert.Equal($"resource:{nodeID}", urls[0]);
+        // 恰好一层前缀：切掉前缀应得到裸资源 id。
+        Assert.Equal(nodeID, urls[0]["resource:".Length..]);
+        // 双击前缀会让这里变成 "resource:image-..."，正是线上报错的成因。
+        Assert.DoesNotContain("resource:resource:", urls[0], StringComparison.Ordinal);
+    }
+
     // ------------------------------------------------------------ 计数与预算
 
     [Fact]

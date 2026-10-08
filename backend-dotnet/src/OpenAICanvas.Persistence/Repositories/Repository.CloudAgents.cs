@@ -142,6 +142,11 @@ public sealed partial class Repository
                 transaction,
                 cancellationToken).ConfigureAwait(false)
                 ?? throw AppError.NotFound("Agent 运行不存在");
+            // 与 Go 的 New(tx).CloudAgent(userID, id) 一致：必须把 journal/transcript 一并载入。
+            // 否则回调里的 current.Journal 为空而 EventCount 有值，SaveCloudAgentInTxAsync 的
+            // append-only 校验会误判成「journal cannot be truncated」，整轮被判定为运行状态损坏。
+            await LoadCloudAgentJournalCoreAsync(connection, transaction, run, cancellationToken)
+                .ConfigureAwait(false);
             CloudAgentMutationContext context = new(connection, transaction, this);
             return await mutate(run, context).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);

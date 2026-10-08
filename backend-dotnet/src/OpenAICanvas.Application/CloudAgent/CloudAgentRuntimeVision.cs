@@ -255,7 +255,10 @@ public sealed partial class CloudAgentRuntimeService
                 ["image_url"] = JsonSerializer.SerializeToElement(
                     new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
-                        ["url"] = "resource:" + inspections[index].ImageURL,
+                        // ImageURL 已是节点 metadata 里的 storageKey（形如 "resource:<id>"），
+                        // 这里不能再拼前缀，否则回查时 key["resource:".Length..] 会切出
+                        // "resource:<id>" 去查库而失败。对应 Go: cloudAgentImageContentParts。
+                        ["url"] = inspections[index].ImageURL,
                     }),
             });
         }

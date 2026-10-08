@@ -243,4 +243,46 @@ public sealed class CloudAgentJournalTests : IDisposable
         List<CloudAgentEventRecord> oneRun = await _repository.RecentCloudAgentEventsForUserAsync("user-a", 1);
         Assert.Equal(2, oneRun.Count);
     }
+
+    /// <summary>
+    /// 回归：互斥变更上下文里的 run 必须已载入 journal/transcript。
+    /// 线上事故（2026-10-08）：MutateCloudAgentAsync 事务内只 Select 了执行行、漏调
+    /// LoadCloudAgentJournalCoreAsync，回调里 current.Journal 为空但 EventCount 有值，
+    /// SaveCloudAgentInTxAsync 的 append-only 校验误判为截断 → 整轮报
+    /// 「Agent 运行状态损坏，本轮已停止: cloud Agent journal cannot be truncated」。
+    /// 对应 Go: <c>MutateCloudAgent</c> 里 <c>New(tx).CloudAgent(userID, id)</c> 总是带出 journal。
+    /// </summary>
+    [Fact]
+    public async Task 互斥变更上下文必须载入journal_否则无改动保存会误报截断()
+    {
+        await MigrateAsync();
+        CloudAgentExecution seed = NewRun("run-mutate");
+        CloudAgentContracts.Save(seed, NewState("run-mutate"));
+        await _database.InTransactionAsync(async (connection, transaction) =>
+        {
+            await _repository.SaveCloudAgentInTxAsync(connection, transaction, seed, CancellationToken.None);
+            return true;
+        });
+
+        // 事务内读到的 current 应已带 journal（长度 == EventCount）。
+        bool hydrated = await _repository.MutateCloudAgentAsync(
+            "user-a", "run-mutate", seed.Revision,
+            (current, _) =>
+            {
+                Assert.NotNull(current.Journal);
+                Assert.Equal(current.EventCount, current.Journal!.Count);
+                return Task.FromResult(true);
+            });
+        Assert.True(hydrated);
+
+        // 拿到锁后不改任何事件、原样保存：不得抛「journal cannot be truncated」。
+        bool saved = await _repository.MutateCloudAgentAsync(
+            "user-a", "run-mutate", seed.Revision + 1,
+            async (current, context) =>
+            {
+                await context.SaveRunAsync(current, CancellationToken.None);
+                return true;
+            });
+        Assert.True(saved);
+    }
 }
