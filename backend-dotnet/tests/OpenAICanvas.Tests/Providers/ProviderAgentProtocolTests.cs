@@ -70,6 +70,34 @@ public sealed class ProviderAgentProtocolTests
         return message;
     }
 
+    /// <summary>
+    /// 线上真实形态：运行时装配的 canonical 消息里 tool_calls 项<b>只有 id 与 function</b>，
+    /// 没有协议判别字段 <c>type</c>。判别字段由投影阶段物化。
+    /// </summary>
+    private static Dictionary<string, JsonElement> AssistantBareToolCalls(params (string ID, string Name, string Args)[] calls)
+    {
+        Dictionary<string, JsonElement> message = new(StringComparer.Ordinal)
+        {
+            ["role"] = JsonSerializer.SerializeToElement("assistant"),
+            ["content"] = JsonSerializer.SerializeToElement(""),
+        };
+        List<object?> list = [];
+        foreach ((string id, string name, string args) in calls)
+        {
+            list.Add(new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["id"] = id,
+                ["function"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = name,
+                    ["arguments"] = args,
+                },
+            });
+        }
+        message["tool_calls"] = JsonSerializer.SerializeToElement(list);
+        return message;
+    }
+
     private static Dictionary<string, JsonElement> MsgTool(string callID, string content) => new(StringComparer.Ordinal)
     {
         ["role"] = JsonSerializer.SerializeToElement("tool"),
@@ -193,6 +221,122 @@ public sealed class ProviderAgentProtocolTests
         // auto 选择 → {type: auto}。
         var choice = Assert.IsType<Dictionary<string, object?>>(body["tool_choice"]!);
         Assert.Equal("auto", choice["type"]);
+    }
+
+    [Fact]
+    public void 展开_Responses_工具调用的call_id必须来自顶层id()
+    {
+        // 线上真实形状：tool_calls 项只有 id 与 function（无协议判别字段）。
+        // 早先实现取 function["id"]（function 里根本没有 id）导致 call_id 恒为 null，
+        // 上游随即拒绝整轮请求。
+        CanonicalAgentRequestInput canonical = new()
+        {
+            SystemPrompt = "你是画布助手",
+            ToolChoice = JsonSerializer.SerializeToElement("auto"),
+            Tools =
+            [
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["type"] = JsonSerializer.SerializeToElement("function"),
+                    ["function"] = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+                    {
+                        ["name"] = "canvas_get_state",
+                        ["parameters"] = new Dictionary<string, object?> { ["type"] = "object" },
+                    }),
+                },
+            ],
+            Messages =
+            [
+                AssistantBareToolCalls(("call_abc123", "canvas_get_state", "{}")),
+                MsgTool("call_abc123", "{\"ok\":true}"),
+                Msg("user", JsonSerializer.SerializeToElement("继续")),
+            ],
+        };
+        ProviderConfig config = new()
+        {
+            Model = "glm-5.3-flash",
+            BaseURL = "https://api.example.com",
+            APIKey = "k",
+            InterfaceType = "openai-response",
+        };
+        AgentToolRequestsInput requests = ProviderAgentProtocol.ExpandCanonicalAgentRequest(
+            canonical, config, declarative: false);
+        Dictionary<string, object?> body = requests.Responses
+            ?? throw new InvalidOperationException("responses body missing");
+
+        var input = Assert.IsType<List<object?>>(body["input"]);
+        Dictionary<string, object?>? call = null;
+        Dictionary<string, object?>? output = null;
+        foreach (object? item in input)
+        {
+            var entry = Assert.IsType<Dictionary<string, object?>>(item);
+            switch (entry.GetValueOrDefault("type") as string)
+            {
+                case "function_call":
+                    call = entry;
+                    break;
+                case "function_call_output":
+                    output = entry;
+                    break;
+            }
+        }
+        Assert.NotNull(call);
+        Assert.NotNull(output);
+        Assert.Equal("call_abc123", call!["call_id"]);
+        Assert.Equal("canvas_get_state", call["name"]);
+        // 回执与调用必须引用同一个调用标识，否则上游无法配对。
+        Assert.Equal(call["call_id"], output!["call_id"]);
+    }
+
+    [Fact]
+    public void 展开_Chat_出网工具调用必须物化type()
+    {
+        // 运行时 canonical 不带协议判别字段，出网体必须补齐 type=function，
+        // 否则 dagent 类网关报「工具类型不能为空」。
+        CanonicalAgentRequestInput canonical = new()
+        {
+            SystemPrompt = "你是画布助手",
+            ToolChoice = JsonSerializer.SerializeToElement("auto"),
+            Tools =
+            [
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["type"] = JsonSerializer.SerializeToElement("function"),
+                    ["function"] = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+                    {
+                        ["name"] = "canvas_get_state",
+                        ["parameters"] = new Dictionary<string, object?> { ["type"] = "object" },
+                    }),
+                },
+            ],
+            Messages =
+            [
+                AssistantBareToolCalls(("call_abc123", "canvas_get_state", "{}")),
+                MsgTool("call_abc123", "{\"ok\":true}"),
+                Msg("user", JsonSerializer.SerializeToElement("继续")),
+            ],
+        };
+        AgentToolRequestsInput requests = ProviderAgentProtocol.ExpandCanonicalAgentRequest(
+            canonical, ChatConfig(), declarative: false);
+        Dictionary<string, object?> body = requests.ChatCompletion
+            ?? throw new InvalidOperationException("chat body missing");
+        var messages = Assert.IsType<List<object?>>(body["messages"]);
+        bool checkedCall = false;
+        foreach (object? item in messages)
+        {
+            var message = Assert.IsType<Dictionary<string, object?>>(item);
+            if (message.GetValueOrDefault("tool_calls") is not List<Dictionary<string, object?>> calls)
+            {
+                continue;
+            }
+            foreach (Dictionary<string, object?> call in calls)
+            {
+                Assert.Equal("function", call["type"]);
+                Assert.Equal("call_abc123", call["id"]);
+                checkedCall = true;
+            }
+        }
+        Assert.True(checkedCall);
     }
 
     [Fact]

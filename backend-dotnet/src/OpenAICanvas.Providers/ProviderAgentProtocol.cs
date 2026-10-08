@@ -321,13 +321,16 @@ public static class ProviderAgentProtocol
             foreach (Dictionary<string, object?> call
                 in CanonicalAgentToolCalls(Element(message, "tool_calls")) ?? [])
             {
+                // call_id 必须取调用项的顶层 id（Go: call["id"]）。它就在 function 的兄弟位，
+                // 不在 function 里面；早先写成 function["id"] 会让 call_id 恒为 null，
+                // Responses 上游随即报「工具类型不能为空」。
                 if (call.TryGetValue("function", out object? functionRaw)
                     && functionRaw is Dictionary<string, object?> function)
                 {
                     messages.Add(new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
                         ["type"] = "function_call",
-                        ["call_id"] = function.GetValueOrDefault("id"),
+                        ["call_id"] = call.GetValueOrDefault("id"),
                         ["name"] = function.GetValueOrDefault("name"),
                         ["arguments"] = function.GetValueOrDefault("arguments"),
                     });
