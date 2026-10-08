@@ -91,16 +91,52 @@ public sealed class ProviderTextTask
         try
         {
             ProtocolGenerationRequest source = ProviderProtocolPayload.FromInput(input);
-            // 文本后台任务必须拿到最终 JSON；即使调用方要求流式，也把完整结果一次性回调，
+            // 与 Go 的 executeProtocolCreateRequest 对齐：已知文本 wire 协议在调用方要求流式时
+            // 必须 issue stream=true 并复用宿主文本/Agent 共用的 SSE 解析器。
+            // 不能一律降级成"拿最终 JSON 再读清单 textPaths"：清单只声明了 output_text，
+            // 而 OpenAI Responses 兼容上游返回的是 output[].content[].text（output_text 只是
+            // 官方 SDK 的派生字段），读不到就会被判成"没有返回内容"。
+            string wire = input.Mode == "text"
+                ? ProviderTextOrchestration.ResolveProtocol(input.Config.InterfaceType)
+                : "";
+            bool streamText = wire.Length > 0 && input.TextOptions.Stream == true;
+            // 其余情况（图片/视频声明式任务、非流式文本）保持 stream=false，
             // 避免把不声明 SSE 的插件响应误判为永久等待。
-            source.Extra["stream"] = false;
+            source.Extra["stream"] = streamText;
             GenerationRequest request = ToProtocolRequest(source);
             RequestSpec spec = adapter.BuildCreate(new RequestContext
             {
                 BaseURL = input.Config.BaseURL,
                 Request = request,
             });
-            byte[] body = await ProviderProtocolExecutor.ExecuteAsync(
+            byte[]? streamedBody = null;
+            if (streamText)
+            {
+                if (spec.Body is not Dictionary<string, object?> streamBody)
+                {
+                    throw new InvalidOperationException("声明式流式文本请求体必须是 JSON 对象");
+                }
+                streamBody["stream"] = true;
+                if (wire == ProviderTextOrchestration.ChatCompletionProtocol)
+                {
+                    ProviderTextOrchestration.EnsureChatCompletionStreamUsage(streamBody);
+                }
+                StreamingAgentParser parser = new(wire, onDelta) { EmitReasoning = onReasoningDelta };
+                (byte[] data, string mimeType) = await ProviderProtocolExecutor.ExecuteWithMimeTypeAsync(
+                    input.Config, spec, (type, chunk) => parser.Consume(type, chunk),
+                    cancellationToken: cancellationToken, clientFactory: _clientFactory).ConfigureAwait(false);
+                if (mimeType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    parser.Flush();
+                    return await RecordDeclarativeTextAsync(
+                        channelId,
+                        ProviderTextOrchestration.RequireText(parser.Result(), streaming: true),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                // 上游忽略 stream 直接回 JSON：复用本次响应体，按清单响应映射解析（与 Go 一致）。
+                streamedBody = data;
+            }
+            byte[] body = streamedBody ?? await ProviderProtocolExecutor.ExecuteAsync(
                 input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory)
                 .ConfigureAwait(false);
             CreateResult created = adapter.ParseCreate(body);
@@ -115,11 +151,7 @@ public sealed class ProviderTextTask
             ProviderTextResult result = new(created.Result.Text, created.Result.Reasoning);
             onReasoningDelta?.Invoke(result.Reasoning);
             onDelta?.Invoke(result.Text);
-            if (_context is not null && channelId.Length > 0)
-            {
-                await _context.RecordChannelResultAsync(channelId, false, cancellationToken).ConfigureAwait(false);
-            }
-            return ProviderTextOrchestration.TextTaskResult(result);
+            return await RecordDeclarativeTextAsync(channelId, result, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -143,6 +175,20 @@ public sealed class ProviderTextTask
                 await release().ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// 声明式文本成功收尾：记录渠道成功态并整形为任务载荷。
+    /// 流式分支的增量回调已由 <see cref="StreamingAgentParser"/> 逐条发出，不在这里重放整段文本。
+    /// </summary>
+    private async Task<Dictionary<string, object?>> RecordDeclarativeTextAsync(
+        string channelId, ProviderTextResult result, CancellationToken cancellationToken)
+    {
+        if (_context is not null && channelId.Length > 0)
+        {
+            await _context.RecordChannelResultAsync(channelId, false, cancellationToken).ConfigureAwait(false);
+        }
+        return ProviderTextOrchestration.TextTaskResult(result);
     }
 
     private static GenerationRequest ToProtocolRequest(ProtocolGenerationRequest source) => new()
