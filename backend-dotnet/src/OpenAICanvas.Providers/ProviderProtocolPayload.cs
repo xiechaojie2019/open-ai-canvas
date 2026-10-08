@@ -1,4 +1,5 @@
 #nullable enable
+using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Protocol;
 
 namespace OpenAICanvas.Providers;
@@ -60,17 +61,32 @@ public static class ProviderProtocolPayload
                 resolution = declared;
             }
         }
+        // 图片尺寸归一化。对应 Go: provider_protocol.go 的
+        // `if input.Mode == "image" && InterfaceType == openai-image { aspectRatio = normalizePixelSize(...) }`。
+        // 画布按比例保存（21:9），图片接口只接受像素尺寸，必须在请求边界完成转换。
+        string aspectRatio = config.Size;
+        if (input.Mode == "image"
+            && config.InterfaceType.Trim() == ChannelInterfaceType.ChannelInterfaceOpenAIImage)
+        {
+            aspectRatio = ProviderImageOptions.NormalizePixelSize(aspectRatio);
+        }
+        // 声明式插件模板把 prompt 原样映射到上游 prompt（plugin-packages/openai-images
+        // 的 create.body.prompt = {"$ref":"request.prompt"}），尺寸则走 size 字段。
+        // 但部分中转上游只认 prompt 里的自然语言尺寸，所以这里也把尺寸同步进 prompt。
+        string prompt = input.Mode == "image"
+            ? ProviderImageOptions.WithSizePrompt(input.Prompt, config.Size, input.ImageCapability)
+            : input.Prompt;
 
         ProtocolGenerationRequest request = new()
         {
             Capability = input.Mode,
             Model = config.Model,
-            Prompt = input.Prompt,
+            Prompt = prompt,
             Instructions = config.SystemPrompt.Trim(),
             Images = ImageReferences(input),
             Videos = MediaReferences(input.ReferenceVideos, "video"),
             Audios = MediaReferences(input.ReferenceAudios, "audio"),
-            AspectRatio = config.Size,
+            AspectRatio = aspectRatio,
             Resolution = resolution,
             Quality = config.Quality,
             GenerateAudio = ParseBool(config.VideoGenerateAudio),

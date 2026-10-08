@@ -36,7 +36,9 @@ public sealed class ProviderProtocolPayloadTests
 
         Assert.Equal("image", request.Capability);
         Assert.Equal("m", request.Model);
-        Assert.Equal("提示", request.Prompt);
+        // 图片尺寸会同步进 prompt（见下方「图片尺寸」小节），这里只断言尺寸描述已追加。
+        Assert.StartsWith("提示", request.Prompt, StringComparison.Ordinal);
+        Assert.Contains("生成图片要求尺寸1024x1024", request.Prompt, StringComparison.Ordinal);
         Assert.Equal("指令", request.Instructions);
         Assert.Equal("1024x1024", request.AspectRatio);
         Assert.Equal("high", request.Resolution);
@@ -54,6 +56,90 @@ public sealed class ProviderProtocolPayloadTests
 
         Assert.True(request.GenerateAudio);
         Assert.False(request.Watermark);
+    }
+
+    // ------------------------------------------------------------ 图片尺寸
+
+    // 声明式插件路径（openai-images）把 prompt 原样映射到上游 prompt，尺寸走 size 字段。
+    // 但实测部分中转上游（dagent 网关的 gpt-image-2）完全忽略 size，只认 prompt 里的
+    // 自然语言尺寸。这组契约锁住「图片尺寸同步进 prompt」的行为，避免回归。
+    // 对应 Go: provider_protocol.go 的 protocolRequestFromInput。
+
+    [Fact]
+    public void 投影_图片尺寸同步进prompt()
+    {
+        TextTaskInput input = Input("image");
+        input.Config.InterfaceType = "openai-image";
+        input.Config.Size = "21:9";
+
+        ProtocolGenerationRequest request = ProviderProtocolPayload.FromInput(input);
+
+        Assert.Contains("生成图片要求尺寸21:9", request.Prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 投影_openai图片比例归一化为像素尺寸()
+    {
+        TextTaskInput input = Input("image");
+        input.Config.InterfaceType = "openai-image";
+        input.Config.Size = "21:9";
+
+        ProtocolGenerationRequest request = ProviderProtocolPayload.FromInput(input);
+
+        // 对应 Go: aspectRatio = normalizePixelSize(aspectRatio)
+        Assert.Equal("2352x1008", request.AspectRatio);
+    }
+
+    [Fact]
+    public void 投影_非openai接口不做像素归一化()
+    {
+        TextTaskInput input = Input("image");
+        input.Config.InterfaceType = "gemini-image";
+        input.Config.Size = "21:9";
+
+        ProtocolGenerationRequest request = ProviderProtocolPayload.FromInput(input);
+
+        Assert.Equal("21:9", request.AspectRatio);
+    }
+
+    [Theory]
+    [InlineData("", "提示")]
+    [InlineData("auto", "提示")]
+    public void 投影_未选尺寸或auto时prompt保持原样(string size, string expected)
+    {
+        TextTaskInput input = Input("image");
+        input.Config.InterfaceType = "openai-image";
+        input.Config.Size = size;
+
+        ProtocolGenerationRequest request = ProviderProtocolPayload.FromInput(input);
+
+        Assert.Equal(expected, request.Prompt);
+    }
+
+    [Fact]
+    public void 投影_非图片模式不追加尺寸()
+    {
+        TextTaskInput input = Input("text");
+        input.Config.Size = "21:9";
+
+        ProtocolGenerationRequest request = ProviderProtocolPayload.FromInput(input);
+
+        Assert.Equal("提示", request.Prompt);
+    }
+
+    [Fact]
+    public void 尺寸描述排在用户提示词之后()
+    {
+        TextTaskInput input = Input("image");
+        input.Config.InterfaceType = "openai-image";
+        input.Config.Size = "16:9";
+
+        ProtocolGenerationRequest request = ProviderProtocolPayload.FromInput(input);
+
+        int userIndex = request.Prompt.IndexOf("提示", StringComparison.Ordinal);
+        int sizeIndex = request.Prompt.IndexOf("生成图片要求尺寸16:9", StringComparison.Ordinal);
+        Assert.True(userIndex >= 0, "用户提示词应保留");
+        Assert.True(sizeIndex > userIndex, "尺寸描述应排在用户提示词之后");
     }
 
     [Theory]

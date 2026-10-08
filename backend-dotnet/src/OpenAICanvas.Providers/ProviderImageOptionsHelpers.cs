@@ -17,6 +17,54 @@ namespace OpenAICanvas.Providers;
 /// </remarks>
 public static class ProviderImageOptions
 {
+    /// <summary>
+    /// 在给定 prompt 末尾追加画布尺寸的自然语言描述。
+    /// </summary>
+    /// <remarks>
+    /// OpenAI Images 协议里的 <c>size</c> 字段只是「建议值」：实测部分中转上游
+    /// （如 dagent 网关的 gpt-image-2）会完全忽略它，转而跟随输入图比例或返回
+    /// 自身默认尺寸 —— 同一个模型、同一张参考图，仅改 <c>size</c> 取值，出图尺寸
+    /// 纹丝不动（21:9 与 1:1 都返回同一个正方形）。同一上游对 prompt 里的自然语言
+    /// 尺寸描述（「生成图片要求尺寸21:9」→ 精确 21:9）却有稳定响应。
+    /// 因此在保留 <c>size</c> 字段（对真正遵循它的上游无害）的同时，把画布选定的
+    /// 尺寸同步进 prompt，让两类上游都能拿到尺寸意图。
+    ///
+    /// <para>两条执行路径都要用：手写 <see cref="ProviderImageTask"/> 的 OpenAI 分支，
+    /// 以及声明式插件路径 <c>ProviderProtocolPayload.FromInput</c>
+    /// （openai-images 插件模板把 <c>prompt</c> 直接映射为 <c>request.prompt</c>、
+    /// 把尺寸映射为 <c>request.aspectRatio</c>，不做任何加工）。</para>
+    /// </remarks>
+    public static string WithSizePrompt(string prompt, string? size, ImageCapabilityConfig? capability)
+    {
+        string sizeHint = SizePromptHint(size, capability);
+        if (sizeHint.Length == 0)
+        {
+            return prompt;
+        }
+        return prompt.Length == 0 ? sizeHint : prompt + "\n\n" + sizeHint;
+    }
+
+    /// <summary>
+    /// 由画布尺寸设置生成 prompt 尺寸描述。返回空串表示不需要追加
+    /// （未选尺寸、选了 auto、或能力声明不支持尺寸参数）。
+    /// </summary>
+    public static string SizePromptHint(string? size, ImageCapabilityConfig? capability)
+    {
+        string trimmed = (size ?? "").Trim();
+        if (trimmed.Length == 0 || trimmed.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+        // 能力声明不支持尺寸参数时不要凭空追加，避免给无关模型塞噪声。
+        if (capability is not null && capability.Size.Parameter == "none")
+        {
+            return "";
+        }
+        // 保持用户选定的原始形态：比例直接写比例（实测 21:9 出图精确 21:9），
+        // 像素写像素。两者上游都认，不做额外换算以免与画布预览不一致。
+        return $"生成图片要求尺寸{trimmed}";
+    }
+
     /// <summary>即梦/方舟等渠道的画布比例到像素尺寸预设。对应 Go: <c>normalizePixelSize</c>。</summary>
     public static string NormalizePixelSize(string? value)
     {
