@@ -92,6 +92,68 @@ public sealed class ProviderImageTaskTests
         Assert.Contains("\"n\":1", handler.LastBody!, StringComparison.Ordinal);
     }
 
+    // 上游可能只认 prompt 里的尺寸描述（见 WithSizePrompt 注释），
+    // 这两条契约锁住「画布尺寸进 prompt」的行为，避免回归成只能靠 size 字段。
+
+    [Fact]
+    public async Task OpenAI_画布尺寸以提示词追加到prompt()
+    {
+        StubHandler handler = new(_ => Json(OneImage));
+        TextTaskInput input = Input();
+        input.Config.Size = "21:9";
+
+        await Task(handler).RunAsync(input);
+
+        Assert.Contains("画一只猫", handler.LastBody!, StringComparison.Ordinal);
+        Assert.Contains("生成图片要求尺寸21:9", handler.LastBody!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OpenAI_尺寸提示词排在用户提示词之后()
+    {
+        StubHandler handler = new(_ => Json(OneImage));
+        TextTaskInput input = Input();
+        input.Config.SystemPrompt = "你是绘图助手";
+        input.Config.Size = "16:9";
+
+        await Task(handler).RunAsync(input);
+
+        string body = handler.LastBody!;
+        int system = body.IndexOf("你是绘图助手", StringComparison.Ordinal);
+        int user = body.IndexOf("画一只猫", StringComparison.Ordinal);
+        int sizeHint = body.IndexOf("生成图片要求尺寸16:9", StringComparison.Ordinal);
+        Assert.True(system >= 0 && user > system && sizeHint > user, $"顺序错误: {body}");
+    }
+
+    [Fact]
+    public async Task OpenAI_未选尺寸或auto时不追加提示词()
+    {
+        foreach (string size in new[] { "", "auto" })
+        {
+            StubHandler handler = new(_ => Json(OneImage));
+            TextTaskInput input = Input();
+            input.Config.Size = size;
+
+            await Task(handler).RunAsync(input);
+
+            Assert.DoesNotContain("生成图片要求尺寸", handler.LastBody!, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task OpenAI_编辑路径同样追加尺寸提示词()
+    {
+        StubHandler handler = new(_ => Json(OneImage));
+        TextTaskInput input = Input();
+        input.Config.Size = "9:16";
+        input.ReferenceImages.Add(new ProviderMedia { DataURL = PngDataUrl() });
+
+        await Task(handler).RunAsync(input);
+
+        Assert.Equal("/v1/images/edits", handler.LastRequest!.RequestUri!.AbsolutePath);
+        Assert.Contains("生成图片要求尺寸9:16", handler.LastBody!, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task OpenAI_有参考图走edits且为multipart()
     {

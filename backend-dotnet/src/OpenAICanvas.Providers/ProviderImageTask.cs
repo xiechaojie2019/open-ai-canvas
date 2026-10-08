@@ -100,7 +100,7 @@ public sealed class ProviderImageTask
             Dictionary<string, object?> body = new(StringComparer.Ordinal)
             {
                 ["model"] = input.Config.Model,
-                ["prompt"] = ProviderHelpers.WithSystemPrompt(input.Config.SystemPrompt, input.Prompt),
+                ["prompt"] = WithSizePrompt(input),
                 ["n"] = 1,
             };
             ApplyImageParameters(body, capability, input.Config);
@@ -117,6 +117,50 @@ public sealed class ProviderImageTask
             ["mode"] = "image",
             ["images"] = ImageDataUrls(response),
         };
+    }
+
+    /// <summary>
+    /// 组装 OpenAI Images 请求的 prompt：在系统提示词拼接结果末尾追加尺寸要求。
+    /// </summary>
+    /// <remarks>
+    /// OpenAI Images 协议里的 <c>size</c> 只是「建议值」，实测部分中转上游
+    /// （如 dagent 网关的 gpt-image-2）会完全忽略该字段，转而严格跟随输入图比例
+    /// 或返回自身的默认尺寸 —— 直接用同一个模型、同一张参考图，仅改 <c>size</c>
+    /// 的取值，出图尺寸纹丝不动。同一上游对 prompt 里的自然语言尺寸描述
+    /// （「生成图片要求尺寸21:9」→ 精确 21:9）却有稳定响应。
+    /// 因此这里在保留 <c>size</c> 字段（对真正遵循该字段的上游无害）的同时，
+    /// 把画布选定的尺寸同步进 prompt，让两类上游都能拿到尺寸意图。
+    /// </remarks>
+    private static string WithSizePrompt(TextTaskInput input)
+    {
+        string prompt = ProviderHelpers.WithSystemPrompt(input.Config.SystemPrompt, input.Prompt);
+        string sizeHint = SizePromptHint(input.Config.Size, input.ImageCapability);
+        if (sizeHint.Length == 0)
+        {
+            return prompt;
+        }
+        return prompt.Length == 0 ? sizeHint : prompt + "\n\n" + sizeHint;
+    }
+
+    /// <summary>
+    /// 由画布尺寸设置生成 prompt 尺寸描述。返回空串表示不需要追加
+    /// （未选尺寸、选了 auto、或能力声明不支持尺寸参数）。
+    /// </summary>
+    private static string SizePromptHint(string? size, ImageCapabilityConfig? capability)
+    {
+        string trimmed = (size ?? "").Trim();
+        if (trimmed.Length == 0 || trimmed.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "";
+        }
+        // 能力声明不支持尺寸参数时不要凭空追加，避免给无关模型塞噪声。
+        if (capability is not null && capability.Size.Parameter == "none")
+        {
+            return "";
+        }
+        // 保持用户选定的原始形态：比例直接写比例（实测 21:9 出图精确 21:9），
+        // 像素写像素。两者上游都认，不做额外换算以免与画布预览不一致。
+        return $"生成图片要求尺寸{trimmed}";
     }
 
     /// <summary>按能力声明裁剪图片参数。对应 Go 主分支中连续的参数写入。</summary>
@@ -168,7 +212,7 @@ public sealed class ProviderImageTask
             ProviderMultipart.WriteMedia(stream, boundary, name, media);
 
         WriteField("model", input.Config.Model);
-        WriteField("prompt", ProviderHelpers.WithSystemPrompt(input.Config.SystemPrompt, input.Prompt));
+        WriteField("prompt", WithSizePrompt(input));
         WriteField("n", "1");
         if (ProviderImageOptions.ImageParameterSupported(capability, "response_format"))
         {
