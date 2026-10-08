@@ -59,15 +59,27 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, loa
                     cancelled = true;
                 };
             }
-            void getResourceAccess(storageKey, "display")
-                .then((access) => {
-                    if (!cancelled) setCachedSrc(resolveResourceAccessURL(access.url));
-                })
-                .catch(() => {
-                    if (!cancelled) setCacheFailed(true);
-                });
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            // 授权地址寿命很短（本地资源 display 仅 5 分钟），而 <img> 一旦拿到 src
+            // 就不会自己换地址：签名过期后元素重新进入视口/重新挂载只会一路 403。
+            // 因此按后端给的 refreshAt 主动换一次新签名，长驻页面的节点才能持续显示。
+            const load = () => {
+                void getResourceAccess(storageKey, "display")
+                    .then((access) => {
+                        if (cancelled) return;
+                        setCachedSrc(resolveResourceAccessURL(access.url));
+                        const refreshAt = access.refreshAt ? new Date(access.refreshAt).getTime() : Number.NaN;
+                        const delay = Number.isFinite(refreshAt) ? refreshAt - Date.now() + 1_000 : 0;
+                        if (delay > 0) timer = setTimeout(load, delay);
+                    })
+                    .catch(() => {
+                        if (!cancelled) setCacheFailed(true);
+                    });
+            };
+            load();
             return () => {
                 cancelled = true;
+                if (timer !== undefined) clearTimeout(timer);
             };
         }
 

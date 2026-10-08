@@ -305,7 +305,18 @@ export async function getResourceAccess(storageKey: string | undefined, purpose:
             const item = data.items?.[0];
             if (!item?.access?.url) throw new Error(item?.error?.msg || "后端未返回资源访问地址");
             const value = item.access;
-            const ttl = value.expiresAt ? Math.max(10_000, new Date(value.expiresAt).getTime() - Date.now() - 15_000) : 5 * 60_000;
+            // 授权地址寿命很短（本地资源 display 只有 5 分钟），且 <img> 拿到地址后
+            // 不会自己换新的：签名一过期，浏览器每次重试都只会 403。
+            // 所以缓存寿命取后端给的 refreshAt（授权窗口的 80%），保证下一次取用
+            // 必然是重新签发的地址；只在 expiresAt 前 15 秒兜底会在「马上失效」
+            // 的窗口里把地址发给调用方，过期后只能靠强刷。
+            const refreshAt = value.refreshAt ? new Date(value.refreshAt).getTime() : Number.NaN;
+            const expiresAt = value.expiresAt ? new Date(value.expiresAt).getTime() : Number.NaN;
+            const ttl = Number.isFinite(refreshAt)
+                ? Math.max(10_000, refreshAt - Date.now())
+                : Number.isFinite(expiresAt)
+                    ? Math.max(10_000, expiresAt - Date.now() - 15_000)
+                    : 5 * 60_000;
             accessCache.set(key, { value, expiresAt: Date.now() + ttl });
             return value;
         } catch (error) {
