@@ -36,11 +36,14 @@ public static class ResourceDeliveryEndpoints
                     cancellationToken,
                     rangeHeader: context.Request.Headers["Range"].ToString()).ConfigureAwait(false);
 
-                // CDN / 对象存储直连：允许安全短期缓存后 307。
+                // CDN / 对象存储直连：307 跳到签名直链。签名直链本身寿命极短
+                // （PurposeDisplay ttl = 5 分钟），因此重定向响应绝不可缓存——
+                // 一旦被浏览器缓存，后续请求不会再回到后端重新签名，而是直接用
+                // 缓存里已过期的 Location，OSS 返回 403 导致媒体/源图读取失败。
+                // 与 Go 一致：private, no-store。
                 if (delivery.RedirectURL.Length > 0)
                 {
-                    context.Response.Headers["Cache-Control"] =
-                        "private, max-age=86400, stale-while-revalidate=3600";
+                    context.Response.Headers["Cache-Control"] = "private, no-store";
                     context.Response.Headers["Referrer-Policy"] = "no-referrer";
                     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
                     return Results.Redirect(delivery.RedirectURL, permanent: false, preserveMethod: true);
