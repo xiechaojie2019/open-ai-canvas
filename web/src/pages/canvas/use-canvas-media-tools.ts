@@ -18,6 +18,7 @@ import type { PanoramaGenerateConfig } from "@/components/canvas/canvas-panorama
 import type { CanvasVideoFrameParams } from "@/components/canvas/canvas-video-frame-dialog";
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
+import { resolveCroppableImageSource } from "@/lib/canvas/canvas-pixel-source";
 import { isValidGridSplit, layoutGridSplitCells } from "@/lib/canvas/canvas-grid-split";
 import { audioMetadata, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
@@ -49,7 +50,7 @@ import { navigateToSettings } from "@/lib/settings-navigation";
 import { storeGeneratedVideo } from "@/services/api/video";
 import { getTool } from "@/services/api/tools";
 import { getMediaBlob, uploadMediaFile } from "@/services/file-storage";
-import { getImageBlob, uploadImage } from "@/services/image-storage";
+import { uploadImage } from "@/services/image-storage";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import type { GenerationTask } from "@/services/api/task-center";
 
@@ -639,8 +640,15 @@ export function useCanvasMediaTools({
 
     const splitImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageSplitParams) => {
         if (!node.metadata?.content || !isValidGridSplit(params)) return;
+        // 切分也是像素级操作：要先画到 canvas 再逐格导出。云端图片的展示地址是
+        // 同源的 /api/.../file，浏览器会以 no-cors 跟随它 307 跳到对象存储，
+        // canvas 因此被标记为跨域，toDataURL 抛 SecurityError（表现为「切分失败」）。
+        // 与裁剪保持一致：优先用本地 Blob 构造同源地址，实在取不到才回退原始地址。
+        let releaseSource = () => {};
         try {
-            const pieces = await splitDataUrl(node.metadata.content, params);
+            const source = await resolveCroppableImageSource(node);
+            releaseSource = source.release;
+            const pieces = await splitDataUrl(source.url, params);
             const sizedPieces = await Promise.all(pieces.map(async (piece) => {
                 const image = await uploadImage(piece.dataUrl);
                 return { piece, image, size: fitNodeSize(image.width, image.height) };
@@ -667,6 +675,8 @@ export function useCanvasMediaTools({
             message.success(`已切分为 ${childNodes.length} 个子节点`);
         } catch (error) {
             message.error(error instanceof Error ? `切分失败：${error.message}` : "图片切分失败，请重试");
+        } finally {
+            releaseSource();
         }
     }, [message, persistMediaNodes, setConnections, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
 
@@ -1061,8 +1071,13 @@ export function useCanvasMediaTools({
     const upscaleImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageUpscaleParams) => {
         if (!node.metadata?.content) return;
         setUpscaleNodeId(null);
+        // 与裁剪、切分同因：展示地址是同源 /api/.../file，307 到对象存储后 canvas 被判跨域，
+        // 插值重绘完导出 toDataURL 时抛 SecurityError。先取同源 Blob 地址再做像素操作。
+        let releaseSource = () => {};
         try {
-            const upscaled = await upscaleDataUrl(node.metadata.content, params);
+            const source = await resolveCroppableImageSource(node);
+            releaseSource = source.release;
+            const upscaled = await upscaleDataUrl(source.url, params);
             const image = await uploadImage(upscaled);
             const size = fitNodeSize(image.width, image.height);
             const childId = nanoid();
@@ -1074,6 +1089,8 @@ export function useCanvasMediaTools({
             await persistMediaNodes([child]);
         } catch (error) {
             message.error(error instanceof Error ? `放大失败：${error.message}` : "图片放大失败，请重试");
+        } finally {
+            releaseSource();
         }
     }, [message, persistMediaNodes, setConnections, setDialogNodeId, setNodes, setSelectedNodeIds]);
 
@@ -1298,19 +1315,4 @@ export function useCanvasMediaTools({
         upscaleImageNode,
         upscaleNodeId,
     };
-}
-
-// 裁剪、切分等像素级操作要求图片同源可读：云端地址若不带 CORS 头，
-// canvas 会被标记为跨域，toDataURL 直接抛 SecurityError。
-// 这里优先用本地缓存 Blob 构造同源 objectURL，取不到时再回退原始地址。
-async function resolveCroppableImageSource(node: CanvasNodeData): Promise<{ url: string; release: () => void }> {
-    const content = node.metadata?.content ?? "";
-    if (content.startsWith("data:") || content.startsWith("blob:")) return { url: content, release: () => {} };
-    const storageKey = node.metadata?.storageKey;
-    if (!storageKey) return { url: content, release: () => {} };
-    const readBlob = storageKey.startsWith("image:") || storageKey.startsWith("generation-image:") ? getImageBlob : getMediaBlob;
-    const blob = await readBlob(storageKey).catch(() => null);
-    if (!blob) return { url: content, release: () => {} };
-    const url = URL.createObjectURL(blob);
-    return { url, release: () => URL.revokeObjectURL(url) };
 }
