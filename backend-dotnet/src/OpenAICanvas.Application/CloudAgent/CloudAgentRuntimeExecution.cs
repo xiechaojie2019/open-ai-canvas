@@ -660,7 +660,12 @@ public sealed partial class CloudAgentRuntimeService
             await CloudAgentMutations.PrepareCanvasMutationAsync(
                 context, run.UserID, state.Request.CanvasID, call).ConfigureAwait(false);
         await CloudAgentMutations.SaveDocumentAsync(context, canvas, document, policy).ConfigureAwait(false);
-        await CloudAgentMutations.RecordAsync(context, new CloudAgentMutationInput
+        // 必须走 run 绑定的 recorder（=`RecorderForRun`），它内部注入 RunID 并投影 canvas_updated
+        // 事件，与 Go 的 cloudAgentCanvasEventRecorder 一一对应。
+        // 直接调 RecordAsync 会漏掉 RunID，RecordAsync 的首道校验即抛
+        // 「画布变更缺少可追踪的 Agent 操作信息」——写库之前就失败，所以画布毫无变化，
+        // 客户端只看到「操作画布 / 更新画布内容失败」。RunID 只由 recorder 注入，别再内联展开。
+        await CloudAgentMutations.RecorderForRun(run.ID, state)(context, new CloudAgentMutationInput
         {
             UserID = run.UserID,
             CanvasID = state.Request.CanvasID,
@@ -671,15 +676,6 @@ public sealed partial class CloudAgentRuntimeService
             BeforeJSON = beforeJSON,
             Preview = preview,
         }).ConfigureAwait(false);
-        await CloudAgentMutations.EmitCanvasChangeOnlyAsync(context, run.ID, state,
-            new CloudAgentMutationInput
-            {
-                UserID = run.UserID,
-                CanvasID = state.Request.CanvasID,
-                Operation = "canvas_apply_ops",
-                BeforeJSON = beforeJSON,
-                Preview = preview,
-            }).ConfigureAwait(false);
         _ = args;
         return new JsonObject
         {
