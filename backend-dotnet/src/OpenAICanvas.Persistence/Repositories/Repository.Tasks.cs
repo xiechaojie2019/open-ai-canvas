@@ -154,6 +154,27 @@ public sealed partial class Repository
         return (value ?? "").Trim();
     }
 
+    /// <summary>
+    /// 把已确认的上游请求 ID 回写到任务行（worker 崩溃后恢复轮询的数据源）。
+    /// 空串不写。与 Go 不同：不写 pollStage/nextPollAt —— .NET 的轮询在任务执行内
+    /// 阻塞进行，nextPollAt 只属于媒体恢复的让路调度（DeferRunningTaskForProviderPoll）。
+    /// </summary>
+    public async Task UpdateTaskProviderRequestIDAsync(
+        string taskId, string providerRequestId, CancellationToken cancellationToken = default)
+    {
+        string trimmed = providerRequestId.Trim();
+        if (taskId.Trim().Length == 0 || trimmed.Length == 0)
+        {
+            return;
+        }
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteAsync(
+            connection,
+            "UPDATE tasks SET \"providerRequestId\" = @trimmed, \"updatedAt\" = @now WHERE id = @taskId",
+            new { trimmed, now = DateTime.UtcNow, taskId },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     // ---------------------------------------------------------------- 文本回放增量
 
     /// <summary>

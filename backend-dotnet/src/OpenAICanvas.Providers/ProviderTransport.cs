@@ -46,13 +46,56 @@ public static class ProviderTransport
     /// 出站客户端工厂。<c>null</c> 时用 <see cref="OutboundHttpClient.Create"/>（生产路径）；
     /// 测试注入 <see cref="HttpClient"/> 以覆盖大小上限 / 非 2xx / 分片回调等分支。
     /// </param>
+    /// <param name="context">
+    /// 运行时上下文；其 <see cref="IProviderRequestContext.Audit"/> 非空时，每个终态
+    /// （连接失败 / 超限 / 非 2xx / 成功）都会写一条调用审计。对应 Go:
+    /// <c>doBinaryWithConsumer</c> 各终态的 <c>recordProviderRequest</c>。
+    /// </param>
     public static async Task<OutboundResult> SendAsync(
         HttpRequestMessage request,
         long maxResponseBytes = DefaultMaxResponseBytes,
         Action<string, byte[]>? onChunk = null,
         CancellationToken cancellationToken = default,
-        Func<HttpClient>? clientFactory = null)
+        Func<HttpClient>? clientFactory = null,
+        IProviderRequestContext? context = null)
     {
+        DateTime startedAt = DateTime.UtcNow;
+        string path = request.RequestUri?.AbsolutePath ?? "";
+        string upstreamURL = request.RequestUri is { } requestUri
+            ? $"{requestUri.Scheme}://{requestUri.Authority}{requestUri.AbsolutePath}"
+            : "";
+        string method = request.Method.Method.ToUpperInvariant();
+        string apiFormat = ProviderCallAuditLog.APIFormatOf(request);
+        byte[] requestBody = [];
+        string requestContentType = "";
+        if (context?.Audit is not null && request.Content is not null)
+        {
+            // 缓冲型内容（JSON/字节）读取不影响后续发送；读取失败按空报文记录。
+            requestContentType = request.Content.Headers.ContentType?.ToString() ?? "";
+            try
+            {
+                requestBody = await request.Content
+                    .ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                requestBody = [];
+            }
+        }
+
+        async Task RecordAsync(int statusCode, byte[] responseBody, Exception? failure)
+        {
+            if (context?.Audit is null)
+            {
+                return;
+            }
+            await ProviderCallAuditLog.RecordAsync(context, new ProviderCallObservation(
+                method, upstreamURL, path, apiFormat, requestContentType, requestBody,
+                statusCode, responseBody, failure,
+                (long)(DateTime.UtcNow - startedAt).TotalMilliseconds, startedAt), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         using HttpClient client = (clientFactory ?? (() => OutboundHttpClient.Create()))();
         HttpResponseMessage response;
         try
@@ -61,13 +104,16 @@ public static class ProviderTransport
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException error)
         {
+            await RecordAsync(0, [], error).ConfigureAwait(false);
             throw;
         }
         catch (Exception error) when (error is HttpRequestException or SocketException or InvalidOperationException)
         {
-            throw new ProviderTransportException(TransportFailureMessage(error), error);
+            ProviderTransportException normalized = new(TransportFailureMessage(error), error);
+            await RecordAsync(0, [], normalized).ConfigureAwait(false);
+            throw normalized;
         }
 
         using (response)
@@ -77,21 +123,40 @@ public static class ProviderTransport
             long? declaredLength = response.Content.Headers.ContentLength;
             if (declaredLength > maxResponseBytes)
             {
-                throw OversizeError(maxResponseBytes);
+                ProviderTransportException oversize = OversizeError(maxResponseBytes);
+                await RecordAsync((int)response.StatusCode, [], oversize).ConfigureAwait(false);
+                throw oversize;
             }
 
-            byte[] data = await ReadBodyAsync(response, mimeType, maxResponseBytes, onChunk, cancellationToken)
-                .ConfigureAwait(false);
+            byte[] data;
+            try
+            {
+                data = await ReadBodyAsync(response, mimeType, maxResponseBytes, onChunk, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception error) when (context?.Audit is not null && error is not OperationCanceledException)
+            {
+                await RecordAsync((int)response.StatusCode, [], error).ConfigureAwait(false);
+                throw;
+            }
+            catch (OperationCanceledException error) when (context?.Audit is not null)
+            {
+                await RecordAsync((int)response.StatusCode, [], error).ConfigureAwait(false);
+                throw;
+            }
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new ProviderHttpException(
+                ProviderHttpException httpError = new(
                     (int)response.StatusCode,
                     $"{(int)response.StatusCode} {response.ReasonPhrase}",
                     Encoding.UTF8.GetString(data),
                     OutboundHttpClient.ParseRetryAfter(
                         response.Headers.RetryAfter?.ToString(), DateTimeOffset.UtcNow));
+                await RecordAsync((int)response.StatusCode, data, httpError).ConfigureAwait(false);
+                throw httpError;
             }
+            await RecordAsync((int)response.StatusCode, data, null).ConfigureAwait(false);
             return new OutboundResult(data, mimeType);
         }
     }
@@ -205,9 +270,11 @@ public static class ProviderTransport
         HttpRequestMessage request,
         long maxResponseBytes = DefaultMaxResponseBytes,
         CancellationToken cancellationToken = default,
-        Func<HttpClient>? clientFactory = null)
+        Func<HttpClient>? clientFactory = null,
+        IProviderRequestContext? context = null)
     {
-        OutboundResult result = await SendAsync(request, maxResponseBytes, null, cancellationToken, clientFactory)
+        OutboundResult result = await SendAsync(
+            request, maxResponseBytes, null, cancellationToken, clientFactory, context)
             .ConfigureAwait(false);
 
         string mimeType = result.MIMEType;

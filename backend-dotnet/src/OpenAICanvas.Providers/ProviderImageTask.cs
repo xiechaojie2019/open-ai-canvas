@@ -657,7 +657,7 @@ public sealed class ProviderImageTask
         ProviderTransport.ApplyDefaultHeaders(request);
 
         ProviderTransport.OutboundResult result = await ProviderTransport.SendAsync(
-            request, ProviderTransport.DefaultMaxResponseBytes, null, cancellationToken, _clientFactory)
+            request, ProviderTransport.DefaultMaxResponseBytes, null, cancellationToken, _clientFactory, _context)
             .ConfigureAwait(false);
         return (result.Data, result.MIMEType);
     }
@@ -869,7 +869,8 @@ public sealed class ProviderImageTask
                 request,
                 _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory,
+                _context).ConfigureAwait(false);
         }
     }
 
@@ -1080,7 +1081,8 @@ public sealed class ProviderImageTask
                 request,
                 _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory,
+                _context).ConfigureAwait(false);
         }
     }
 }

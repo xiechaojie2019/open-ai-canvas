@@ -491,7 +491,7 @@ public sealed class ProviderWorkflowTask(
                 _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
                 null,
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory, _context).ConfigureAwait(false);
         }
         catch (ProviderHttpException error) when (UploadAuthFailureMessage(error) is { Length: > 0 } message)
         {
@@ -954,7 +954,7 @@ public sealed class ProviderWorkflowTask(
             _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
             null,
             cancellationToken,
-            _clientFactory).ConfigureAwait(false);
+            _clientFactory, _context).ConfigureAwait(false);
         Dictionary<string, object?>? payload = JsonFields.ParseObject(Encoding.UTF8.GetString(result.Data));
         if (payload is null)
         {
@@ -975,7 +975,7 @@ public sealed class ProviderWorkflowTask(
             _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
             null,
             cancellationToken,
-            _clientFactory).ConfigureAwait(false);
+            _clientFactory, _context).ConfigureAwait(false);
         return (result.Data, result.MIMEType);
     }
 

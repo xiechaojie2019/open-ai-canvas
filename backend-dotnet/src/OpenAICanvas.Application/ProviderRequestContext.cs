@@ -23,22 +23,47 @@ public sealed class ProviderRequestContext : IProviderRequestContext
     private readonly IRuntimePolicyProvider _policy;
     private readonly Func<string, int>? _channelConcurrencyLimit;
     private readonly ProtocolAdapterRegistry? _declarativeAdapter;
+    private readonly ApiCallAuditWriter? _auditWriter;
+    private readonly ProviderCallAudit? _audit;
 
     /// <param name="policy">运行时策略来源（读取响应上限、熔断阈值与渠道并发）。</param>
     /// <param name="coordinator">多实例协调器；<c>null</c> 时退化为单实例无协调行为。</param>
     /// <param name="channelConcurrencyLimit">
     /// 读取单个渠道的并发覆盖值（0 表示未配置）。对应 Go: <c>host.ChannelConcurrencyLimit</c>。
     /// </param>
+    /// <param name="auditWriter">调用审计写入器；与 <paramref name="audit"/> 同时提供才记录。</param>
+    /// <param name="audit">当前任务调用的审计元数据（对应 Go 的 <c>providerAnalyticsContext</c> 载荷）。</param>
     public ProviderRequestContext(
         IRuntimePolicyProvider policy,
         Coordinator? coordinator = null,
         Func<string, int>? channelConcurrencyLimit = null,
-        ProtocolAdapterRegistry? declarativeAdapter = null)
+        ProtocolAdapterRegistry? declarativeAdapter = null,
+        ApiCallAuditWriter? auditWriter = null,
+        ProviderCallAudit? audit = null)
     {
         _policy = policy;
         _coordinator = coordinator;
         _channelConcurrencyLimit = channelConcurrencyLimit;
         _declarativeAdapter = declarativeAdapter;
+        _auditWriter = auditWriter;
+        _audit = audit;
+    }
+
+    /// <summary>当前任务调用的审计元数据；null 表示探测/测试执行，不记录。</summary>
+    ProviderCallAudit? IProviderRequestContext.Audit => _audit;
+
+    /// <summary>
+    /// 记录一次上游调用观测。审计是旁路：任何写入失败都不影响上游调用本身
+    /// （对应 Go: <c>recordProviderRequest</c> 的日志失败只转计费待核对）。
+    /// </summary>
+    async Task IProviderRequestContext.RecordProviderCallAsync(
+        ProviderCallObservation observation, CancellationToken cancellationToken)
+    {
+        if (_auditWriter is null || _audit is null)
+        {
+            return;
+        }
+        await _auditWriter.RecordAsync(_audit, observation, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>声明式插件注册表快照。对应 <c>IProviderRequestContext.DeclarativeAdapter</c>。</summary>

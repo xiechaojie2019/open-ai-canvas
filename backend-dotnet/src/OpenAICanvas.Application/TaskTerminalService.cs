@@ -22,12 +22,15 @@ public sealed class TaskTerminalService
     private readonly Repository _repository;
     private readonly TaskBillingLifecycle _billing;
     private readonly TaskService _tasks;
+    private readonly ApiCallAuditWriter? _audit;
 
-    public TaskTerminalService(Repository repository, TaskService tasks)
+    public TaskTerminalService(
+        Repository repository, TaskService tasks, ApiCallAuditWriter? audit = null)
     {
         _repository = repository;
         _tasks = tasks;
         _billing = new TaskBillingLifecycle(repository);
+        _audit = audit;
     }
 
     /// <summary>计费收尾动作收敛。对应 Go: <c>taskBillingCoordinator</c> 的生命周期方法。</summary>
@@ -112,6 +115,11 @@ public sealed class TaskTerminalService
         TaskEntity task, string stage, Exception error, bool billingUncertain, string refundReason,
         CancellationToken cancellationToken = default)
     {
+        // 与 Go 一致：进入终态前补齐"请求未发出"的审计兜底（仅当任务完全无调用日志）。
+        if (_audit is not null)
+        {
+            await _audit.EnsureFailedAttemptLoggedAsync(task, error, cancellationToken).ConfigureAwait(false);
+        }
         task.Status = TaskStatus.TaskStatusFailed;
         task.Stage = stage;
         task.Error = UserFacing(error);
@@ -202,6 +210,11 @@ public sealed class TaskTerminalService
         task.Status = TaskStatus.TaskStatusFailed;
         task.Stage = "任务失败";
         task.Error = UserFacing(error);
+        // 与 Go 一致：执行失败先补审计兜底，再写终态（仅当任务完全无调用日志）。
+        if (_audit is not null)
+        {
+            await _audit.EnsureFailedAttemptLoggedAsync(task, error, cancellationToken).ConfigureAwait(false);
+        }
         await MarkTerminalStateAsync(task, cancellationToken).ConfigureAwait(false);
         await FinalizeReplayAsync(task, TaskStatus.TaskStatusFailed, "文本回放草稿归并失败", cancellationToken).ConfigureAwait(false);
         bool requiresReview = await _billing.BillingFailureRequiresReviewAsync(task.BillingOrderID, task.ID, error, cancellationToken).ConfigureAwait(false);

@@ -2,6 +2,8 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Outbound;
 using OpenAICanvas.Platform;
@@ -927,4 +929,198 @@ public sealed class ResourceUploadService
             "text/plain" => ".txt",
             _ => string.Empty,
         };
+
+    // ---------------------------------------------------------- 生成媒体落盘
+
+    private const long Megabyte = 1 << 20;
+
+    private static readonly string[] GeneratedMediaURLKeys = ["dataUrl", "content", "url", "coverUrl"];
+
+    /// <summary>
+    /// 把任务结果里的内联 data:URL 解码并落库为账号资源，结果改写为
+    /// resourceId/storageKey/资源 URL，保证云 Agent 画布回写、项目产物登记等
+    /// 下游能解析到资源。对应 Go: <c>persistGeneratedMediaResult</c>
+    /// （严格模式：data URL 无效即失败；生成资源额度全额校验）。
+    /// </summary>
+    public async Task<Dictionary<string, object?>> PersistGeneratedMediaResultAsync(
+        string userId, Dictionary<string, object?> result, CancellationToken cancellationToken = default)
+    {
+        if (result is null || result.Count == 0)
+        {
+            return result ?? [];
+        }
+        // 与 Go json.Marshal/Unmarshal 归一化等价：先折平成通用 JSON 树再改写，
+        // 兼容各 provider 返回的字典/数组/JsonElement 混合结构。
+        // 没有内联媒体时必须原样返回：往返会把 string 值变成 JsonElement，
+        // 破坏下游按原始类型取值的消费方（如记忆压缩的 ResultText）。
+        JsonNode? normalized;
+        try
+        {
+            normalized = JsonNode.Parse(JsonSerializer.Serialize(result, ProjectCharacterService.GoPayloadOptions));
+        }
+        catch (JsonException)
+        {
+            return result;
+        }
+        if (normalized is null)
+        {
+            return result;
+        }
+        bool changed = await PersistGeneratedMediaValueAsync(userId, normalized, cancellationToken).ConfigureAwait(false);
+        if (!changed)
+        {
+            return result;
+        }
+        Dictionary<string, object?>? rewritten = normalized.Deserialize<Dictionary<string, object?>>(
+            ProjectCharacterService.GoPayloadOptions);
+        return rewritten ?? result;
+    }
+
+    private async Task<bool> PersistGeneratedMediaValueAsync(
+        string userId, JsonNode? node, CancellationToken cancellationToken)
+    {
+        switch (node)
+        {
+            case JsonArray array:
+                bool anyChildChanged = false;
+                foreach (JsonNode? child in array)
+                {
+                    if (await PersistGeneratedMediaValueAsync(userId, child, cancellationToken).ConfigureAwait(false))
+                    {
+                        anyChildChanged = true;
+                    }
+                }
+                return anyChildChanged;
+            case JsonObject item:
+                string raw = InlineMediaValue(item);
+                bool changed = false;
+                if (raw.Length > 0)
+                {
+                    await StoreGeneratedMediaItem(userId, item, raw, cancellationToken).ConfigureAwait(false);
+                    changed = true;
+                }
+                // 已存储项的 dataUrl 已被改写为资源 URL，不会二次落库；
+                // 兄弟/嵌套节点仍需继续处理（Go 语义：全量遍历）。
+                foreach (KeyValuePair<string, JsonNode?> property in item)
+                {
+                    if (await PersistGeneratedMediaValueAsync(userId, property.Value, cancellationToken)
+                        .ConfigureAwait(false))
+                    {
+                        changed = true;
+                    }
+                }
+                return changed;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>对应 Go: <c>persistGeneratedMediaValueMode</c> 的对象分支（存储 + 键改写）。</summary>
+    private async Task StoreGeneratedMediaItem(
+        string userId, JsonObject item, string raw, CancellationToken cancellationToken)
+    {
+        (string mimeType, byte[] data) = DecodeGeneratedDataURL(raw);
+        string kind = NormalizeResourceKind("", mimeType);
+        int width = (int)IntValue(item["width"]);
+        int height = (int)IntValue(item["height"]);
+        if (kind == "image" && (width <= 0 || height <= 0))
+        {
+            (width, height) = ImageDimensions(data);
+        }
+        long durationMs = IntValue(item["durationMs"]);
+        string quotaDay = await _quota.ReserveGeneratedResourceQuotaAsync(userId, data.Length, cancellationToken)
+            .ConfigureAwait(false);
+        Resource resource;
+        try
+        {
+            string extension = ExtensionFromMimeType(mimeType);
+            (resource, _) = await StoreResourceAsync(
+                userId, kind, "generated" + (extension.Length > 0 ? extension : ".bin"), mimeType,
+                data.Length, width, height, durationMs, new MemoryStream(data), null, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            await _quota.ReleaseUserUploadQuotaAsync(userId, quotaDay, data.Length, CancellationToken.None)
+                .ConfigureAwait(false);
+            throw new InvalidOperationException($"生成内容写入资源存储失败：{error.Message}", error);
+        }
+        if (resource is null)
+        {
+            throw new InvalidOperationException("生成内容写入资源存储失败：资源记录缺失");
+        }
+        await _quota.CommitUserUploadQuotaAsync(userId, data.Length, cancellationToken).ConfigureAwait(false);
+        string resourceURL = "/api/resources/" + resource.ID + "/file";
+        foreach (string key in GeneratedMediaURLKeys)
+        {
+            if (item[key] is JsonValue value && value.TryGetValue<string>(out string? text)
+                && text is not null
+                && (text == raw || text.StartsWith("blob:", StringComparison.Ordinal)))
+            {
+                item[key] = resourceURL;
+            }
+        }
+        if (item.ContainsKey("dataUrl"))
+        {
+            item["dataUrl"] = resourceURL;
+        }
+        item["url"] = resourceURL;
+        item["storageKey"] = "resource:" + resource.ID;
+        item["resourceId"] = resource.ID;
+        item["bytes"] = resource.Size;
+        item["mimeType"] = resource.MimeType;
+        item["width"] = resource.Width;
+        item["height"] = resource.Height;
+    }
+
+    /// <summary>对应 Go: <c>inlineMediaValue</c>（生成媒体的内联键探测）。</summary>
+    private static string InlineMediaValue(JsonObject item)
+    {
+        foreach (string key in GeneratedMediaURLKeys)
+        {
+            if (item[key] is JsonValue value && value.TryGetValue<string>(out string? text)
+                && text is not null
+                && (text.StartsWith("data:image/", StringComparison.Ordinal)
+                    || text.StartsWith("data:video/", StringComparison.Ordinal)
+                    || text.StartsWith("data:audio/", StringComparison.Ordinal)))
+            {
+                return text;
+            }
+        }
+        return "";
+    }
+
+    /// <summary>对应 Go: <c>decodeDataURL</c>（生成媒体严格解码，含单文件策略上限）。</summary>
+    private (string MimeType, byte[] Data) DecodeGeneratedDataURL(string value)
+    {
+        int separator = value.IndexOf(',');
+        string header = separator < 0 ? "" : value[..separator];
+        if (separator < 0
+            || !header.StartsWith("data:", StringComparison.Ordinal)
+            || !header.ToLowerInvariant().EndsWith(";base64", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("生成内容 data URL 无效：格式无效");
+        }
+        string mimeType = header["data:".Length..^";base64".Length];
+        byte[] data;
+        try
+        {
+            data = Convert.FromBase64String(value[(separator + 1)..]);
+        }
+        catch (FormatException error)
+        {
+            throw new InvalidOperationException($"生成内容 data URL 无效：base64 解码失败：{error.Message}", error);
+        }
+        RuntimeResourcePolicy resource = PolicyProvider.Current().Resource;
+        if ((long)data.Length > Megabyte * resource.GeneratedFileMB)
+        {
+            throw new InvalidOperationException($"单个生成资源超过 {resource.GeneratedFileMB}MB");
+        }
+        return (mimeType, data);
+    }
+
+    private static long IntValue(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<double>(out double number) && !double.IsNaN(number)
+            ? (long)number
+            : 0;
 }

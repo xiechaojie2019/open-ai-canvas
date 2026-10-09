@@ -66,6 +66,51 @@ public sealed partial class Repository
             SqlBuilder.Insert(typeof(ApiCallLog)), log, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
+    /// <summary>整行更新一条调用日志（视频 poll 合并回根行）。对应 Go: <c>repo.Save(root)</c>。</summary>
+    public async Task SaveApiCallLogAsync(ApiCallLog log, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.ExecuteAsync(new CommandDefinition(
+            SqlBuilder.Update(typeof(ApiCallLog)), log, cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 查找视频调用的根日志（create 行）。任务优先，缺任务时退化为
+    /// 用户+渠道+上游请求 ID 的匹配。对应 Go: <c>repo.VideoAPICallRoot</c>。
+    /// </summary>
+    public async Task<ApiCallLog?> VideoApiCallRootAsync(
+        string taskId, string userId, string channelId, string providerRequestId,
+        CancellationToken cancellationToken = default)
+    {
+        string where = taskId.Length > 0
+            ? "\"capability\" = 'video' AND \"requestKind\" = 'create' AND \"taskId\" = @taskId"
+            : "\"capability\" = 'video' AND \"requestKind\" = 'create' AND \"userId\" = @userId "
+              + "AND \"channelId\" = @channelId AND \"providerRequestId\" = @providerRequestId";
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await FirstOrDefaultAsync<ApiCallLog>(
+            connection,
+            SqlBuilder.Select<ApiCallLog>(where, "\"createdAt\" DESC", " LIMIT 1"),
+            new { taskId, userId, channelId, providerRequestId },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>任务是否已有调用日志（失败兜底只在完全无日志时补一条）。</summary>
+    public async Task<bool> HasApiCallLogForTaskAsync(
+        string taskId, CancellationToken cancellationToken = default)
+    {
+        if (taskId.Trim().Length == 0)
+        {
+            return false;
+        }
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        long count = await ScalarAsync<long>(
+            connection,
+            "SELECT COUNT(*) FROM \"apiCallLogs\" WHERE \"taskId\" = @taskId",
+            new { taskId = taskId.Trim() },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return count > 0;
+    }
+
     public async Task<(IReadOnlyList<ApiCallLog> Logs, long Total)> QueryApiCallLogsAsync(
         ApiCallLogFilter filter, CancellationToken cancellationToken = default)
     {

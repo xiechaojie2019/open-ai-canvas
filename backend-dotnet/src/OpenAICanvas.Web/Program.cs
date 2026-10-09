@@ -152,6 +152,8 @@ builder.Services.AddSingleton(serviceProvider =>
             canvas.Features))
     {
         CanvasService = canvas,
+        GeneratedMediaUpload =
+            serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
     };
 });
 builder.Services.AddSingleton(serviceProvider =>

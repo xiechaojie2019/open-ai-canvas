@@ -197,7 +197,7 @@ public sealed class ProviderProtocolTask(
         });
         async Task<(byte[] Data, string MIMEType)> Download(CancellationToken token) =>
             await ProviderProtocolExecutor.ExecuteWithMimeTypeAsync(
-                input.Config, spec, null, null, null, token, _clientFactory).ConfigureAwait(false);
+                input.Config, spec, null, null, null, token, _clientFactory, _context).ConfigureAwait(false);
 
         byte[] data;
         string mimeType;
@@ -385,7 +385,8 @@ public sealed class ProviderProtocolTask(
                 _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
                 null,
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory,
+                _context).ConfigureAwait(false);
             return (outbound.Data, ProviderMediaCodec.NormalizedMediaMimeType(outbound.MIMEType, outbound.Data));
         }
     }
@@ -505,7 +506,7 @@ public sealed class ProviderProtocolTask(
     private async Task<byte[]> ExecuteCreateOrPollAsync(
         ProviderConfig config, RequestSpec spec, CancellationToken cancellationToken) =>
         await ProviderProtocolExecutor.ExecuteAsync(
-            config, spec, null, cancellationToken, _clientFactory).ConfigureAwait(false);
+            config, spec, null, cancellationToken, _clientFactory, _context).ConfigureAwait(false);
 
     /// <summary>
     /// 声明式协议的轮询策略：视频走默认视频策略，其他模式用短间隔快速轮询。

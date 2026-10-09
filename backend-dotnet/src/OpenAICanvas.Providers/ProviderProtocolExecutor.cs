@@ -27,11 +27,12 @@ public static class ProviderProtocolExecutor
         RequestSpec spec,
         ProviderProtocolMediaLoader? mediaLoader = null,
         CancellationToken cancellationToken = default,
-        Func<HttpClient>? clientFactory = null)
+        Func<HttpClient>? clientFactory = null,
+        IProviderRequestContext? context = null)
     {
         (byte[] data, _) = await ExecuteWithMimeTypeAsync(
             config, spec, null, mediaLoader, ProtocolCredentialsFor(config), cancellationToken,
-            clientFactory).ConfigureAwait(false);
+            clientFactory, context).ConfigureAwait(false);
         return data;
     }
 
@@ -46,7 +47,8 @@ public static class ProviderProtocolExecutor
         ProviderProtocolMediaLoader? mediaLoader = null,
         ProviderCredentials? credentials = null,
         CancellationToken cancellationToken = default,
-        Func<HttpClient>? clientFactory = null)
+        Func<HttpClient>? clientFactory = null,
+        IProviderRequestContext? context = null)
     {
         // 校验优先：method 必须已声明且受支持。
         ValidateSpec(spec);
@@ -87,7 +89,8 @@ public static class ProviderProtocolExecutor
                     ProviderTransport.DefaultMaxResponseBytes,
                     consume,
                     cancellationToken,
-                    clientFactory)
+                    clientFactory,
+                    context)
                 .ConfigureAwait(false);
             return (result.Data, result.MIMEType);
         }

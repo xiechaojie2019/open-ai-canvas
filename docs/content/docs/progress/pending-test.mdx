@@ -5,6 +5,15 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## net8 任务链路调用审计（请求明细 backend-task 日志）
+
+- net8 后端此前任务执行链路完全不写 `api_call_logs`：管理端「请求明细」在切线后不再出现图片/视频/文本调用（测试站该表自 2026-09-25 起零新增），管理分析与计费成本富化同源缺数据。本次按 Go 语义补齐移植：`ProviderTransport.SendAsync` 出站收口在每个终态（成功 / 非 2xx / 连接失败 / 响应超限 / 取消）发观测事件，`ApiCallAuditWriter`（Application）按 Go `recordProviderRequest` + `LogAPICall` 管线落库——用量提取（OpenAI/佐慈 usage、Gemini usageMetadata、方舟视频 completion_tokens）、上游请求 ID 与 providerStatus 提取、失败安全文案合并、按模型报价估算成本、账单 `providerRequestId` 回填、任务行 `providerRequestId` 回写（worker 崩溃后恢复轮询的数据源）、视频 poll 合并回 create 根行（pollCount/最新报文/终态用量）、日志条数与任务历史字节配额（超限转计费待核对）；报文脱敏移植为 `OpenAICanvas.Platform.ApiCallPayload`（密钥键名 [REDACTED]、内嵌 data URL 省略、1MB/128KB 限长）。审计元数据在 `TaskWorkerService.ExecuteProviderTaskAsync` 装配（对应 Go `withProviderAnalytics`：渠道 ID/模型取解析后 config、能力按 input.Mode 覆盖、系统渠道自代理 URL 推断），文本 / 图片 / 视频 / 音频 / 工作流 / 声明式协议的全部出站发送点穿透上下文。任务失败且完全无调用日志时由 `TaskTerminalService` 两个失败入口补 `INTERNAL` 兜底行（`/task/provider-preflight|provider-request|provider-state`），对应 Go `ensureFailedProviderAttemptLogged`。
+- 与 Go 的已知差异：不写任务 `pollStage`/`nextPollAt`（.NET 轮询在任务执行内阻塞，nextPollAt 只属于媒体恢复让路调度）；不做图片/视频观测性进度同步（ProviderProgress 链路未移植）；渠道并发槽失败不产生审计行（槽位获取不在出站收口，且图片/视频尚未接槽位）；媒体恢复各阶段（下载/OSS/登记）的 INTERNAL 行未移植。
+- [x] 专项测试 22 项通过（成功/非 2xx/连接失败/取消/极简 gemini 协议观测、用量与成本估算、视频 poll 合并与任务行回写、配额超限拒绝、业务失败判定、5xx 安全文案、失败兜底补行与去重、能力推断、脱敏报文），相邻回归 919 项（Providers 全部、TaskTerminal、SystemProxy、AdminAnalytics、TaskWorker、Billing）零失败。
+- [ ] 全量 net8 套件在合并本轮与并行改动后统一执行。
+- [ ] 部署到测试站后验收：跑一次图片与视频生成任务，管理端 `/admin/logs` 请求明细出现 `backend-task` 行（含请求/响应报文、耗时、上游请求 ID、成本列），视频任务合并为一条带轮询计数的根行；文本与云 Agent 任务的上游调用也出现在明细中。
+- [ ] 管理端分析与「计费」视图的成本/用量统计在真实任务后复核。
+
 ## net8 后端画布同步版本号（revision）补齐
 
 - net8 后端（`backend-dotnet/`）此前画布保存不带版本号：`PUT /api/canvas-projects/:id` 响应缺 `revision`，仓储为无版本谓词的裸 UPDATE（最后写入者胜），导致前端每次保存都报「服务端未返回有效画布版本」并把画布打入冲突暂停，且多端同账号同时编辑会互相静默覆盖。本次按 Go 语义补齐：`canvas_projects` 新增 `revision`（非空默认 1，随迁移 v23 `canvas_revision_history` 落列），保存按原版本 CAS 校验并递增（缺失 428、不一致 409），GET/快照/摘要响应携带服务端权威版本，存储载荷剥离 `revision`/`remoteContentHash` 并保留服务端 viewport；画布关联项目/解绑/项目删除级联/创作与 Agent 写入路径同步递增版本。
@@ -3112,3 +3121,17 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - Decode/EnsureRoot/会话续接路径均已赋非空，JSON 显式 null 由 GoOmitEmpty 写出时省略、读入时落初始值。
 
 [x] CloudAgent 44 测试通过（含 journal/会话/运行时）。
+
+### 生成媒体落盘资源补移植（2026-10-09 · 续十七）
+
+**云 Agent generate_media 回写必报「生成结果没有可用的账号资源」**（画布 mHyDTZ1F46VSFeZguz1S0，任务 agd4ac0cd39fe92c3ac31da4307682e108：媒体任务 succeeded，但回写画布时解析不到资源，整轮判失败）。根因是新发现的移植缺口第 8 项：Go `task_worker.go:233` 在任务成功后调 `persistGeneratedMediaResult`（resource.go：递归扫描结果内联 dataUrl → 解码 → storeResource 落库（含生成资源配额预留/提交/释放）→ 结果改写为 resourceId/storageKey/资源 URL），**.NET 完全没有对应实现**，Provider 结果原样进 `tasks.resultJson`——实例上所有成功 canvas_image 任务均为纯 dataUrl、零资源引用（DB 实证 8/8）。
+
+本轮补齐：
+
+- **`ResourceUploadService.PersistGeneratedMediaResultAsync`**（对应 Go `persistGeneratedMediaResult` 严格模式）：JSON 树遍历，dataUrl/content/url/coverUrl 命中 `data:image|video|audio:` 即解码（`DecodeGeneratedDataURL` 对齐 Go `decodeDataURL`：格式/ base64 校验 + GeneratedFileMB 单文件上限）→ `ReserveGeneratedResourceQuotaAsync` 预留 → `StoreResourceAsync` 落库（失败释放额度）→ 提交 → 改写结果键（resourceId/storageKey/url/dataUrl/bytes/mimeType/width/height；图片缺宽高时从解码数据探测）。
+- **无内联媒体时原样返回原字典**，不做 JSON 往返——往返会把 string 值变成 JsonElement，破坏记忆压缩 `ResultText` 等按原始类型取值的消费方。
+- **Worker 接线**：`TaskWorkerService` 成功路径在 `SaveCompletionWithinQuotaAsync` 之前调用（`GeneratedMediaUpload` 由组合根注入）。落盘失败按「上游已成功、本地保存失败」收尾：`HandleExecutionFailureAsync(providerSucceeded: true)` → 计费转待核对**不退款**（对齐 Go 传 providerSucceeded=true 的语义）。
+- 明确不做：Go `storage_migration.go` 的 legacy 变体（`persistLegacyGeneratedMediaResult`，skipInvalid+免配额）属一次性存储迁移，.NET 无该子系统；`provider_task_recovery.go:154` 人工恢复路径的 persist 随人工恢复功能本身未移植而暂缺。媒体恢复 Materializer 分支在 .NET 尚未注册（既有现状），注册后其结果同样经过 persist 出口。
+- 测试 5 个（GeneratedMediaPersistTests，对应 Go resource_test/provider_test 用例）：无效 dataURL 严格拒绝、账号存储 20GB 上限拦截、dataUrl 落库改写（含宽高补齐 + DB 资源行核验）、多张内联图全部落库（防短路）、无内联媒体原样返回（string 类型保持）。
+- [x] GeneratedMediaPersist 5/5、ResourceObjectStorage + TimelineTaskExecutor 8/8、TaskMediaRecovery + CloudAgent 套件通过；同批 ProviderMediaHydration 3 个失败为**存量问题**（其裸 SQL 仍用 snake_case 列名 `user_id`/`object_key`，camelCase 改名迁移后必挂，与本轮改动无交集，待另行修复）。
+- [ ] 部署后验收：测试站重新用 Agent 生成海报，generate_media 应成功回写画布节点（节点 status=success、图片可见）；任务中心新任务 resultJson 应含 resourceId/storageKey 而非纯 dataUrl。

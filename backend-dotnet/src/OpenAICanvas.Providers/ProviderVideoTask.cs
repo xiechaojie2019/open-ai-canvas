@@ -703,7 +703,8 @@ public sealed class ProviderVideoTask
                 request,
                 _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory,
+                _context).ConfigureAwait(false);
         }
     }
 
@@ -717,7 +718,8 @@ public sealed class ProviderVideoTask
                 _context?.MaxResponseBytes ?? ProviderTransport.DefaultMaxResponseBytes,
                 null,
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory,
+                _context).ConfigureAwait(false);
             return (result.Data, result.MIMEType);
         }
     }

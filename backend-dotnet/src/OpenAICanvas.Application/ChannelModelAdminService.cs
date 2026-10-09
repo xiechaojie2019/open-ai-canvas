@@ -199,9 +199,25 @@ public sealed class ChannelModelAdminService
         Stopwatch stopwatch = Stopwatch.StartNew();
         try
         {
+            // 与 Go 一致：连通性测试复用真实生成协议并写调用审计（operation=admin_model_test，
+            // 归属管理员本人，无任务与计费订单），便于在请求明细里回看测试调用。
+            DefaultRuntimePolicyProvider policy = new();
+            ProviderCallAudit audit = new(
+                UserID: actor.ID,
+                TaskID: "",
+                TraceID: "",
+                RequestID: "",
+                BillingOrderID: "",
+                ChannelID: channel.ID,
+                Capability: capability,
+                Operation: "admin_model_test",
+                Model: modelKey,
+                VideoSeconds: 0);
             ProviderRequestContext context = new(
-                new DefaultRuntimePolicyProvider(),
-                declarativeAdapter: _declarativeAdapters?.Invoke());
+                policy,
+                declarativeAdapter: _declarativeAdapters?.Invoke(),
+                auditWriter: new ApiCallAuditWriter(_repository, policy),
+                audit: audit);
             _ = await new ProviderTextTask(context).RunTextTaskAsync(input, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }

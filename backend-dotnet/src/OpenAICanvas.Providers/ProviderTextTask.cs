@@ -124,7 +124,7 @@ public sealed class ProviderTextTask
                 StreamingAgentParser parser = new(wire, onDelta) { EmitReasoning = onReasoningDelta };
                 (byte[] data, string mimeType) = await ProviderProtocolExecutor.ExecuteWithMimeTypeAsync(
                     input.Config, spec, (type, chunk) => parser.Consume(type, chunk),
-                    cancellationToken: cancellationToken, clientFactory: _clientFactory).ConfigureAwait(false);
+                    cancellationToken: cancellationToken, clientFactory: _clientFactory, context: _context).ConfigureAwait(false);
                 if (mimeType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
                 {
                     parser.Flush();
@@ -137,7 +137,7 @@ public sealed class ProviderTextTask
                 streamedBody = data;
             }
             byte[] body = streamedBody ?? await ProviderProtocolExecutor.ExecuteAsync(
-                input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory)
+                input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory, context: _context)
                 .ConfigureAwait(false);
             CreateResult created = adapter.ParseCreate(body);
             if (created.Status is ProtocolStatus.Failed or ProtocolStatus.Cancelled)
@@ -312,7 +312,7 @@ public sealed class ProviderTextTask
         using HttpRequestMessage request = ProviderTransport.BuildJsonPost(input.Config, PathFor(protocol), body);
         Dictionary<string, object?> payload =
             await ProviderTransport
-                .SendJsonAsync(request, MaxResponseBytes, cancellationToken, _clientFactory)
+                .SendJsonAsync(request, MaxResponseBytes, cancellationToken, _clientFactory, _context)
                 .ConfigureAwait(false);
 
         Dictionary<string, object?> parsed = AgentToolPayload.Parse(payload, protocol);
@@ -343,7 +343,7 @@ public sealed class ProviderTextTask
             MaxResponseBytes,
             (mimeType, chunk) => parser.Consume(mimeType, chunk),
             cancellationToken,
-            _clientFactory).ConfigureAwait(false);
+            _clientFactory, _context).ConfigureAwait(false);
 
         // 上游可能忽略 stream 参数直接回 JSON，此时按非流式解析（与 Go 一致）。
         if (!result.MIMEType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
@@ -529,7 +529,7 @@ public sealed class ProviderTextTask
                 MaxResponseBytes,
                 (mimeType, chunk) => parser.Consume(mimeType, chunk),
                 cancellationToken,
-                _clientFactory).ConfigureAwait(false);
+                _clientFactory, _context).ConfigureAwait(false);
             // 上游可能忽略 stream 参数直接回 JSON，此时按非流式解析（与 Go 一致）。
             if (!outbound.MIMEType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
             {
@@ -543,7 +543,7 @@ public sealed class ProviderTextTask
         body.Remove("stream");
         using HttpRequestMessage jsonRequest = ProviderTransport.BuildJsonPost(input.Config, path, body);
         Dictionary<string, object?> jsonPayload = await ProviderTransport
-            .SendJsonAsync(jsonRequest, MaxResponseBytes, cancellationToken, _clientFactory)
+            .SendJsonAsync(jsonRequest, MaxResponseBytes, cancellationToken, _clientFactory, _context)
             .ConfigureAwait(false);
         return AgentToolPayload.Parse(jsonPayload, protocol);
     }
@@ -607,7 +607,7 @@ public sealed class ProviderTextTask
                 StreamingAgentParser parser = new(wire, onDelta) { EmitReasoning = onReasoningDelta };
                 (byte[] data, string mimeType) = await ProviderProtocolExecutor.ExecuteWithMimeTypeAsync(
                     input.Config, spec, (chunkType, chunk) => parser.Consume(chunkType, chunk),
-                    cancellationToken: cancellationToken, clientFactory: _clientFactory).ConfigureAwait(false);
+                    cancellationToken: cancellationToken, clientFactory: _clientFactory, context: _context).ConfigureAwait(false);
                 if (!mimeType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
                 {
                     Dictionary<string, object?>? payload = ProviderTransport.ParseObject(data)
@@ -619,7 +619,7 @@ public sealed class ProviderTextTask
             }
         }
         byte[] raw = await ProviderProtocolExecutor.ExecuteAsync(
-            input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory)
+            input.Config, spec, cancellationToken: cancellationToken, clientFactory: _clientFactory, context: _context)
             .ConfigureAwait(false);
         AgentResult parsed = agentAdapter.ParseAgent(raw);
         Dictionary<string, object?> result = new(StringComparer.Ordinal)
@@ -717,6 +717,19 @@ public interface IProviderRequestContext
 {
     /// <summary>上游响应字节上限（取自运行时策略的生成文件大小限制）。</summary>
     long MaxResponseBytes { get; }
+
+    /// <summary>
+    /// 当前任务调用的审计元数据；<c>null</c> 表示该执行（探测/连通性测试）不记录调用日志。
+    /// 对应 Go: <c>providerAnalyticsContext</c> 是否随 ctx 携带 <c>Service</c>。
+    /// </summary>
+    ProviderCallAudit? Audit => null;
+
+    /// <summary>
+    /// 记录一次上游调用观测（api_call_logs）。实现必须自行兜住异常：
+    /// 审计失败不能影响上游调用与任务结果。对应 Go: <c>recordProviderRequest</c>。
+    /// </summary>
+    Task RecordProviderCallAsync(ProviderCallObservation observation, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     /// <summary>
     /// 渠道熔断是否打开。对应 Go: <c>Coordinator.CircuitOpen</c>。

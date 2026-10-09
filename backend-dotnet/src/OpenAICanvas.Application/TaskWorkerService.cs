@@ -34,6 +34,7 @@ public sealed class TaskWorkerService
     private readonly IRuntimePolicyProvider _policy;
     private readonly Coordinator? _coordinator;
     private readonly TimelineTaskExecutor? _timeline;
+    private readonly ApiCallAuditWriter _apiCallAudit;
 
     public TaskWorkerService(
         Repository repository,
@@ -45,13 +46,21 @@ public sealed class TaskWorkerService
         _policy = policy;
         _coordinator = coordinator;
         _timeline = timeline;
+        _apiCallAudit = new ApiCallAuditWriter(repository, policy);
         // CanvasService 只为文本回放收尾服务；未注入时退化为基础任务服务（回放跳过）。
-        _terminal = new TaskTerminalService(repository, CanvasService?.Tasks ?? new TaskService(repository));
+        _terminal = new TaskTerminalService(
+            repository, CanvasService?.Tasks ?? new TaskService(repository), _apiCallAudit);
         _compact = new CloudAgent.AgentMemoryCompactService(repository);
     }
 
     /// <summary>终态协调依赖文本回放收尾，暂时借道 CanvasService.Tasks；测试可用 <see cref="CanvasService"/> 注入。</summary>
     public CanvasService? CanvasService { get; set; }
+
+    /// <summary>
+    /// 生成媒体落盘服务：任务成功后把结果内联 dataUrl 存为账号资源再落 ResultJSON。
+    /// 对应 Go: <c>persistGeneratedMediaResult</c>；未注入时结果保留内联 dataUrl（退化行为）。
+    /// </summary>
+    public ResourceUploadService? GeneratedMediaUpload { get; set; }
 
     // ------------------------------------------------------------- 调度循环
 
@@ -240,6 +249,19 @@ public sealed class TaskWorkerService
 
     private static string NewOwner() => $"manual:{Guid.NewGuid():N}";
 
+    /// <summary>对应 Go: <c>firstNonEmpty</c>。按序取第一个非空（已去除首尾空白）值。</summary>
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (string value in values)
+        {
+            if (value.Trim().Length > 0)
+            {
+                return value;
+            }
+        }
+        return "";
+    }
+
     // ------------------------------------------------------------- 执行编排
 
     /// <summary>
@@ -361,6 +383,26 @@ public sealed class TaskWorkerService
                             _repository.DeferRunningTaskForProviderPollAsync(taskId, owner, stage, delay, token),
                         CancellationToken.None).ConfigureAwait(false);
                     return null;
+                }
+            }
+
+            // 上游成功后先把结果内联 dataUrl 落库为账号资源，再序列化保存
+            // （对应 Go: task_worker 的 persistGeneratedMediaResult）。落盘失败按
+            // 「上游已成功、本地保存失败」收尾：计费转待核对而不退款。
+            if (GeneratedMediaUpload is not null)
+            {
+                try
+                {
+                    result = await GeneratedMediaUpload.PersistGeneratedMediaResultAsync(
+                        claimed.UserID, result, ct).ConfigureAwait(false);
+                }
+                catch (Exception persistError) when (persistError is not OperationCanceledException)
+                {
+                    await _compact.NoteTaskAsync(claimed, null, persistError, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return await _terminal.HandleExecutionFailureAsync(
+                        claimed, persistError, providerSucceeded: true, channelSlotFailedBeforeRequest: false,
+                        CancellationToken.None).ConfigureAwait(false);
                 }
             }
 
@@ -567,7 +609,29 @@ public sealed class TaskWorkerService
         }
         // 注入插件运行时的声明式注册表快照（10.2）：图片/视频/音频声明式分支由此生效。
         ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();
-        ProviderRequestContext context = new(_policy, _coordinator, declarativeAdapter: declarativeAdapters);
+        // 调用审计元数据随上下文下发到 Provider 出站收口（对应 Go: withProviderAnalytics）：
+        // 渠道 ID/模型以解析后的 config 为准，能力以 input.Mode 覆盖任务类型推断。
+        ProviderCallAudit audit = new(
+            UserID: task.UserID,
+            TaskID: task.ID,
+            TraceID: task.TraceID,
+            RequestID: task.RequestID,
+            BillingOrderID: task.BillingOrderID,
+            ChannelID: FirstNonEmpty(
+                input.Config.ChannelID.Trim(),
+                ApiCallAuditWriter.SystemChannelIDFromBaseURL(input.Config.BaseURL)),
+            Capability: FirstNonEmpty(
+                ApiCallAuditWriter.NormalizeCapability(input.Mode),
+                ApiCallAuditWriter.CapabilityFromTaskType(task.Type)),
+            Operation: task.Operation,
+            Model: FirstNonEmpty(
+                input.Config.ChannelModelKey.Trim(), input.Config.Model.Trim(), task.Model),
+            VideoSeconds: int.TryParse(input.Config.VideoSeconds.Trim(), out int videoSeconds)
+                ? videoSeconds
+                : 0);
+        ProviderRequestContext context = new(
+            _policy, _coordinator, declarativeAdapter: declarativeAdapters,
+            auditWriter: _apiCallAudit, audit: audit);
         if (ProviderWorkflowValues.IsWorkflowProviderInterface(input.Config.InterfaceType))
         {
             // 后台执行仍要过平台门控（对应 Go: provider.go 的 RequireWorkflowPluginForInterface）：
