@@ -138,8 +138,11 @@ public sealed partial class CloudAgentRuntimeService
         public int Offset { get; set; }
     }
 
-    /// <summary>偏好层读取。对应 Go: <c>agent_profile_read</c> 分支。</summary>
-    private static JsonObject ProfileRead(CloudAgentRuntimeDto state, CloudAgentCallDto call)
+    /// <summary>
+    /// 偏好层读取。对应 Go: <c>agent_profile_read</c> 分支。
+    /// 可见性取 internal（等价 Go 的包内小写）：纯状态函数，便于直接做行为契约测试。
+    /// </summary>
+    internal static JsonObject ProfileRead(CloudAgentRuntimeDto state, CloudAgentCallDto call)
     {
         ProfileReadArgs args = CloudAgentContracts.DecodeObject<ProfileReadArgs>(call.Function.Arguments);
         if (args.Scope is not ("user" or "project" or "canvas"))
@@ -151,8 +154,10 @@ public sealed partial class CloudAgentRuntimeService
         {
             throw AppError.BadAuthRequest("本轮已读取该长期偏好层，请使用历史工具结果，不要重复读取");
         }
+        List<string> available = [];
         foreach (AgentProfileLayerDto layer in state.Profile.Layers)
         {
+            available.Add(layer.Scope);
             if (layer.Scope != args.Scope)
             {
                 continue;
@@ -166,7 +171,14 @@ public sealed partial class CloudAgentRuntimeService
                 ["content"] = layer.Content,
             };
         }
-        throw AppError.BadAuthRequest("本轮固定快照中不存在该长期偏好层；请只读取系统清单列出的层");
+        // 与 Go 的两条分支一一对应：清单为空要明说「不要再调用」，
+        // 清单非空则把可读层列出来，模型才能自纠而不用把三个枚举值全试一遍。
+        if (available.Count == 0)
+        {
+            throw AppError.BadAuthRequest("本轮没有长期偏好层，不要调用 agent_profile_read");
+        }
+        throw AppError.BadAuthRequest(
+            "本轮固定快照中不存在该长期偏好层；本轮可读的层只有：" + string.Join("、", available) + "。不要再尝试其它层");
     }
 
     /// <summary>

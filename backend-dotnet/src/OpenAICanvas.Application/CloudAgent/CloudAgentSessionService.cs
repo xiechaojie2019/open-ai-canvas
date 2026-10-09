@@ -250,7 +250,8 @@ public sealed class CloudAgentSessionService
             Policy = policy,
         };
         CloudAgentCanonicalRequestDto canonical = Canonical(
-            system, history, request.Prompt, request.CanvasID, request);
+            system, history, request.Prompt, request.CanvasID, request,
+            includeProfileTool: profile.Layers.Count > 0);
         await CloudAgentLessons.AttachAsync(canonical, _repository, userID, request.Prompt, cancellationToken)
             .ConfigureAwait(false);
         Dictionary<string, JsonElement> input = new(StringComparer.Ordinal)
@@ -736,10 +737,14 @@ public sealed class CloudAgentSessionService
             ? value.GetString() ?? ""
             : "";
 
-    /// <summary>模型请求规范形。对应 Go: <c>cloudAgentCanonical</c>。</summary>
+    /// <summary>
+    /// 模型请求规范形。对应 Go: <c>cloudAgentCanonical</c> / <c>cloudAgentCanonicalFor</c>。
+    /// <paramref name="includeProfileTool"/> 由调用方按「本轮固定快照是否有偏好层」决定，
+    /// 与 Go 的 <c>len(profile.Layers) &gt; 0</c> 一致。
+    /// </summary>
     public static CloudAgentCanonicalRequestDto Canonical(
         string system, List<CloudAgentTextMessageDto> history, string prompt, string canvasID,
-        CloudAgentRequestDto? request = null)
+        CloudAgentRequestDto? request = null, bool includeProfileTool = true)
     {
         List<Dictionary<string, JsonElement>> messages = [];
         foreach (CloudAgentTextMessageDto message in history)
@@ -761,7 +766,7 @@ public sealed class CloudAgentSessionService
         {
             SystemPrompt = system,
             Messages = messages,
-            Tools = CloudAgentTools.BuildTools(request),
+            Tools = CloudAgentTools.BuildTools(request, includeProfileTool),
             ToolChoice = JsonSerializer.SerializeToElement("auto"),
             PromptCacheKey = "cloud-agent:" + cacheKey[..48],
         };
