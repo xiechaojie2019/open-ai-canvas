@@ -769,7 +769,22 @@ public sealed class ChannelModelAdminService
             ImageCapability = null,
             VideoCapability = null,
         };
-        return await worker.RunProviderProbeAsync(capability, input, cancellationToken).ConfigureAwait(false);
+        // 与 Go 一致：测试调用写审计（operation=admin_model_test，归属发起的管理员本人，
+        // 渠道/模型/能力随行记录，无任务与计费订单）。
+        return await worker.RunProviderProbeAsync(
+            capability, input,
+            new ProviderCallAudit(
+                UserID: actor.ID,
+                TaskID: "",
+                TraceID: "",
+                RequestID: "",
+                BillingOrderID: "",
+                ChannelID: channel.ID,
+                Capability: capability,
+                Operation: "admin_model_test",
+                Model: modelKey,
+                VideoSeconds: int.TryParse(videoSeconds, out int probeVideoSeconds) ? probeVideoSeconds : 0),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

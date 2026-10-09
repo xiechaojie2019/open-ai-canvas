@@ -163,14 +163,18 @@ public sealed class TaskWorkerService
     /// <summary>
     /// 管理端渠道模型连通性测试：复用真实生成协议与运行时策略，
     /// 不创建用户任务或计费订单。对应 Go: <c>TestAdminChannelModel</c> 的执行分支。
+    /// 传入 <paramref name="audit"/> 时按 Go 语义写调用审计（operation=admin_model_test，
+    /// 归属测试发起的管理员本人）。
     /// </summary>
     public async Task<long> RunProviderProbeAsync(
-        string capability, TextTaskInput input, CancellationToken cancellationToken = default)
+        string capability, TextTaskInput input, ProviderCallAudit? audit = null, CancellationToken cancellationToken = default)
     {
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
         ProtocolAdapterRegistry? declarativeAdapters = CanvasService?.Plugins.RegistrySnapshot();
-        ProviderRequestContext context = new(_policy, _coordinator, declarativeAdapter: declarativeAdapters);
+        ProviderRequestContext context = new(
+            _policy, _coordinator, declarativeAdapter: declarativeAdapters,
+            auditWriter: audit is null ? null : _apiCallAudit, audit: audit);
         long startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         try
         {
