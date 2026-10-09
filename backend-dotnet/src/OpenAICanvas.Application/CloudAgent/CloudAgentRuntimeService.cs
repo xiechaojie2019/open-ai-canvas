@@ -403,6 +403,9 @@ public sealed partial class CloudAgentRuntimeService
                 ? (JsonObject)result.DeepClone()
                 : new JsonObject();
             string message = SafeToolError(cause);
+            // 排障入口：真实异常只进进程日志，不进模型可见结果（对应 Go 的 err 只落内部日志）。
+            Console.Error.WriteLine(
+                $"cloud agent tool error: run={runID} tool={call.Function.Name} cause={cause.GetType().FullName}: {cause.Message}\n{cause.StackTrace}");
             detail["error"] = message;
             result = detail;
             kind = "tool_failed";

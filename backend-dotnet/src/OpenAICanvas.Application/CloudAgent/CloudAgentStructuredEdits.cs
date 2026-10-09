@@ -964,7 +964,8 @@ public static class CloudAgentStructuredEdits
             ["nodeId"] = nodeID,
             ["title"] = CloudAgentJsonHelpers.Get(node, "title")?.DeepClone(),
             ["snapshotHash"] = CloudAgentJsonHelpers.Get(state, "snapshotHash")?.DeepClone(),
-            ["storyboard"] = storyboard,
+            // Go 的 map 是引用拷贝；JsonNode 有父即不可重挂，必须克隆。
+            ["storyboard"] = storyboard.DeepClone(),
         };
     }
 
@@ -995,7 +996,8 @@ public static class CloudAgentStructuredEdits
             ["nodeId"] = nodeID,
             ["title"] = CloudAgentJsonHelpers.Get(node, "title")?.DeepClone(),
             ["snapshotHash"] = CloudAgentJsonHelpers.Get(state, "snapshotHash")?.DeepClone(),
-            ["batchTable"] = table,
+            // Go 的 map 是引用拷贝；JsonNode 有父即不可重挂，必须克隆。
+            ["batchTable"] = table.DeepClone(),
         };
     }
 }

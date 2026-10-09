@@ -102,8 +102,11 @@ public sealed partial class CloudAgentRuntimeService
                     throw AppError.BadAuthRequest("未知工具");
             }
         }
-        catch (Exception error) when (error is AppError or CloudAgentArgumentException or InvalidOperationException)
+        catch (Exception error)
         {
+            // 与 Go 一致：读工具的任何错误都作为工具结果返回（SafeToolError 负责把
+            // 非安全文案转通用提示）；不能按异常类型过滤——裸异常会穿透到检查点
+            // 事务外，把本该"单工具失败、运行继续"的场景变成无法归因的失败。
             return (null, error);
         }
     }
