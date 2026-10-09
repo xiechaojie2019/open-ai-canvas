@@ -137,6 +137,19 @@ public static class ProviderErrorMessages
     public const string NetworkFailure = "连接模型服务失败，请检查渠道地址和网络";
 
     /// <summary>
+    /// 响应体中途断开（上游或中转网关提前关闭连接、未发终止块）的文案。
+    /// 对应 Go: <c>providerConnectionError</c>（<c>internal/app/provider_http_client.go:334</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 这类失败<b>不是"连不上"</b>：请求已经发出、上游也已开始处理并计费，只是结果没收全。
+    /// 文案必须把用户推向中转站的记录与扣费，而不是让他去查渠道地址和网络 ——
+    /// 原样抛 <c>HttpIOException</c> 会落进 <see cref="UserFacing"/> 的兜底分支变成
+    /// <see cref="NetworkFailure"/>，把排障方向带偏。
+    /// </remarks>
+    public const string ConnectionClosedPrematurely =
+        "模型服务连接提前关闭，未收到完整结果；请先核对中转站任务和扣费记录，再决定是否重试";
+
+    /// <summary>
     /// 把异常映射为用户可见文案。
     /// 对应 Go: <c>providerUserFacingErrorMessage</c>。
     /// </summary>

@@ -67,7 +67,7 @@ public static class ProviderTransport
         }
         catch (Exception error) when (error is HttpRequestException or SocketException or InvalidOperationException)
         {
-            throw new ProviderTransportException(ProviderErrorMessages.NetworkFailure, error);
+            throw new ProviderTransportException(TransportFailureMessage(error), error);
         }
 
         using (response)
@@ -113,7 +113,22 @@ public static class ProviderTransport
 
         while (true)
         {
-            int read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
+            int read;
+            try
+            {
+                read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                // 上游/网关在流中途断开时不会发终止块，.NET 抛 HttpIOException(ResponseEnded)。
+                // 归一成可行动文案（Go: providerConnectionError）。取消语义不能被改写，故已在过滤器排除。
+                Exception normalized = ProviderConnectionError(error);
+                if (ReferenceEquals(normalized, error))
+                {
+                    throw;
+                }
+                throw normalized;
+            }
             if (read > 0)
             {
                 if (buffer.Length + read > maxResponseBytes)
@@ -130,6 +145,37 @@ public static class ProviderTransport
         }
         return buffer.ToArray();
     }
+
+    /// <summary>
+    /// 把响应体读取期的"连接提前关闭"归一为可对用户展示的传输异常。
+    /// 对应 Go: <c>providerConnectionError</c>（<c>internal/app/provider_http_client.go:334</c>）——
+    /// 只改写 <c>io.EOF</c> / <c>io.ErrUnexpectedEOF</c>，取消与其他错误一律原样返回。
+    /// </summary>
+    /// <remarks>
+    /// .NET 侧的对应信号是 <see cref="IOException"/>（截断的响应体读取抛
+    /// <see cref="HttpIOException"/>，它派生自 <see cref="IOException"/>）与带
+    /// <see cref="HttpRequestError.ResponseEnded"/> 的 <see cref="HttpRequestException"/>。
+    /// 原始异常保留为 <c>InnerException</c>，诊断日志仍能看到真实栈。
+    /// </remarks>
+    private static Exception ProviderConnectionError(Exception error)
+    {
+        bool truncated = error is IOException
+            || error is HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded };
+        if (!truncated || error is ProviderTransportException)
+        {
+            return error;
+        }
+        return new ProviderTransportException(ProviderErrorMessages.ConnectionClosedPrematurely, error);
+    }
+
+    /// <summary>
+    /// 请求阶段的传输失败文案：只有"响应提前结束"要区别于普通网络不可达。
+    /// 对应 Go: <c>providerConnectionError</c> 在 <c>client.Do</c> 失败处的调用。
+    /// </summary>
+    private static string TransportFailureMessage(Exception error) =>
+        error is HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded }
+            ? ProviderErrorMessages.ConnectionClosedPrematurely
+            : ProviderErrorMessages.NetworkFailure;
 
     /// <summary>对应 Go 的 <c>fmt.Errorf("上游响应超过 %s 限制", formatStorageLimit(limit))</c>。</summary>
     public static string OversizeMessage(long limit) =>

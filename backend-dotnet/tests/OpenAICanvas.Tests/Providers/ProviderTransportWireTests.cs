@@ -1,5 +1,6 @@
 #nullable enable
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using OpenAICanvas.Providers;
 using Xunit;
@@ -201,6 +202,181 @@ public sealed class ProviderTransportWireTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => ProviderTransport.SendAsync(request, clientFactory: Client(handler)));
+    }
+
+    // ------------------------------------------------------------ 响应提前结束（连接被中途关闭）
+
+    [Fact]
+    public async Task 发送_读取期HttpIOException_归一为连接提前关闭并保留内因()
+    {
+        // 线上真实形态：上游/网关切流后 .NET 抛 HttpIOException(ResponseEnded)，
+        // 原样上传会被兜底成"请检查渠道地址和网络"，把排障方向带偏。
+        HttpIOException cause = new(HttpRequestError.ResponseEnded, "The response ended prematurely.");
+        StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = ThrowingContent(cause),
+        });
+        using HttpRequestMessage request = Request();
+
+        ProviderTransportException error = await Assert.ThrowsAsync<ProviderTransportException>(
+            () => ProviderTransport.SendAsync(request, clientFactory: Client(handler)));
+
+        Assert.Equal(ProviderErrorMessages.ConnectionClosedPrematurely, error.Message);
+        Assert.Same(cause, error.InnerException);
+    }
+
+    [Fact]
+    public async Task 发送_连接提前关闭文案不再指向渠道地址和网络()
+    {
+        // 用户可见文案的最终落点：TaskTerminalService 会把异常交给 ProviderErrorMessages.UserFacing。
+        StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = ThrowingContent(new IOException("unexpected end of stream")),
+        });
+        using HttpRequestMessage request = Request();
+
+        ProviderTransportException error = await Assert.ThrowsAsync<ProviderTransportException>(
+            () => ProviderTransport.SendAsync(request, clientFactory: Client(handler)));
+
+        string visible = ProviderErrorMessages.UserFacing(error);
+        Assert.Contains("连接提前关闭", visible, StringComparison.Ordinal);
+        Assert.Contains("扣费记录", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain("检查渠道地址和网络", visible, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 发送_读取期取消不被包装()
+    {
+        // 对应 Go: providerConnectionError(context.Canceled) 必须原样返回 —— 取消语义不能被改写。
+        StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = ThrowingContent(new OperationCanceledException("cancelled")),
+        });
+        using HttpRequestMessage request = Request();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => ProviderTransport.SendAsync(request, clientFactory: Client(handler)));
+    }
+
+    [Fact]
+    public async Task 发送_上游发完半个chunk就断开_归一为连接提前关闭()
+    {
+        // 真实 socket 复刻（与 Go 的 TestImageSubmissionEOFIsNotAutomaticallyReplayed 同构）：
+        // 发完响应头和一个不完整 chunk 就断开，不发终止块 0\r\n\r\n。
+        (int port, Task server) = StartTruncatedStreamServer();
+        try
+        {
+            using HttpRequestMessage request = new(HttpMethod.Post, $"http://127.0.0.1:{port}/v1/responses");
+
+            ProviderTransportException error = await Assert.ThrowsAsync<ProviderTransportException>(
+                () => ProviderTransport.SendAsync(request, clientFactory: () => new HttpClient()));
+
+            Assert.Equal(ProviderErrorMessages.ConnectionClosedPrematurely, error.Message);
+        }
+        finally
+        {
+            await server;
+        }
+    }
+
+    /// <summary>
+    /// 起一个"响应头 + 一个不完整 chunk 后断开"的 TCP 服务。
+    /// 返回监听端口与后台任务（测试结束需 await 以释放端口）。
+    /// </summary>
+    private static (int Port, Task Server) StartTruncatedStreamServer()
+    {
+        TcpListener listener = new(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        Task server = Task.Run(async () =>
+        {
+            using TcpClient connection = await listener.AcceptTcpClientAsync();
+            try
+            {
+                NetworkStream stream = connection.GetStream();
+                // 先把请求头读干净，避免带着未读数据断开会变成 RST（那样测的就不是"提前结束"了）。
+                StringBuilder seen = new();
+                byte[] scratch = new byte[4096];
+                while (!seen.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                {
+                    int got = await stream.ReadAsync(scratch);
+                    if (got <= 0)
+                    {
+                        break;
+                    }
+                    seen.Append(Encoding.ASCII.GetString(scratch, 0, got));
+                }
+
+                // 一个完整 chunk（payload 10 字节 = "data: hi!\n"），随后缺失终止块。
+                byte[] head = Encoding.ASCII.GetBytes(
+                    "HTTP/1.1 200 OK\r\n"
+                    + "Content-Type: text/event-stream\r\n"
+                    + "Transfer-Encoding: chunked\r\n"
+                    + "\r\n"
+                    + "a\r\ndata: hi!\n\r\n");
+                await stream.WriteAsync(head);
+                await stream.FlushAsync();
+                connection.Client.Shutdown(SocketShutdown.Both);
+            }
+            finally
+            {
+                connection.Close();
+                listener.Stop();
+            }
+        });
+        return (port, server);
+    }
+
+    /// <summary>可编排的假响应体：读取时抛出指定异常，复刻读取期的传输失败。</summary>
+    private static HttpContent ThrowingContent(Exception error) => new ThrowingHttpContent(error);
+
+    private sealed class ThrowingHttpContent(Exception error) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            Task.CompletedTask;
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<Stream>(new ThrowingStream(error));
+    }
+
+    private sealed class ThrowingStream(Exception error) : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => 0;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw error;
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<int>(error);
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     // ------------------------------------------------------------ SendJsonAsync
