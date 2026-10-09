@@ -589,6 +589,39 @@ public sealed class TaskWorkerService
         {
             input.Prompt = task.Prompt;
         }
+        // 提示词模板编译：唯一开关是 metadata.promptTemplateOperation
+        // （对应 Go: processCanvasGenerationTask 的 compilePrompt 分支，provider.go:350-359）。
+        // 编译把「启用模板 → 用户定制 → 变量渲染 → 受保护上下文（剧情/画布资产/角色版本/JSON 契约）」
+        // 装配成真正发给模型的一整段提示词；没有这一步，运营模板和用户定制全是死数据。
+        // 视频节点的最终 Prompt 只取输入框内容，不允许被分镜模板替换。
+        string promptTemplateOperation =
+            ProviderHelpers.MetadataString(input.Metadata, "promptTemplateOperation");
+        if (input.Mode != "video" && promptTemplateOperation.Length > 0)
+        {
+            try
+            {
+                input.Metadata.TryGetValue("promptTemplateVariables", out object? templateValues);
+                OpenAICanvas.Application.Prompts.CompiledPrompt compiled =
+                    await new OpenAICanvas.Application.Prompts.PromptTemplateService(_repository)
+                        .CompilePromptAsync(
+                            task.UserID,
+                            promptTemplateOperation,
+                            OpenAICanvas.Application.Prompts.PromptTemplateService
+                                .TemplateValues(templateValues),
+                            cancellationToken).ConfigureAwait(false);
+                input.Prompt = compiled.Content;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                // 文案必须原样透出（Go 用 %w 包一层后照样落在 task.Error 上）：
+                // 兜底异常会经 UserFacing 变成「连接模型服务失败」，把排障方向带偏。
+                throw AppError.BadAuthRequest($"编译用户提示词失败：{error.Message}");
+            }
+        }
         // 将 @[tool:type:ID:label:icon] 令牌替换为对应工具的提示词文本。
         // 对应 Go: processCanvasGenerationTask（无令牌时零查询直通）。
         input.Prompt = await new ToolsService(_repository).ResolveToolMentionTokensAsync(
@@ -614,8 +647,8 @@ public sealed class TaskWorkerService
                 input.AgentRequests is not null
                     ? new(await RunAgentToolTaskAsync(input, context, cancellationToken)
                         .ConfigureAwait(false), true)
-                    : new(await new ProviderTextTask(context)
-                        .RunTextTaskAsync(input, cancellationToken: cancellationToken)
+                    : new(await RunTextTaskWithContractAsync(
+                        input, context, promptTemplateOperation, cancellationToken)
                         .ConfigureAwait(false), true),
             _ when task.Type.StartsWith("canvas_image", StringComparison.Ordinal) =>
                 new(await new ProviderImageTask(context).RunAsync(input, cancellationToken).ConfigureAwait(false), true),
@@ -629,6 +662,34 @@ public sealed class TaskWorkerService
             _ => throw new InvalidOperationException("任务类型没有可用的执行分支"),
         };
         return execution;
+    }
+
+    /// <summary>
+    /// 文本任务执行 + 受保护结果契约校验。
+    /// 对应 Go: <c>processCanvasGenerationTask</c> 的
+    /// <c>runTextTask</c> 之后紧跟的 <c>validatePromptTemplateResult</c>（provider.go:471-473）。
+    /// </summary>
+    /// <remarks>
+    /// 校验发生在文本任务<b>成功之后</b>：此时上游已经产生结果，但结果不符合操作声明的 JSON 契约
+    /// （模型返回散文、字段缺失、镜头数不足等）。这种失败必须让任务显式失败，
+    /// 否则前端会拿到一段散文当「分镜结果」，报出更难定位的「没有返回镜头行」。
+    /// Agent 分支不做校验（与 Go 一致：agent 有自己的一套工具结果处理）。
+    /// </remarks>
+    private static async Task<Dictionary<string, object?>> RunTextTaskWithContractAsync(
+        TextTaskInput input,
+        IProviderRequestContext context,
+        string promptTemplateOperation,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, object?> result = await new ProviderTextTask(context)
+            .RunTextTaskAsync(input, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (promptTemplateOperation.Length > 0)
+        {
+            OpenAICanvas.Application.Prompts.PromptTemplateService
+                .ValidatePromptTemplateResult(promptTemplateOperation, result);
+        }
+        return result;
     }
 
     /// <summary>
