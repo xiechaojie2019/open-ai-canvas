@@ -113,7 +113,9 @@ afterAll(() => {
 
 describe("resolveCroppableImageSource", () => {
     test("resource backed images resolve to an object url, never the redirecting api path", async () => {
-        imageStorage.blobs.set("resource:r1", new Blob(["png"], { type: "image/png" }));
+        // resource: 前缀既不是 image: 也不是 generation-image:，解析器走 media 读取器；
+        // 生产里两个读取器都会把 resource: 转给资源 Blob 缓存，所以这里放 media 桩即可。
+        mediaStorage.blobs.set("resource:r1", new Blob(["png"], { type: "image/png" }));
         const source = await pixels.resolveCroppableImageSource(node({ content: "/api/resources/r1/file", storageKey: "resource:r1" }));
         expect(source.url).toBe("blob:test/1");
         expect(source.url).not.toContain("/api/resources/");
