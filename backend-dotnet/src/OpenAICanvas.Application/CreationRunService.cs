@@ -841,7 +841,12 @@ public sealed partial class CreationRunService
             "canvas_image" => "image",
             _ => "video",
         };
-        if (ConfigString(config, "mode") != expectedMode
+        // mode 读 input 顶层，不是 config 里：前端一律发 { input: { mode, prompt, config } }
+        // （web/src/services/api/generation-task.ts 的 backendProviderConfig 返回值里没有 mode）。
+        // 读成 config["mode"] 会恒为空串，于是每次 prepare 都 400
+        // 「任务类型、模式和实际提示词必须一致」—— 实测：顶层 mode 400 / 塞进 config 才 200。
+        // 对应 Go: stringValue(req.Input["mode"])。
+        if (InputString(input, "mode").Trim() != expectedMode
             || InputString(input, "prompt").Trim() != request.Prompt.Trim())
         {
             throw AppError.BadAuthRequest("任务类型、模式和实际提示词必须一致");

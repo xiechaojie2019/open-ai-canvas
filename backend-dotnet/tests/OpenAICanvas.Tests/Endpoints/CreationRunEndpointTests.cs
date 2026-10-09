@@ -208,6 +208,83 @@ public sealed class CreationRunEndpointTests : IDisposable
         Assert.Equal("创作记录不能包含密钥、内嵌媒体或临时签名链接", await ReadMessageAsync(withData));
     }
 
+    /// <summary>
+    /// 执行模式必须从 <c>input</c> 顶层读，不能从 <c>input.config</c> 读。
+    /// 前端一律发 <c>{ input: { mode, prompt, config } }</c>，
+    /// 而 <c>backendProviderConfig</c> 的返回值里没有 <c>mode</c> 键
+    /// （见 web/src/services/api/generation-task.ts）。
+    /// 读成 <c>config["mode"]</c> 会恒为空串，于是每次 prepare 都 400。
+    /// </summary>
+    [Fact]
+    public async Task 创作准备_执行模式取自输入顶层()
+    {
+        using HttpClient user = await SignInAsync();
+
+        HttpResponseMessage created = await user.PostAsJsonAsync("/api/creation-runs", new
+        {
+            clientKey = "sess-mode",
+            canvasId = "",
+            state = new { topic = "模式探针" },
+        });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        string runId = (await ReadDataAsync(created)).GetProperty("run").GetProperty("id").GetString()!;
+
+        HttpResponseMessage claim = await user.PostAsJsonAsync($"/api/creation-runs/{runId}/claim", new
+        {
+            owner = "page-mode",
+            expectedEpoch = 0,
+        });
+        Assert.Equal(HttpStatusCode.OK, claim.StatusCode);
+        long epoch = (await ReadDataAsync(claim)).GetProperty("executionEpoch").GetInt64();
+
+        object PrepareBody(string itemKey, object input) => new
+        {
+            owner = "page-mode",
+            executionEpoch = epoch,
+            itemKey,
+            request = new
+            {
+                type = "canvas_text",
+                operation = "text",
+                prompt = "模式探针",
+                model = "glm-5.3-flash",
+                input,
+            },
+        };
+
+        // 前端真实形态：mode 只在 input 顶层。
+        HttpResponseMessage prepared = await user.PostAsJsonAsync(
+            $"/api/creation-runs/{runId}/submissions/prepare",
+            PrepareBody("probe:top", new
+            {
+                mode = "text",
+                prompt = "模式探针",
+                config = new { channelId = "CHANNEL_000001", model = "glm-5.3-flash" },
+            }));
+        Assert.NotEqual("任务类型、模式和实际提示词必须一致", await ReadMessageAsync(prepared));
+
+        // 反向：顶层 mode 真的写错，必须仍然拒绝（证明校验没被削弱）。
+        HttpResponseMessage wrong = await user.PostAsJsonAsync(
+            $"/api/creation-runs/{runId}/submissions/prepare",
+            PrepareBody("probe:wrong", new
+            {
+                mode = "image",
+                prompt = "模式探针",
+                config = new { channelId = "CHANNEL_000001", model = "glm-5.3-flash" },
+            }));
+        Assert.Equal("任务类型、模式和实际提示词必须一致", await ReadMessageAsync(wrong));
+
+        // 反向：把 mode 藏进 config —— 恰恰是修复前唯一能通过的形态，现在必须拒绝。
+        HttpResponseMessage hidden = await user.PostAsJsonAsync(
+            $"/api/creation-runs/{runId}/submissions/prepare",
+            PrepareBody("probe:config", new
+            {
+                prompt = "模式探针",
+                config = new { mode = "text", channelId = "CHANNEL_000001", model = "glm-5.3-flash" },
+            }));
+        Assert.Equal("任务类型、模式和实际提示词必须一致", await ReadMessageAsync(hidden));
+    }
+
     [Fact]
     public async Task 未登录访问返回_401()
     {
