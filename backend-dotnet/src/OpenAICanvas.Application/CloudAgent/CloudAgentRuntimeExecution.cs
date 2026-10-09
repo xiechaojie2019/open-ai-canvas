@@ -663,8 +663,12 @@ public sealed partial class CloudAgentRuntimeService
         // 必须走 run 绑定的 recorder（=`RecorderForRun`），它内部注入 RunID 并投影 canvas_updated
         // 事件，与 Go 的 cloudAgentCanvasEventRecorder 一一对应。
         // 直接调 RecordAsync 会漏掉 RunID，RecordAsync 的首道校验即抛
-        // 「画布变更缺少可追踪的 Agent 操作信息」——写库之前就失败，所以画布毫无变化，
-        // 客户端只看到「操作画布 / 更新画布内容失败」。RunID 只由 recorder 注入，别再内联展开。
+        // 「画布变更缺少可追踪的 Agent 操作信息」。
+        // 注意失败形态并不"干净"：异常在 AdvanceToolAsync 的派发 lambda 里被吞成 toolError
+        // （与 Go 一致，事务照常提交），而上面的 SaveDocumentAsync 已经落库 —— 于是画布确实
+        // 被改了，却没有对应的 cloudAgentCanvasMutations 行，既无法撤销也无从追溯；
+        // 用户看到的是「更新画布内容失败」，画布上却已经有内容。
+        // RunID 只由 recorder 注入，别再内联展开。
         await CloudAgentMutations.RecorderForRun(run.ID, state)(context, new CloudAgentMutationInput
         {
             UserID = run.UserID,

@@ -18,6 +18,13 @@ public sealed class CloudAgentSchedulerWorker(
 {
     private string _cursor = "";
 
+    /// <summary>
+    /// 每个运行连续 CAS 冲突的次数。409 属于"并发推进，跳过等下一轮"，本身不写日志；
+    /// 但一直 409 说明这个运行很可能卡住了，超过阈值要留一条诊断痕迹。
+    /// 对应 Go: <c>Service.agentConflictStreak</c>。
+    /// </summary>
+    private readonly Dictionary<string, int> _conflictStreak = new(StringComparer.Ordinal);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // 与 worker 启动节奏一致：先等数据库/依赖就绪再进入循环。
@@ -90,11 +97,31 @@ public sealed class CloudAgentSchedulerWorker(
             _cursor = run.ID;
             try
             {
+                // 兜底先于推进：长时间没有任何进展的运行直接收尾，避免它每 2 秒空转一次。
+                double? stuckMinutes = await runtime
+                    .TryTerminateStuckCloudAgentAsync(run, cancellationToken).ConfigureAwait(false);
+                if (stuckMinutes is double minutes)
+                {
+                    logger.LogWarning(
+                        "agent scheduler: run={RunId} 判定卡死并收尾（最后一条事件在 {Minutes:0} 分钟前）",
+                        run.ID, minutes);
+                    _conflictStreak.Remove(run.ID);
+                    continue;
+                }
                 await runtime.AdvanceAsync(run, cancellationToken).ConfigureAwait(false);
+                _conflictStreak.Remove(run.ID);
             }
             catch (AppError error) when (error.Status == 409)
             {
-                // 并发推进：跳过，等下一轮。
+                // 并发推进：跳过，等下一轮。持续冲突要留痕，否则卡死的运行完全没有可观测性。
+                int streak = _conflictStreak.GetValueOrDefault(run.ID) + 1;
+                _conflictStreak[run.ID] = streak;
+                if (streak == Application.CloudAgent.CloudAgentRuntimeService.ConflictLogThreshold)
+                {
+                    logger.LogWarning(
+                        "agent scheduler: run={RunId} 连续 {Streak} 次 CAS 冲突（另有写者持续占用该行），这一轮很可能卡住了",
+                        run.ID, streak);
+                }
             }
             catch (Exception error)
             {

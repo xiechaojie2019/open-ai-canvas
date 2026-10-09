@@ -22,9 +22,11 @@ namespace OpenAICanvas.Tests.CloudAgent;
 /// 根因：Go 的 <c>applyCloudAgentCanvas</c> 接收 <c>cloudAgentCanvasEventRecorder(run.ID, state)</c>，
 /// RunID 由 recorder 内部注入；.NET 把这段内联展开成
 /// <c>RecordAsync + EmitCanvasChangeOnlyAsync</c> 两次调用，**漏传了 RunID**。
-/// <c>RecordAsync</c> 的首道校验就是 <c>RunID.Length == 0 → BadAuthRequest</c>，
-/// 于是请求在写画布之前（<c>SaveDocumentAsync</c> 之后、落变更记录之前）整笔回滚，
-/// 画布零变更，用户只看到「更新画布内容失败」。
+/// <c>RecordAsync</c> 的首道校验就是 <c>RunID.Length == 0 → BadAuthRequest</c>。
+/// 失败形态并不"干净"：同一步里的 <c>SaveDocumentAsync</c> 先落了库，随后抛出的异常在
+/// 派发 lambda 里被吞成工具错误（与 Go 一致，事务照常提交）—— 画布确实被改了，却没有
+/// 对应的 <c>cloudAgentCanvasMutations</c> 行，既无法撤销也无从追溯；
+/// 用户看到「更新画布内容失败」，画布上却已经有内容（线上实测节点 content 已写入）。
 /// 实证：全库 <c>cloudAgentCanvasMutations</c> 只有 <c>generate_media_*</c> 两行，
 /// <c>canvas_apply_ops</c> 一行都没有 —— 这条路径从未成功过。
 ///
@@ -196,7 +198,9 @@ public sealed class CloudAgentCanvasApplyContractTests : IDisposable
                 })));
 
         Assert.Equal("画布变更缺少可追踪的 Agent 操作信息", error.Message);
-        // 报错发生在落库之前 → 一行记录都不该留下（画布同理，整笔回滚）。
+        // 本测试的 lambda 不吞异常，事务在这里整笔回滚 → 记录表 0 行。
+        // 产线路径不同：AdvanceToolAsync 把该异常吞成工具错误并提交事务，
+        // 画布已被 SaveDocumentAsync 写脏、却没有变更记录（见类型注释）。
         Assert.Equal(0, await MutationCountAsync());
     }
 
