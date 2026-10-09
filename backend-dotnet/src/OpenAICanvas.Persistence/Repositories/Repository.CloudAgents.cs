@@ -13,15 +13,59 @@ namespace OpenAICanvas.Persistence.Repositories;
 /// </summary>
 public sealed partial class Repository
 {
-    /// <summary>插入执行记录；主键冲突忽略。对应 Go: <c>EnsureCloudAgent</c>。</summary>
+    /// <summary>
+    /// 插入执行记录，并连同 journal/transcript 一起落库；主键冲突忽略。
+    /// 对应 Go: <c>EnsureCloudAgent</c>。
+    /// </summary>
+    /// <remarks>
+    /// <b>关联必须一起插入</b>：Go 里 <c>Journal</c>/<c>Transcript</c> 不是瞬态字段，而是
+    /// <c>gorm:"foreignKey:RunID;references:ID"</c> 的 has-many 关联，所以
+    /// <c>Clauses(OnConflict{DoNothing}).Create(run)</c> 会把它们随父行一并写入。
+    /// 只插父行会让 <c>eventCount</c>/<c>messageCount</c> 领先于实际行数：
+    /// 带 <c>skillIds</c> 的运行在创建期就有一个 <c>skills_load</c> 回执事件，
+    /// 于是 seq=1 永远不会落库，之后每一次 checkpoints 都会撞上 append-only 校验
+    /// （<c>Journal.Count != EventCount</c>）——运行被判「状态损坏」，取消/暂停永久 500。
+    /// 见 2026-10-08 线上事故 <c>agbb4853…</c> / <c>aga283b7…</c>。
+    /// </remarks>
     public async Task EnsureCloudAgentAsync(
         CloudAgentExecution run, CancellationToken cancellationToken = default)
     {
-        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        await connection.ExecuteAsync(new CommandDefinition(
-            SqlBuilder.Insert(typeof(CloudAgentExecution)) + Dialect.OnConflictDoNothing("id"),
-            run,
-            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        await InTransactionAsync(async (connection, transaction) =>
+        {
+            await ExecuteAsync(
+                connection,
+                SqlBuilder.Insert(typeof(CloudAgentExecution)) + Dialect.OnConflictDoNothing("id"),
+                run,
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+            if (run.CheckpointVersion < 2)
+            {
+                return true;
+            }
+            foreach (CloudAgentEventRecord record in run.Journal ?? [])
+            {
+                await ExecuteAsync(
+                    connection,
+                    SqlBuilder.Insert(typeof(CloudAgentEventRecord), onConflictDoNothing: true),
+                    SqlBuilder.Parameters(record),
+                    transaction,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            foreach (CloudAgentMessageRecord message in run.Transcript ?? [])
+            {
+                await ExecuteAsync(
+                    connection,
+                    """
+                    INSERT INTO "cloudAgentMessageRecords" ("runId", "kind", "sequence", "userId", "messageJson")
+                    VALUES (@RunID, @Kind, @Sequence, @UserID, @MessageJSON)
+                    ON CONFLICT ("runId", "kind", "sequence") DO NOTHING
+                    """,
+                    SqlBuilder.Parameters(message),
+                    transaction,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>按用户 + ID 读执行记录；不存在返回 null。对应 Go: <c>CloudAgent</c>。</summary>
@@ -153,6 +197,13 @@ public sealed partial class Repository
     }
 
     /// <summary>无返回值回调版本：true=获得修订锁并完成；false=修订冲突。</summary>
+    /// <remarks>
+    /// <b>哨兵必须是可辨识的值</b>：旧实现包给 <c>MutateCloudAgentAsync&lt;object?&gt;</c> 再判
+    /// <c>is not null</c>，而成功（回调返回 null）与冲突（<c>default</c>）两条路径都是 null，
+    /// 于是恒为 false。走本重载的调用点（取消、审批规划、读工具回写）因此必然抛
+    /// 「创作运行已变化，请刷新后重试」——取消/暂停按钮完全失效。
+    /// 对应 Go: <c>MutateCloudAgent</c> 用 <c>error</c> 区分 <c>nil</c> 与 <c>ErrCreationConflict</c>。
+    /// </remarks>
     public async Task<bool> MutateCloudAgentAsync(
         string userId,
         string id,
@@ -160,14 +211,14 @@ public sealed partial class Repository
         Func<CloudAgentExecution, CloudAgentMutationContext, Task> mutate,
         CancellationToken cancellationToken = default)
     {
-        return await MutateCloudAgentAsync<object?>(
+        return await MutateCloudAgentAsync<bool>(
             userId, id, revision,
             async (run, context) =>
             {
                 await mutate(run, context).ConfigureAwait(false);
-                return null;
+                return true;
             },
-            cancellationToken).ConfigureAwait(false) is not null;
+            cancellationToken).ConfigureAwait(false) is true;
     }
 
     internal async Task<CloudAgentExecution?> CloudAgentInTxAsync(

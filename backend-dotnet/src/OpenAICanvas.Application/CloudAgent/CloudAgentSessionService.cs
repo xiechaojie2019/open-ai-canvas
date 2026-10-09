@@ -469,8 +469,13 @@ public sealed class CloudAgentSessionService
         };
         if ((initial.Skills?.Count ?? 0) > 0)
         {
+            // skillIds 让启用行为可审计：使用率统计能把一轮归因到它真正加载的技能，
+            // 而不是只累加总数（对应 Go cloud_agent_runtime.go:172-180）。
+            // 少了这个键，CloudAgentSkillUsageService 的 RunsEnabled 恒为 0。
+            List<string> skillIDs = initial.Skills!.Select(skill => skill.ID).ToList();
             CloudAgentContracts.AddEvent(state, task.ID, "tool_completed", CloudAgentContracts.Payload(
                 ("toolName", "skills_load"),
+                ("skillIds", skillIDs),
                 ("text", $"已启用 {initial.Skills!.Count} 个技能，正文将按需读取")));
         }
         CloudAgentExecution run = new()

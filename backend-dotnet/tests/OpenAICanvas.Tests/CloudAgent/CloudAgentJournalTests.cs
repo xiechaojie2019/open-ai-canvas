@@ -10,6 +10,8 @@ using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Persistence.Schema;
 using OpenAICanvas.Domain.Serialization;
 using Xunit;
+using TaskEntity = OpenAICanvas.Domain.Entities.Task;
+using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
 
 namespace OpenAICanvas.Tests.CloudAgent;
 
@@ -284,5 +286,158 @@ public sealed class CloudAgentJournalTests : IDisposable
                 return true;
             });
         Assert.True(saved);
+    }
+
+    /// <summary>
+    /// 回归：创建期的 journal / transcript 必须随执行行一起落库。
+    /// 线上事故（2026-10-08，画布 <c>wJN-9FSKWAhlU0suv0ITi</c>）：Go 里 Journal/Transcript 不是
+    /// 瞬态字段，而是 <c>gorm:"foreignKey:RunID;references:ID"</c> 的 has-many 关联，
+    /// <c>EnsureCloudAgent</c> 的 <c>Create(run)</c> 会把它们一并写入；.NET 侧漏了这一步。
+    /// 带技能的运行在创建期就有一个 <c>skills_load</c> 回执事件，于是
+    /// <c>eventCount=1</c> 而事件行 0 条，首个 checkpoint 里
+    /// <c>Sequence &lt;= previousEvents</c> 把 seq=1 跳过 → seq=1 永久缺失 →
+    /// 之后每个 checkpoint 都抛「cloud Agent journal cannot be truncated」，
+    /// 运行被判损坏，取消/暂停永久 500。
+    /// 对应 Go: <c>EnsureCloudAgent</c> + <c>cloudAgentSave</c>。
+    /// </summary>
+    [Fact]
+    public async Task 创建期的journal必须随执行行落库()
+    {
+        await MigrateAsync();
+        CloudAgentExecution run = NewRun("run-skills");
+        CloudAgentRuntimeDto state = NewState("run-skills");
+        state.Events = BuildEvents("run-skills", 1); // 创建期合成事件（skills_load 回执）
+        CloudAgentContracts.Save(run, state);
+        Assert.Equal(1, run.EventCount);
+
+        await _repository.EnsureCloudAgentAsync(run);
+
+        await using SqliteConnection connection = (SqliteConnection)_database.CreateConnection();
+        await connection.OpenAsync();
+        Assert.Equal(1, await connection.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM \"cloudAgentEventRecords\""));
+        Assert.Equal(1, await connection.ExecuteScalarAsync<long>(
+            "SELECT MIN(\"sequence\") FROM \"cloudAgentEventRecords\""));
+        Assert.Equal(2, await connection.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM \"cloudAgentMessageRecords\""));
+
+        // 首次 checkpoint：事件能累积到 seq=2，且 eventCount 与实际行数始终一致。
+        CloudAgentExecution? reloaded = await _repository.CloudAgentAsync("user-a", "run-skills");
+        Assert.NotNull(reloaded);
+        Assert.Equal(1, CloudAgentContracts.Decode(reloaded).Events.Count);
+
+        bool saved = await _repository.MutateCloudAgentAsync("user-a", "run-skills", reloaded.Revision,
+            async (current, context) =>
+            {
+                CloudAgentRuntimeDto currentState = CloudAgentContracts.Decode(current);
+                currentState.Events.Add(BuildEvents("run-skills", 1, startSeq: 2)[0]);
+                CloudAgentContracts.Save(current, currentState);
+                await context.SaveRunAsync(current, CancellationToken.None);
+            });
+        Assert.True(saved);
+
+        CloudAgentExecution? checkpointed = await _repository.CloudAgentAsync("user-a", "run-skills");
+        Assert.NotNull(checkpointed);
+        Assert.Equal(2, checkpointed.EventCount);
+        Assert.Equal(2, checkpointed.Journal.Count);
+        long[] sequences = checkpointed.Journal.Select(record => record.Sequence).ToArray();
+        Assert.Equal(new long[] { 1, 2 }, sequences);
+    }
+
+    /// <summary>
+    /// 回归：journal 与实际行数不一致时 <c>Decode</c> 必须报错。
+    /// Go 在 <c>cloudAgentDecode</c> 里直接返回 <c>Agent execution journal is incomplete</c>，
+    /// 不回落 StateJSON——checkpoint 已把三份大字段剥离成空数组，
+    /// 「按旧格式继续」只会拿到空事件表并让后续事件序号从 1 重排，
+    /// 把一次可诊断的不一致拖成 eventCount 与实际行数背离的持久损坏。
+    /// </summary>
+    [Fact]
+    public async Task 执行日志不完整时解码必须报错()
+    {
+        await MigrateAsync();
+        CloudAgentExecution run = NewRun("run-broken");
+        CloudAgentContracts.Save(run, NewState("run-broken"));
+        await _repository.EnsureCloudAgentAsync(run);
+
+        // 人为复刻线上形态：eventCount=2 但只剩 seq=2 一行。
+        await using SqliteConnection connection = (SqliteConnection)_database.CreateConnection();
+        await connection.OpenAsync();
+        await connection.ExecuteAsync("DELETE FROM \"cloudAgentEventRecords\" WHERE \"sequence\" = 1");
+        await connection.ExecuteAsync("UPDATE \"cloudAgentExecutions\" SET \"eventCount\" = 2");
+
+        CloudAgentExecution? reloaded = await _repository.CloudAgentAsync("user-a", "run-broken");
+        Assert.NotNull(reloaded);
+        Assert.Equal(2, reloaded.EventCount);
+        Assert.Single(reloaded.Journal);
+        Assert.Throws<InvalidOperationException>(() => CloudAgentContracts.Decode(reloaded));
+    }
+
+    /// <summary>
+    /// 回归：无返回值回调重载必须能区分「拿到修订锁」与「修订冲突」。
+    /// 旧实现把回调包成 <c>MutateCloudAgentAsync&lt;object?&gt;</c> 再判 <c>is not null</c>，
+    /// 而成功（回调返回 null）与冲突（<c>default</c>）两条路径都返回 null ⇒ 恒为 false。
+    /// 走本重载的调用点（取消、审批规划、读工具回写）于是必然抛
+    /// 「创作运行已变化，请刷新后重试」——取消/暂停按钮因此完全失效。
+    /// 对应 Go: <c>MutateCloudAgent</c> 用 <c>error</c> 区分 <c>nil</c> 与 <c>ErrCreationConflict</c>。
+    /// </summary>
+    [Fact]
+    public async Task 无返回值重载必须区分成功与修订冲突()
+    {
+        await MigrateAsync();
+        CloudAgentExecution run = NewRun("run-void");
+        CloudAgentContracts.Save(run, NewState("run-void"));
+        await _repository.EnsureCloudAgentAsync(run);
+
+        bool success = await _repository.MutateCloudAgentAsync("user-a", "run-void", run.Revision,
+            async (current, context) => await context.SaveRunAsync(current, CancellationToken.None));
+        Assert.True(success);
+        Assert.Equal(2, (await _repository.CloudAgentAsync("user-a", "run-void"))!.Revision);
+
+        // 同一个（已过期的）修订号再来一次：必须报冲突，而不是又一次「成功」。
+        bool conflict = await _repository.MutateCloudAgentAsync("user-a", "run-void", run.Revision,
+            async (current, context) => await context.SaveRunAsync(current, CancellationToken.None));
+        Assert.False(conflict);
+        Assert.Equal(2, (await _repository.CloudAgentAsync("user-a", "run-void"))!.Revision);
+    }
+
+    /// <summary>
+    /// 回归：创建期的 <c>skills_load</c> 回执必须带 <c>skillIds</c>。
+    /// Go 的 skills_load 事件带 skillIds——用途是让使用率统计把一轮归因到它真正加载的技能，
+    /// 而不是只累加总数（<c>cloud_agent_runtime.go:172-180</c>）。.NET 侧漏了这个键，
+    /// 而 <c>CloudAgentSkillUsageService</c> 正是靠它累加 <c>RunsEnabled</c> ⇒ 该项恒为 0。
+    /// </summary>
+    [Fact]
+    public async Task 创建期的skills_load回执必须带skillIds()
+    {
+        await MigrateAsync();
+        TaskEntity task = new()
+        {
+            ID = "run-skill-ids",
+            UserID = "user-a",
+            ProjectID = "canvas-1",
+            Type = "canvas_text",
+            Operation = CloudAgentContracts.CloudAgentOperation,
+            Status = TaskStatus.TaskStatusRunning,
+            Prompt = "做个视频",
+            InputJSON = "{}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        // EnsureExecutionAsync 只用到 repository，其余依赖在该方法内不参与。
+        CloudAgentSessionService sessions = new(_repository, null!, null!, null!, null!);
+        await sessions.EnsureExecutionAsync(task, new CloudAgentStateDto
+        {
+            Version = 1,
+            Request = new CloudAgentRequestDto { CanvasID = "canvas-1", Prompt = "做个视频" },
+            Skills = [new CloudAgentSkillDto { ID = "14811816981772", Name = "一图成片" }],
+        }, CancellationToken.None);
+
+        CloudAgentExecution? run = await _repository.CloudAgentAsync("user-a", "run-skill-ids");
+        Assert.NotNull(run);
+        CloudAgentEventDto agentEvent = Assert.Single(CloudAgentContracts.Decode(run).Events);
+        Assert.Equal("skills_load", agentEvent.Payload["toolName"].GetString());
+        JsonElement skillIds = agentEvent.Payload["skillIds"];
+        Assert.Equal(JsonValueKind.Array, skillIds.ValueKind);
+        Assert.Equal("14811816981772", Assert.Single(skillIds.EnumerateArray()).GetString());
     }
 }

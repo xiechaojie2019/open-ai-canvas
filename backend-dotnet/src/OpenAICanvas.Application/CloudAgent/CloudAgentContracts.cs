@@ -850,9 +850,14 @@ public static partial class CloudAgentContracts
             return state;
         }
         // 重建校验与 Go 逐条对齐：journal 完整、sequence 连续、身份匹配。
+        // Go 在这里直接返回错误（`Agent execution journal is incomplete`），不回落 StateJSON：
+        // checkpoint 已经把 events / canonicalMessages / textHistory 剥离成空数组，
+        // 「按旧格式继续」实际只会拿到空事件表，并让后续事件序号从 1 重排，
+        // 把一次可诊断的不一致拖成 eventCount 与实际行数背离的持久损坏
+        // （2026-10-08 事故：ec=2 而只剩 seq=2 一行，取消/暂停永久 500）。
         if ((run.Journal?.Count ?? 0) != run.EventCount || (run.Transcript?.Count ?? 0) != run.MessageCount)
         {
-            return state; // 加载器未填充（旧调用点）：StateJSON 仍带全量，按旧格式继续。
+            throw new InvalidOperationException("Agent execution journal is incomplete");
         }
         state.Events = [];
         state.Canonical.Messages = [];
