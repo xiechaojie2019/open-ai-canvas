@@ -30,7 +30,7 @@ public sealed class ProviderPayloadException : Exception
 public sealed class ProviderHttpException : Exception
 {
     public ProviderHttpException(int statusCode, string status, string body, TimeSpan retryAfter)
-        : base(BuildMessage(statusCode))
+        : base(FullMessage(statusCode, body))
     {
         StatusCode = statusCode;
         Status = status;
@@ -43,8 +43,23 @@ public sealed class ProviderHttpException : Exception
     public string Body { get; }
     public TimeSpan RetryAfter { get; }
 
-    /// <summary>对应 Go: <c>(e providerHTTPError) Error()</c>。</summary>
-    public static string BuildMessage(int statusCode) => statusCode switch
+    /// <summary>
+    /// 完整文案：400/422 先归类再追加安全详情，其余只追加安全详情。
+    /// 对应 Go: <c>(e providerHTTPError) Error()</c>。
+    /// </summary>
+    /// <remarks>
+    /// 文案里带上上游详情（<c>"…；上游：&lt;detail&gt;"</c>）与 Go 完全一致。机器判断请用
+    /// <see cref="Body"/>（原始正文）而不是本消息：正文一旦被归类/脱敏就不可逆。
+    /// </remarks>
+    private static string FullMessage(int statusCode, string body) =>
+        statusCode is 400 or 422
+            ? ProviderErrorMessages.WithDetail(Summary(statusCode), body)
+            : ProviderErrorMessages.AppendDetail(Summary(statusCode), body);
+
+    /// <summary>状态码摘要（<b>不含</b>上游详情）。对应 Go: <c>providerHTTPError.summary()</c>。</summary>
+    public static string BuildMessage(int statusCode) => Summary(statusCode);
+
+    private static string Summary(int statusCode) => statusCode switch
     {
         524 => "上游网关超时（524）：模型请求可能仍在服务端执行并产生费用，请勿立即重试，请先到供应商后台核对任务或账单",
         400 or 422 => "模型服务拒绝了请求，请检查模型和参数",
@@ -126,7 +141,8 @@ public sealed class ProviderStatePendingException : Exception
 /// <summary>
 /// 供应商错误到用户可见文案的映射。
 /// 对应 Go: <c>providerUserFacingErrorMessage</c> / <c>providerPayloadErrorCategory</c> /
-/// <c>providerPayloadErrorMessage</c>。
+/// <c>providerPayloadErrorMessage</c> / <c>providerErrorWithDetail</c> /
+/// <c>appendProviderErrorDetail</c>。
 /// </summary>
 public static class ProviderErrorMessages
 {
@@ -151,8 +167,15 @@ public static class ProviderErrorMessages
 
     /// <summary>
     /// 把异常映射为用户可见文案。
-    /// 对应 Go: <c>providerUserFacingErrorMessage</c>。
+    /// 对应 Go: <c>err.Error()</c>（<c>task_terminal.go</c> 的 <c>userFacingMessage</c> ⇒
+    /// <c>InterceptResponseText(taskFailureMessage(err))</c>）。
     /// </summary>
+    /// <remarks>
+    /// 各异常类型在构造时已把「稳定归类 + 安全上游详情」写进 <see cref="Exception.Message"/>，
+    /// 因此这里对它们直接透出即可。<b>只有无法识别的异常</b>才回落
+    /// <see cref="NetworkFailure"/>：那类异常的 Message 是进程内部措辞（类型名、路径、栈消息），
+    /// 对外没有排障价值，照抄 Go 的 <c>err.Error()</c> 反而会把内部实现细节送到用户面前。
+    /// </remarks>
     public static string UserFacing(Exception? error)
     {
         if (error is null)
@@ -168,17 +191,14 @@ public static class ProviderErrorMessages
             // 与 Go 一致：AppError 优先（业务错误文案直接透出）。
             case AppError appError when appError.Message.Trim().Length > 0:
                 return appError.Message;
+            // 构造时已按 Go 的 Error() 语义完成归类 + 追加安全详情，直接透出。
             case ProviderHttpException httpError:
-                // 仅对上游参数校验类状态码解析正文：其他状态码的正文可能是网关 HTML、
-                // 鉴权诊断或含密钥的内部信息，归类价值低且更容易误判。
-                if (httpError.StatusCode is 400 or 422)
-                {
-                    if (PayloadErrorCategory(httpError.Body, out string categorized))
-                    {
-                        return categorized;
-                    }
-                }
                 return httpError.Message;
+            // 上游业务失败：对应 Go 的 providerPayloadError.Error()。
+            // 此前漏了这一分支，导致这类失败被兜底成「连接模型服务失败」，
+            // 把「请求内容/渠道配置」的问题伪装成网络问题。
+            case ProviderPayloadException payloadError:
+                return payloadError.Message;
             // 熔断/占槽/传输异常自带准确文案：兜底成"网络失败"会把熔断、
             // 并发配置等进程内错误伪装成连不上上游，排障方向会被带偏。
             case ProviderCircuitOpenException:
@@ -265,12 +285,40 @@ public static class ProviderErrorMessages
         return false;
     }
 
+    /// <summary>不能归类时使用的兜底文案。对应 Go: <c>providerPayloadErrorMessage</c> 的 fallback。</summary>
+    public const string PayloadFallback = "模型服务返回失败，请检查请求内容或渠道配置";
+
+    /// <summary>安全上游详情的分隔符。对应 Go 的 <c>"；上游："</c>。</summary>
+    public const string UpstreamDetailSeparator = "；上游：";
+
     /// <summary>
-    /// 归类失败时的兜底文案。
+    /// 先归类、再追加安全详情。对应 Go: <c>providerErrorWithDetail</c>。
+    /// </summary>
+    public static string WithDetail(string fallback, string? raw)
+    {
+        if (PayloadErrorCategory(raw, out string categorized))
+        {
+            fallback = categorized;
+        }
+        return AppendDetail(fallback, raw);
+    }
+
+    /// <summary>
+    /// 追加安全详情：详情为空或与 fallback 相同则不加。对应 Go: <c>appendProviderErrorDetail</c>。
+    /// </summary>
+    public static string AppendDetail(string fallback, string? raw)
+    {
+        string detail = ProviderErrorDetail.Extract(raw);
+        if (detail.Length > 0 && !string.Equals(detail, fallback, StringComparison.Ordinal))
+        {
+            return fallback + UpstreamDetailSeparator + detail;
+        }
+        return fallback;
+    }
+
+    /// <summary>
+    /// 归类失败时的兜底文案（含安全上游详情）。
     /// 对应 Go: <c>providerPayloadErrorMessage</c>。
     /// </summary>
-    public static string PayloadError(string? raw) =>
-        PayloadErrorCategory(raw, out string message)
-            ? message
-            : "模型服务返回失败，请检查请求内容或渠道配置";
+    public static string PayloadError(string? raw) => WithDetail(PayloadFallback, raw);
 }

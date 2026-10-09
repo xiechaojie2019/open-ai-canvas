@@ -81,6 +81,51 @@ public sealed class ProviderErrorMessagesTests
             ProviderErrorMessages.UserFacing(new InvalidOperationException("boom")));
     }
 
+    [Fact]
+    public void 用户文案_上游业务失败透出归类与安全详情()
+    {
+        // 这是本次修复的核心：providerPayloadError 在 Go 里经 err.Error() 直接透出
+        // 「归类 + 上游安全详情」；此前 .NET 落进 default 兜底成网络失败，方向被带偏。
+        ProviderPayloadException error = new(
+            """{"error":{"message":"size must be 1024x1024"}}""",
+            ProviderErrorMessages.PayloadError("""{"error":{"message":"size must be 1024x1024"}}"""));
+
+        string message = ProviderErrorMessages.UserFacing(error);
+        Assert.Contains("size must be 1024x1024", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("连接模型服务失败", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 用户文案_上游业务失败的凭据详情不外露()
+    {
+        const string raw = """{"message":"api_key=sk-abc"}""";
+        ProviderPayloadException error = new(raw, ProviderErrorMessages.PayloadError(raw));
+
+        string message = ProviderErrorMessages.UserFacing(error);
+        Assert.DoesNotContain("api_key", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("sk-abc", message, StringComparison.Ordinal);
+        Assert.Equal(ProviderErrorMessages.PayloadFallback, message);
+    }
+
+    [Fact]
+    public void 用户文案_HTTP错误带上安全上游详情()
+    {
+        // 400/422：先归类，再追加安全详情（对应 Go 的 providerErrorWithDetail）。
+        string bad = ProviderErrorMessages.UserFacing(
+            new ProviderHttpException(400, "Bad Request", """{"error":{"message":"size must be 1024x1024"}}""", TimeSpan.Zero));
+        Assert.Equal("模型服务拒绝了请求，请检查模型和参数；上游：size must be 1024x1024", bad);
+
+        // 非 400/422：只追加安全详情（对应 Go 的 appendProviderErrorDetail）。
+        string server = ProviderErrorMessages.UserFacing(
+            new ProviderHttpException(500, "Internal Server Error", """{"error":{"message":"上游队列已满，请稍后重试"}}""", TimeSpan.Zero));
+        Assert.Equal("模型服务暂时不可用（HTTP 500）；上游：上游队列已满，请稍后重试", server);
+
+        // 正文含密钥时不追加。
+        string secret = ProviderErrorMessages.UserFacing(
+            new ProviderHttpException(500, "Internal Server Error", """{"message":"api_key=sk-abc"}""", TimeSpan.Zero));
+        Assert.Equal("模型服务暂时不可用（HTTP 500）", secret);
+    }
+
     // ------------------------------------------------------------ 正文归类
 
     [Fact]
@@ -180,8 +225,53 @@ public sealed class ProviderErrorMessagesTests
     {
         Assert.Equal("模型服务额度不足，请检查渠道余额或配额",
             ProviderErrorMessages.PayloadError("insufficient balance"));
-        Assert.Equal("模型服务返回失败，请检查请求内容或渠道配置",
+        // 兜底文案后面要带上安全详情（对应 Go: providerErrorWithDetail）——
+        // 否则用户只看到"模型服务返回失败"，真实原因被丢掉。
+        Assert.Equal("模型服务返回失败，请检查请求内容或渠道配置；上游：unknown",
             ProviderErrorMessages.PayloadError("unknown"));
+    }
+
+    // ------------------------------------------------------------ 上游详情提取（对应 Go: providerErrorDetail）
+
+    [Theory]
+    // 对象里的错误消息字段应被抽出（error/message/msg/detail 优先顺序）。
+    [InlineData("""{"error":{"message":"非常抱歉，生成的图片可能违反了关于裸露、色情或情色内容的防护限制。请重试或修改提示语。"}}""",
+        "非常抱歉，生成的图片可能违反了关于裸露、色情或情色内容的防护限制。请重试或修改提示语。")]
+    // 同一条消息里除 message 外还有 request_id/url 时，只取 message。
+    [InlineData("""{"message":"size must be 1024x1024","request_id":"private","url":"https://private.test"}""",
+        "size must be 1024x1024")]
+    // 普通消息里的 URL 单独隐藏，其余内容保留。
+    [InlineData("""{"error":"请修改图片尺寸 https://private.test/path?q=value"}""", "请修改图片尺寸 [链接已隐藏]")]
+    [InlineData("""{"detail":"请上传 PNG 图片"}""", "请上传 PNG 图片")]
+    // 纯文本（非 JSON）原样保留。
+    [InlineData("请缩短提示词", "请缩短提示词")]
+    [InlineData("""{"message":"max_tokens must be less than 4096"}""", "max_tokens must be less than 4096")]
+    // 账务 / 凭据 / 网关 HTML / 截断 JSON / 纯诊断：整条隐藏。
+    [InlineData("""{"message":"渠道余额不足，剩余 1.25 元"}""", "")]
+    [InlineData("""{"message":"insufficient credits: $0.25"}""", "")]
+    [InlineData("""{"message":"invalid api_key=private"}""", "")]
+    [InlineData("""{"message":"Cookie: session=private"}""", "")]
+    [InlineData("""{"message":"access_token=private"}""", "")]
+    [InlineData("<html>502 private gateway</html>", "")]
+    [InlineData("""{"message":"partial""", "")]
+    [InlineData("""{"request_id":"private","headers":{"Authorization":"private"}}""", "")]
+    public void 上游详情_提取与脱敏(string raw, string expected) =>
+        Assert.Equal(expected, ProviderErrorDetail.Extract(raw));
+
+    [Fact]
+    public void 上游详情_空输入返回空()
+    {
+        Assert.Equal("", ProviderErrorDetail.Extract(null));
+        Assert.Equal("", ProviderErrorDetail.Extract(""));
+        Assert.Equal("", ProviderErrorDetail.Extract("   "));
+    }
+
+    [Fact]
+    public void 上游详情_与fallback相同则不重复拼接()
+    {
+        // detail == fallback 时不加后缀（对应 Go 的相等判定）。
+        string message = ProviderErrorMessages.AppendDetail("请缩短提示词", "请缩短提示词");
+        Assert.Equal("请缩短提示词", message);
     }
 
     // ------------------------------------------------------------ 异常类型
