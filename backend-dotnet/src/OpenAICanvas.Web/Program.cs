@@ -14,6 +14,13 @@ using OpenAICanvas.Web.Startup;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+// 线程池注入下限：画布大 JSON 的哈希/克隆与生成任务是 CPU 大户，默认最小线程
+// （=核数）下饥饿期按 ~1 线程/秒注入，会把 15 秒粒度的任务租约续期回调延迟到
+// 租约过期之后（表现为长任务必死 + "缺少提交记录"守卫拒绝自动重发）。
+ThreadPool.SetMinThreads(
+    Math.Max(64, Environment.ProcessorCount * 4),
+    Math.Max(64, Environment.ProcessorCount * 4));
+
 // 启动参数不得绕过数据目录约束；这里与 Go 的 env() 完全同名同默认值。
 CanvasEnvironment env = CanvasEnvironment.FromConfiguration(builder.Configuration);
 
@@ -155,6 +162,19 @@ builder.Services.AddSingleton(serviceProvider =>
         GeneratedMediaUpload =
             serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
     };
+});
+// 媒体物化管线（对应 Go: task_media_storage.go + materializeTaskMedia）：
+// 声明式协议的媒体结果经「检查点→暂存/下载→上传 OSS→登记资源」产出资源化载荷。
+builder.Services.AddSingleton(serviceProvider =>
+{
+    OpenAICanvas.Application.CanvasService canvas =
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+    canvas.MediaRecovery.AttachStorage(
+        new OpenAICanvas.Application.TaskMediaStorageService(
+            serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
+            env.DataDir),
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>());
+    return canvas.MediaRecovery;
 });
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(

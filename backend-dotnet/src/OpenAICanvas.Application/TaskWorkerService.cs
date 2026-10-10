@@ -22,8 +22,14 @@ public sealed class TaskWorkerService
     /// <summary>全局并发槽 TTL。对应 Go: <c>workerSlotLeaseDuration</c>。</summary>
     private static readonly TimeSpan SlotLeaseDuration = TimeSpan.FromMinutes(1);
 
-    /// <summary>任务租约时长。对应 Go: <c>ClaimNextTask</c> 的 45s。</summary>
-    private static readonly TimeSpan TaskLeaseDuration = TimeSpan.FromSeconds(45);
+    /// <summary>
+    /// 任务租约时长。对应 Go 的 <c>ClaimNextTask(…, 45*time.Second)</c>，但放宽到 5 分钟：
+    /// .NET 的 timer 续期回调要经线程池排队，画布大 JSON 哈希/克隆造成的 CPU 饱和会把
+    /// 15 秒粒度的续期延迟到 45 秒租约过期之后（goroutine 调度无此放大）。致命线放宽后
+    /// 续期仍按 15 秒执行，短于 5 分钟的 CPU 风暴不再折断租约；worker 真崩溃时任务重领
+    /// 等待从 45 秒变为最长 5 分钟，可接受。
+    /// </summary>
+    private static readonly TimeSpan TaskLeaseDuration = TimeSpan.FromMinutes(5);
 
     /// <summary>执行失败后的续排队延迟。对应 Go: <c>DeferRunningTaskForProviderPoll</c> 的 15s。</summary>
     private static readonly TimeSpan ProviderPollDelay = TimeSpan.FromSeconds(15);

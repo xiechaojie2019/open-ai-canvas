@@ -423,12 +423,22 @@ public sealed class ApiCallAuditWriter
         {
             log.ProviderRequestID = ProviderRequestIDFromPath(log.Path);
         }
+        // 生图/生视频响应内嵌数 MB 的 b64_json：对它做 JsonDocument.Parse 是 CPU 克隆风暴，
+        // 会拖垮任务租约续期的 timer；超限响应只保留路径推导，跳过正文扫描（用量提取
+        // 对媒体响应本就基本不存在）。
+        if (responseBody.Length > MaxEnrichParseBytes)
+        {
+            return;
+        }
         foreach (JsonElement payload in ResponsePayloads(responseBody))
         {
             EnrichPayload(log, payload);
         }
         EnrichFailureSummary(log, responseBody);
     }
+
+    /// <summary>富化参与解析的响应上限（与 <c>ApiCallPayload</c> 的克隆守卫一致）。</summary>
+    private const int MaxEnrichParseBytes = 128 << 10;
 
     private static void EnrichPayload(ApiCallLog log, JsonElement payload)
     {

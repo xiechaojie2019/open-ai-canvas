@@ -22,6 +22,13 @@ public static class ApiCallPayload
     /// <summary>参与解析的源报文上限。对应 Go: <c>maxAPICallPayloadSourceBytes</c>。</summary>
     public const int MaxPayloadSourceBytes = 1 << 20;
 
+    /// <summary>
+    /// 触发解析克隆的上限。生图/生视频响应常内嵌数 MB 的 b64_json，对其做
+    /// Parse+MarshalIndent 会造成秒级 CPU 克隆风暴（worker 执行线程 + 审计并发），
+    /// 曾把任务租约续期的 timer 回调延迟到租约过期之后；超过该值直接存摘要。
+    /// </summary>
+    private const int MaxParseBytes = 128 << 10;
+
     private static readonly string[] SecretKeyMarkers =
         { "apikey", "accesstoken", "authorization", "password", "secret" };
 
@@ -41,7 +48,7 @@ public static class ApiCallPayload
         {
             return $"[报文过大，已省略，共 {data.Length} 字节]";
         }
-        if (IsValidJson(data))
+        if (data.Length <= MaxParseBytes && IsValidJson(data))
         {
             try
             {
@@ -70,22 +77,8 @@ public static class ApiCallPayload
     /// 提取请求报文用于日志。对应 Go: <c>platform.RequestPayloadForLog(req)</c>。
     /// 仅缓冲型 Content（JSON/字节）可提取；流式内容返回空串。
     /// </summary>
-    public static string RequestPayload(HttpRequestMessage request)
+    public static string RequestPayload(byte[] body, string contentType)
     {
-        if (request.Content is null)
-        {
-            return "";
-        }
-        string contentType = request.Content.Headers.ContentType?.ToString() ?? "";
-        byte[] body;
-        try
-        {
-            body = request.Content.ReadAsByteArrayAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-        }
-        catch
-        {
-            return "";
-        }
         if (body.Length > MaxPayloadSourceBytes)
         {
             return $"[请求报文过大，已省略，超过 {MaxPayloadSourceBytes} 字节]";
