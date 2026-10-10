@@ -412,12 +412,29 @@ public sealed class TaskWorkerService
 
             string resultJSON = JsonSerializer.Serialize(result, ProjectCharacterService.GoPayloadOptions);
             await SaveCompletionWithinQuotaAsync(latest, resultJSON, ct).ConfigureAwait(false);
+            // 检查点暂存文件在持久化完成后清理（尽力而为，对应 Go: cleanupMediaCheckpointFiles）。
+            if (claimed.MediaRecoveryJSON.Length > 0)
+            {
+                CanvasService?.MediaRecovery.CleanupTempFiles(claimed);
+            }
             await _compact.NoteTaskAsync(latest, result, null, ct).ConfigureAwait(false);
             await _terminal.HandleSuccessAsync(latest).ConfigureAwait(false);
             return null;
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
+            // 媒体恢复失败不是任务失败：作品已生成，按检查点延迟重试（对应 Go:
+            // worker 的 deliveryFailure 分支 → handleMediaRecoveryFailure）。
+            if (error is TaskMediaRecoveryService.MediaRecoveryException mediaError
+                && CanvasService?.MediaRecovery is { } recovery)
+            {
+                await recovery.HandleFailureAsync(
+                    claimed, mediaError.Stage, mediaError.Retryable, mediaError,
+                    (taskId, owner, stage, delay, token) =>
+                        _repository.DeferRunningTaskForProviderPollAsync(taskId, owner, stage, delay, token),
+                    CancellationToken.None).ConfigureAwait(false);
+                return null;
+            }
             bool channelSlotFailedBeforeRequest = error is ProviderChannelSlotException;
             await _compact.NoteTaskAsync(claimed, null, error, CancellationToken.None).ConfigureAwait(false);
             return await _terminal.HandleExecutionFailureAsync(
@@ -429,6 +446,16 @@ public sealed class TaskWorkerService
             if (Volatile.Read(ref leaseLost) != 0 && Volatile.Read(ref timeoutHit) == 0)
             {
                 // 租约已丢失，允许新 worker 接管，旧 worker 不能覆盖其状态。
+                try
+                {
+                    await _repository.CreateTaskLogAsync(
+                        claimed.UserID, claimed.ID, "warn", "任务租约丢失，本次执行已中止，任务将重新排队", "",
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 日志失败不影响退出。
+                }
                 return null;
             }
 
@@ -476,18 +503,36 @@ public sealed class TaskWorkerService
         {
             while (await timer.WaitForNextTickAsync(stopToken).ConfigureAwait(false))
             {
-                (bool renewed, string? error) = await slot.RenewAsync(stopToken).ConfigureAwait(false);
-                if (renewed && error is null)
+                bool leaseLost;
+                string cause;
+                try
                 {
-                    await _repository.RenewTaskLeaseAsync(task.ID, task.LeaseOwner, TaskLeaseDuration, stopToken)
-                        .ConfigureAwait(false);
+                    (bool renewed, string? error) = await slot.RenewAsync(stopToken).ConfigureAwait(false);
+                    if (renewed && error is null)
+                    {
+                        await _repository.RenewTaskLeaseAsync(task.ID, task.LeaseOwner, TaskLeaseDuration, stopToken)
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+                    leaseLost = true;
+                    cause = error ?? "并发租约已失效";
                 }
-                else
+                catch (OperationCanceledException)
                 {
-                    markLeaseLost();
-                    await execution.CancelAsync().ConfigureAwait(false);
-                    return;
+                    throw;
                 }
+                catch (Exception renewError)
+                {
+                    // 续租抛错绝不能让循环静默死亡：否则执行继续裸奔、租约过期后被
+                    // 其他 worker 重领，直连任务会撞上"缺少提交记录"守卫且无任何日志。
+                    leaseLost = true;
+                    cause = renewError.GetType().Name + ": " + renewError.Message;
+                }
+                Console.Error.WriteLine(
+                    $"task lease lost: task={task.ID} owner={task.LeaseOwner} cause={cause}");
+                markLeaseLost();
+                await execution.CancelAsync().ConfigureAwait(false);
+                return;
             }
         }
         catch (OperationCanceledException)
@@ -635,7 +680,8 @@ public sealed class TaskWorkerService
                 : 0);
         ProviderRequestContext context = new(
             _policy, _coordinator, declarativeAdapter: declarativeAdapters,
-            auditWriter: _apiCallAudit, audit: audit);
+            auditWriter: _apiCallAudit, audit: audit,
+            mediaRecovery: CanvasService?.MediaRecovery);
         if (ProviderWorkflowValues.IsWorkflowProviderInterface(input.Config.InterfaceType))
         {
             // 后台执行仍要过平台门控（对应 Go: provider.go 的 RequireWorkflowPluginForInterface）：
