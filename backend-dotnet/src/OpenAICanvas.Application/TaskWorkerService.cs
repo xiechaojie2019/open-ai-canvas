@@ -512,6 +512,8 @@ public sealed class TaskWorkerService
                     {
                         await _repository.RenewTaskLeaseAsync(task.ID, task.LeaseOwner, TaskLeaseDuration, stopToken)
                             .ConfigureAwait(false);
+                        Console.Error.WriteLine(
+                            $"task lease renewed: task={task.ID} owner={task.LeaseOwner} until={DateTime.UtcNow.Add(TaskLeaseDuration):HH:mm:ss}");
                         continue;
                     }
                     leaseLost = true;
