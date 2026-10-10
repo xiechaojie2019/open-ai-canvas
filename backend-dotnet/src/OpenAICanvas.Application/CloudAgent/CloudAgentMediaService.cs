@@ -13,6 +13,18 @@ using TaskStatus = OpenAICanvas.Domain.Entities.TaskStatus;
 namespace OpenAICanvas.Application.CloudAgent;
 
 /// <summary>generate_media 参数。对应 Go: <c>app.cloudAgentMediaArgs</c>。</summary>
+/// <remarks>
+/// <b>JSON 字段名以 Go 的 struct tag 为准，不能靠 C# 属性名的 camelCase 推断。</b>
+/// <c>CloudAgentContracts.DecodeObject</c> 用 <c>UnmappedMemberHandling.Disallow</c>，
+/// 下发给模型的 schema（<c>CloudAgentTools.BuildTools</c>）写的也是 Go 名字
+/// （<c>durationSeconds</c> / <c>channelId</c> / <c>nodeId</c> …）。
+/// 2026-10-10 线上事故：<c>Duration</c> 少写 <c>[JsonPropertyName("durationSeconds")]</c>，
+/// 隐式绑成 <c>duration</c>，模型按 schema 传 <c>durationSeconds</c> 被当场拒收
+/// ⇒ 「生成参数必须是只含支持字段的单个JSON对象」。
+/// 视频必带 duration ⇒ 生视频 100% 失败；生图不带 duration ⇒ 侥幸能过。
+/// <c>PropertyNameCaseInsensitive</c> 只能救大小写（channelId↔channelID），
+/// 救不了 <c>durationSeconds</c> ↔ <c>duration</c> 这种词形差异。
+/// </remarks>
 public sealed class CloudAgentMediaArgs
 {
     public string DraftRunID { get; set; } = "";
@@ -21,6 +33,8 @@ public sealed class CloudAgentMediaArgs
     public string LogicalModelID { get; set; } = "";
     public string ChannelID { get; set; } = "";
     public string ChannelModelKey { get; set; } = "";
+    /// <summary>对应 Go: <c>Duration int \`json:"durationSeconds"\`</c>。</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("durationSeconds")]
     public int Duration { get; set; }
     public string Size { get; set; } = "";
     public string Quality { get; set; } = "";
