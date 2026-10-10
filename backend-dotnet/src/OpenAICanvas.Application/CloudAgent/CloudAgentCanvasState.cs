@@ -538,6 +538,34 @@ public static class CloudAgentCanvasState
         return output;
     }
 
+    /// <summary>
+    /// 追加行时继承上一行的参考图列。对应 Go: <c>cloudAgentBatchTable.go</c> append 分支的
+    /// <c>inheritedInputNodeIDs := []any{}; if len(rows) &gt; 0 { ... rows[len(rows)-1] ... }</c>。
+    /// </summary>
+    /// <remarks>
+    /// <b>空表必须有守卫</b>：Go 的 <c>len(rows) &gt; 0</c> 在 .NET 移植时被漏掉，
+    /// <c>rows[^1]</c> 在空表上抛 <see cref="ArgumentOutOfRangeException"/>；
+    /// 该异常不是 <c>AppError</c>，会绕过运行终态化，worker 每 2 秒重抛一次，
+    /// 运行永久停在 running（2026-10-10：run <c>ag2f3a000de787fd102a7f9d516a22920b</c>）。
+    /// </remarks>
+    public static JsonArray BatchInheritedInputNodeIDs(IReadOnlyList<JsonObject> rows, int columnCount)
+    {
+        JsonArray inherited = new();
+        if (rows.Count == 0)
+        {
+            return inherited;
+        }
+        foreach (JsonNode? node in BatchInputIDs(
+            CloudAgentJsonHelpers.Get(rows[^1], "inputNodeIds"), columnCount))
+        {
+            if (node is not null)
+            {
+                inherited.Add(node.DeepClone());
+            }
+        }
+        return inherited;
+    }
+
     private static int? Integer(JsonNode? value)
     {
         if (value is not JsonValue v)

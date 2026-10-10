@@ -791,17 +791,12 @@ public static class CloudAgentStructuredEdits
                     }
                     string operation = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(table, "operation"));
                     string prompt = operation == "creative" ? CreativeBatchPrompt : TryOnBatchPrompt;
-                    // 空表没有上一行可继承（Go: if len(rows) > 0）；首行 append 参考列为空。
-                    JsonArray inheritedInputNodeIDs = [];
-                    if (rows.Count > 0)
-                    {
-                        inheritedInputNodeIDs = new JsonArray(
-                            CloudAgentCanvasState.BatchInputIDs(
-                                    CloudAgentJsonHelpers.Get(rows[^1], "inputNodeIds"), columns.Count)
-                                .Where(n => n is not null)
-                                .Select(n => n!.DeepClone())
-                                .ToArray());
-                    }
+                    // 空表没有上一行可继承：守卫在 CloudAgentCanvasState.BatchInheritedInputNodeIDs 里
+                    // （Go 侧是 `if len(rows) > 0`）。曾经的移植直接写 `rows[^1]`，空表首行 append
+                    // 抛 ArgumentOutOfRangeException ⇒ 非 AppError ⇒ 绕过终态化，worker 每 2s 重抛，
+                    // 运行永久停在 running（2026-10-10：run ag2f3a000de787fd102a7f9d516a22920b）。
+                    JsonArray inheritedInputNodeIDs =
+                        CloudAgentCanvasState.BatchInheritedInputNodeIDs(rows, columns.Count);
                     JsonObject row = new()
                     {
                         ["id"] = CloudAgentContracts.AgentID(
