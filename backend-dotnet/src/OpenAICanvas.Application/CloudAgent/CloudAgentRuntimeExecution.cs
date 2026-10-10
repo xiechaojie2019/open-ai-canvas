@@ -298,6 +298,10 @@ public sealed partial class CloudAgentRuntimeService
                 ?? throw AppError.NotFound("画布不存在");
             JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
             plan.Args.SnapshotHash = CloudAgentContracts.MediaContentHash(doc);
+            // 依赖哈希随服务端 args 固化（对应 Go: cloudAgentPreparedMedia.DependencyHash）：
+            // 执行准入时依赖匹配可替代全画布快照，同画布其他生成的回写不会连坐判
+            // 「画布已变化」。必须在此刻计算——此时草稿节点与引用连线已落画布。
+            plan.Args.DependencyHash = CloudAgentMediaService.MediaDependencyHash(doc, plan.Args);
             call.Function.Arguments = JsonSerializer.Serialize(plan.Args, GoJson.WriteOptions);
             state.Calls[state.CallIndex] = call;
             preview = CloudAgentMediaService.ApprovalPreview(plan, modelName);
@@ -370,7 +374,7 @@ public sealed partial class CloudAgentRuntimeService
     private async Task EnqueueTaskAsync(
         CloudAgentExecution run, CloudAgentRuntimeDto state, string taskType, string prompt,
         string model, string logicalModelID, Dictionary<string, JsonElement> input,
-        CloudAgentMediaPlan? media, CancellationToken cancellationToken)
+        CloudAgentMediaPlan? media, string mediaOperation = "", CancellationToken cancellationToken = default)
     {
         Dictionary<string, BillingOrder> existingOrders = await _repository.BillingOrdersByTaskIDsAsync(
             run.UserID, state.TaskIDs, cancellationToken).ConfigureAwait(false);
@@ -390,7 +394,10 @@ public sealed partial class CloudAgentRuntimeService
         {
             ProjectID = state.Request.CanvasID,
             Type = taskType,
-            Operation = media is null ? "cloud_agent_step" : "cloud_agent_media",
+            // 媒体任务的 operation 必须用 PrepareAsync 按模式+参考素材推导的值
+            // （Go: cloudAgentMediaOperation）——写死 cloud_agent_media 会被任何
+            // 声明了 operations 白名单的模型能力合同拒绝（如火山 text_to_video/image_to_video）。
+            Operation = media is null ? "cloud_agent_step" : mediaOperation,
             Prompt = prompt,
             Model = model,
             LogicalModelID = logicalModelID,
@@ -646,7 +653,8 @@ public sealed partial class CloudAgentRuntimeService
         (CreateTaskRequestDto request, CloudAgentMediaPlan plan) = preparedPair.Value;
         run.Revision++;
         await EnqueueTaskAsync(run, state, request.Type!, request.Prompt,
-            request.Model, request.LogicalModelID, request.Input, plan, cancellationToken)
+            request.Model, request.LogicalModelID, request.Input, plan, request.Operation,
+            cancellationToken)
             .ConfigureAwait(false);
     }
 

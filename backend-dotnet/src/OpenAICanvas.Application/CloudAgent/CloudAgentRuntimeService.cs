@@ -774,7 +774,7 @@ public sealed partial class CloudAgentRuntimeService
         }
         await EnqueueTaskAsync(run, state, "canvas_text", state.Request.Prompt,
             state.Request.Model, state.Request.LogicalModelID, stepInput,
-            media: null, cancellationToken).ConfigureAwait(false);
+            media: null, mediaOperation: "", cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     public sealed class ModelOutcome

@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Nodes;
 using OpenAICanvas.Domain.Canvas.Capability;
 using OpenAICanvas.Domain.Entities;
@@ -27,22 +28,46 @@ namespace OpenAICanvas.Application.CloudAgent;
 /// </remarks>
 public sealed class CloudAgentMediaArgs
 {
+    // json tag 与 Go 的 cloudAgentMediaArgs 逐字对齐：DecodeObject 开启
+    // UnmappedMemberHandling.Disallow，缺标签的字段（如 durationSeconds）会被当作
+    // 未知字段拒绝，视频生成因此全部挂在参数解码。
+    [JsonPropertyName("draftRunID")]
     public string DraftRunID { get; set; } = "";
+    [JsonPropertyName("mode")]
     public string Mode { get; set; } = "";
+    [JsonPropertyName("prompt")]
     public string Prompt { get; set; } = "";
+    [JsonPropertyName("logicalModelId")]
     public string LogicalModelID { get; set; } = "";
+    [JsonPropertyName("channelId")]
     public string ChannelID { get; set; } = "";
+    [JsonPropertyName("channelModelKey")]
     public string ChannelModelKey { get; set; } = "";
-    /// <summary>对应 Go: <c>Duration int \`json:"durationSeconds"\`</c>。</summary>
-    [System.Text.Json.Serialization.JsonPropertyName("durationSeconds")]
+    [JsonPropertyName("durationSeconds")]
     public int Duration { get; set; }
+    [JsonPropertyName("size")]
     public string Size { get; set; } = "";
+    [JsonPropertyName("quality")]
     public string Quality { get; set; } = "";
+    [JsonPropertyName("videoGenerateAudio")]
     public bool? VideoGenerateAudio { get; set; }
+    [JsonPropertyName("snapshotHash")]
     public string SnapshotHash { get; set; } = "";
+
+    /// <summary>
+    /// 生成依赖哈希（服务端在审批规划时计算并固化，模型不可见）。
+    /// 对应 Go: <c>cloudAgentPreparedMedia.DependencyHash</c>——准入时依赖匹配可替代
+    /// 全画布快照匹配，使同画布的其他生成回写不致连坐判"画布已变化"。
+    /// </summary>
+    [JsonPropertyName("dependencyHash")]
+    public string DependencyHash { get; set; } = "";
+    [JsonPropertyName("nodeId")]
     public string NodeID { get; set; } = "";
+    [JsonPropertyName("title")]
     public string Title { get; set; } = "";
+    [JsonPropertyName("sourceNodeId")]
     public string SourceNodeID { get; set; } = "";
+    [JsonPropertyName("referenceNodeIds")]
     public List<string> ReferenceNodeIDs { get; set; } = [];
 }
 
@@ -217,6 +242,141 @@ public sealed class CloudAgentMediaService
             ? text
             : "";
 
+    /// <summary>生成合同涉及的元数据键。对应 Go: <c>contract.NodeGenerationProjection</c> 的已知键集合。</summary>
+    private static readonly string[] GenerationKnownMetadataKeys =
+    {
+        "generationSpec", "prompt", "composerContent", "model", "logicalModelId", "channelId",
+        "channelModelKey", "videoStartFrameNodeId", "videoEndFrameNodeId", "videoEditOperation",
+        "referenceNodeIds",
+    };
+
+    /// <summary>资源身份相关元数据键。对应 Go: <c>cloudAgentMediaDependencyHash</c> 的 resourceProjection。</summary>
+    private static readonly string[] ResourceProjectionKeys =
+    {
+        "storageKey", "assetId", "resourceId", "generationTaskId", "outputReference", "status",
+        "mimeType", "naturalWidth", "naturalHeight", "width", "height", "durationMs", "etag",
+    };
+
+    /// <summary>
+    /// 生成依赖哈希：只投影本次生成真正依赖的图结构（目标节点 + 参考绑定 + 来源 + 入边）。
+    /// 对应 Go: <c>cloudAgentMediaDependencyHash</c>（version 2）。画布呈现与自动保存簿记、
+    /// 以及无关节点的任何变化都不会改变该哈希，使同画布的其他生成互不连坐。
+    /// </summary>
+    public static string MediaDependencyHash(JsonObject doc, CloudAgentMediaArgs args)
+    {
+        Dictionary<string, JsonObject> nodes = new(StringComparer.Ordinal);
+        foreach (JsonObject node in CloudAgentJsonHelpers.Maps(CloudAgentJsonHelpers.Get(doc, "nodes")))
+        {
+            string id = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id"));
+            if (id.Length > 0)
+            {
+                nodes[id] = node;
+            }
+        }
+
+        JsonObject? TargetInput(JsonObject node)
+        {
+            JsonObject input = new();
+            if (node["metadata"] is not JsonObject metadata)
+            {
+                return input;
+            }
+            foreach ((string key, JsonNode? value) in metadata)
+            {
+                if (Array.IndexOf(GenerationKnownMetadataKeys, key) >= 0
+                    || key is "locked" or "taskId" or "generationTaskId" or "agentDraftRunId" or "status")
+                {
+                    input[key] = value?.DeepClone();
+                }
+            }
+            return input;
+        }
+
+        JsonObject? ResourceProjection(JsonObject? node)
+        {
+            if (node?["metadata"] is not JsonObject metadata)
+            {
+                return null;
+            }
+            JsonObject resource = new();
+            foreach (string key in ResourceProjectionKeys)
+            {
+                if (metadata.TryGetPropertyValue(key, out JsonNode? value))
+                {
+                    resource[key] = value?.DeepClone();
+                }
+            }
+            return resource;
+        }
+
+        JsonObject? target = nodes.GetValueOrDefault(args.NodeID);
+        JsonObject? targetInput = null;
+        if (target is not null)
+        {
+            targetInput = new JsonObject
+            {
+                ["id"] = CloudAgentJsonHelpers.Get(target, "id")?.DeepClone(),
+                ["type"] = CloudAgentJsonHelpers.Get(target, "type")?.DeepClone(),
+                ["locked"] = CloudAgentJsonHelpers.Get(target, "locked")?.DeepClone(),
+                ["input"] = TargetInput(target),
+                ["resource"] = ResourceProjection(target),
+            };
+        }
+        JsonArray bindings = [];
+        foreach (string id in args.ReferenceNodeIDs)
+        {
+            JsonObject binding = new()
+            {
+                ["id"] = id,
+                ["exists"] = nodes.ContainsKey(id),
+            };
+            if (nodes.TryGetValue(id, out JsonObject? reference))
+            {
+                binding["type"] = CloudAgentJsonHelpers.Get(reference, "type")?.DeepClone();
+                binding["input"] = TargetInput(reference);
+                binding["resource"] = ResourceProjection(reference);
+            }
+            bindings.Add(binding);
+        }
+        JsonNode? source = null;
+        if (args.SourceNodeID.Length > 0)
+        {
+            JsonObject? sourceNode = nodes.GetValueOrDefault(args.SourceNodeID);
+            source = new JsonObject
+            {
+                ["id"] = args.SourceNodeID,
+                ["type"] = sourceNode is null
+                    ? null
+                    : CloudAgentJsonHelpers.Get(sourceNode, "type")?.DeepClone(),
+                ["content"] = sourceNode?["metadata"]?["content"]?.DeepClone(),
+                ["prompt"] = sourceNode?["metadata"]?["prompt"]?.DeepClone(),
+            };
+        }
+        JsonArray edges = [];
+        foreach (JsonObject edge in CloudAgentJsonHelpers.Maps(CloudAgentJsonHelpers.Get(doc, "connections")))
+        {
+            if (CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(edge, "toNodeId")) == args.NodeID)
+            {
+                edges.Add(new JsonObject
+                {
+                    ["fromNodeId"] = CloudAgentJsonHelpers.Get(edge, "fromNodeId")?.DeepClone(),
+                    ["toNodeId"] = CloudAgentJsonHelpers.Get(edge, "toNodeId")?.DeepClone(),
+                    ["fromPort"] = CloudAgentJsonHelpers.Get(edge, "fromPort")?.DeepClone(),
+                    ["role"] = CloudAgentJsonHelpers.Get(edge, "role")?.DeepClone(),
+                });
+            }
+        }
+        JsonObject content = new()
+        {
+            ["version"] = 2,
+            ["target"] = targetInput,
+            ["bindings"] = bindings,
+            ["source"] = source,
+            ["edges"] = edges,
+        };
+        return CloudAgentContracts.CreationHashOf(content);
+    }
+
     /// <summary>
     /// 媒体画布文档校验：快照、目标草稿、来源节点与 prospective 连线准入。
     /// 对应 Go: <c>cloudAgentMediaDocument</c>。返回（画布, 文档, 参考）。
@@ -232,6 +392,12 @@ public sealed class CloudAgentMediaService
         bool unchanged = args.SnapshotHash.Length > 0
             && (CloudAgentContracts.CanvasHash(doc) == args.SnapshotHash
                 || CloudAgentContracts.MediaContentHash(doc) == args.SnapshotHash);
+        if (!unchanged && args.DependencyHash.Length > 0)
+        {
+            // 对应 Go: Prepared != nil 时用依赖哈希替代全画布快照——只要求本次生成
+            // 真正依赖的节点（目标 + 参考 + 来源 + 入边）没有变化。
+            unchanged = MediaDependencyHash(doc, args) == args.DependencyHash;
+        }
         if (!unchanged)
         {
             throw CloudAgentSessionService.CreationConflict("画布已变化，请重新读取画布并重新审批；未提交生成任务");
