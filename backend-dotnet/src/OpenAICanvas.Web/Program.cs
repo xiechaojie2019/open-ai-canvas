@@ -17,9 +17,11 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 // 线程池注入下限：画布大 JSON 的哈希/克隆与生成任务是 CPU 大户，默认最小线程
 // （=核数）下饥饿期按 ~1 线程/秒注入，会把 15 秒粒度的任务租约续期回调延迟到
 // 租约过期之后（表现为长任务必死 + "缺少提交记录"守卫拒绝自动重发）。
+// 测试站为 16 核，按核数 × 16（下限 256）注入：CPU 风暴期间续租/调度等关键
+// 回调仍有线程可用；每线程 1MB 栈对 16GB 内存无压力。
 ThreadPool.SetMinThreads(
-    Math.Max(64, Environment.ProcessorCount * 4),
-    Math.Max(64, Environment.ProcessorCount * 4));
+    Math.Max(256, Environment.ProcessorCount * 16),
+    Math.Max(256, Environment.ProcessorCount * 16));
 
 // 启动参数不得绕过数据目录约束；这里与 Go 的 env() 完全同名同默认值。
 CanvasEnvironment env = CanvasEnvironment.FromConfiguration(builder.Configuration);
