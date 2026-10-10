@@ -791,12 +791,17 @@ public static class CloudAgentStructuredEdits
                     }
                     string operation = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(table, "operation"));
                     string prompt = operation == "creative" ? CreativeBatchPrompt : TryOnBatchPrompt;
-                    JsonArray inheritedInputNodeIDs = new(
-                        CloudAgentCanvasState.BatchInputIDs(
-                                CloudAgentJsonHelpers.Get(rows[^1], "inputNodeIds"), columns.Count)
-                            .Where(n => n is not null)
-                            .Select(n => n!.DeepClone())
-                            .ToArray());
+                    // 空表没有上一行可继承（Go: if len(rows) > 0）；首行 append 参考列为空。
+                    JsonArray inheritedInputNodeIDs = [];
+                    if (rows.Count > 0)
+                    {
+                        inheritedInputNodeIDs = new JsonArray(
+                            CloudAgentCanvasState.BatchInputIDs(
+                                    CloudAgentJsonHelpers.Get(rows[^1], "inputNodeIds"), columns.Count)
+                                .Where(n => n is not null)
+                                .Select(n => n!.DeepClone())
+                                .ToArray());
+                    }
                     JsonObject row = new()
                     {
                         ["id"] = CloudAgentContracts.AgentID(

@@ -531,6 +531,17 @@ public sealed partial class CloudAgentRuntimeService
             await TerminateAsync(run, "Agent 运行状态损坏，本轮已停止: " + cause.Message)
                 .ConfigureAwait(false);
         }
+        catch (AppError error) when (error.Status == 409)
+        {
+            // 并发推进：交给调度器跳过本轮，不能判死。
+            throw;
+        }
+        catch (Exception cause)
+        {
+            // 与 Go 一致：推进中的未预期错误立即判失败（failCloudAgent），
+            // 不能让运行带着确定性异常空转到卡住看门狗。
+            await TerminateAsync(run, SafeToolError(cause) + "；本轮已停止").ConfigureAwait(false);
+        }
     }
 
     private async Task AdvanceCoreAsync(CloudAgentExecution run, CancellationToken cancellationToken)
