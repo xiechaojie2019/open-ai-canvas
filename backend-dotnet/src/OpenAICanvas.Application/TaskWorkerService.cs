@@ -23,13 +23,14 @@ public sealed class TaskWorkerService
     private static readonly TimeSpan SlotLeaseDuration = TimeSpan.FromMinutes(1);
 
     /// <summary>
-    /// 任务租约时长。对应 Go 的 <c>ClaimNextTask(…, 45*time.Second)</c>，但放宽到 5 分钟：
-    /// .NET 的 timer 续期回调要经线程池排队，画布大 JSON 哈希/克隆造成的 CPU 饱和会把
-    /// 15 秒粒度的续期延迟到 45 秒租约过期之后（goroutine 调度无此放大）。致命线放宽后
-    /// 续期仍按 15 秒执行，短于 5 分钟的 CPU 风暴不再折断租约；worker 真崩溃时任务重领
-    /// 等待从 45 秒变为最长 5 分钟，可接受。
+    /// 任务租约时长。对应 Go 的 <c>ClaimNextTask(…, 45*time.Second)</c>，但放宽到 11 分钟：
+    /// .NET 的续期回调经线程池排队，画布大 JSON 哈希/保存的深克隆能把 16 核持续打满
+    /// 数分钟（实测续租首拍延迟 5 分钟），任何短于任务墙钟上限的租约都会在执行中断掉，
+    /// 之后重领撞上"缺少提交记录"守卫拒绝自动重发。取最长任务超时（视频/默认 10 分钟）
+    /// 加 1 分钟缓冲：执行期内租约必不过期；worker 真崩溃时任务重领最多等 11 分钟。
+    /// 续期循环仍按 15 秒尝试——有机会穿透风暴时滚动续期，让崩溃恢复更快。
     /// </summary>
-    private static readonly TimeSpan TaskLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan TaskLeaseDuration = TimeSpan.FromMinutes(11);
 
     /// <summary>执行失败后的续排队延迟。对应 Go: <c>DeferRunningTaskForProviderPoll</c> 的 15s。</summary>
     private static readonly TimeSpan ProviderPollDelay = TimeSpan.FromSeconds(15);
