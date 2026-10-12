@@ -762,6 +762,19 @@ public sealed class TaskWorkerService
         // 对应 Go: processCanvasGenerationTask（无令牌时零查询直通）。
         input.Prompt = await new ToolsService(_repository).ResolveToolMentionTokensAsync(
             task.UserID, input.Mode, input.Prompt, cancellationToken).ConfigureAwait(false);
+        // 分镜规划（operation=storyboard）：服务端兜底补上结构化镜头行契约。
+        // 画布分镜节点只发输入框里的原始提示词——不声明 promptTemplateOperation、也不自带输出契约，
+        // 模型于是按对话习惯回散文或 Markdown 表格，前端解析拿不到 rows，
+        // 报出「分镜任务没有返回镜头行」。章节分镜路径自带同一段契约因而可用，
+        // 说明契约必须随请求送达；这里按 operation 补，调用方就不必各自记得拼。
+        // 仅在没走服务端分镜模板时补：storyboard_plan 模板自带 storyboard-plan/v3（shots 结构），
+        // 与前端要的 rows 结构不同，两段契约同时下发会互相矛盾。
+        if (promptTemplateOperation.Length == 0
+            && string.Equals(task.Operation, OpenAICanvas.Application.Prompts.StoryboardOutputContract.PlanTaskOperation, StringComparison.Ordinal)
+            && input.Mode != "video")
+        {
+            input.Prompt = OpenAICanvas.Application.Prompts.StoryboardOutputContract.Append(input.Prompt, null);
+        }
         // 执行端补注入视频能力声明（对应 Go: validateResolvedVideoCapability 的渠道模型分支）：
         // 任务 input 不持久化 VideoCapability，分辨率等参数归一依赖执行时按渠道模型能力
         // 合同重放，缺失时裸值（如 UI 发的 "720"）会原样透传给上游并被 400。
@@ -784,7 +797,7 @@ public sealed class TaskWorkerService
                     ? new(await RunAgentToolTaskAsync(input, context, cancellationToken)
                         .ConfigureAwait(false), true)
                     : new(await RunTextTaskWithContractAsync(
-                        input, context, promptTemplateOperation, cancellationToken)
+                        input, context, promptTemplateOperation, task.Operation, cancellationToken)
                         .ConfigureAwait(false), true),
             _ when task.Type.StartsWith("canvas_image", StringComparison.Ordinal) =>
                 new(await new ProviderImageTask(context).RunAsync(input, cancellationToken).ConfigureAwait(false), true),
@@ -810,11 +823,14 @@ public sealed class TaskWorkerService
     /// （模型返回散文、字段缺失、镜头数不足等）。这种失败必须让任务显式失败，
     /// 否则前端会拿到一段散文当「分镜结果」，报出更难定位的「没有返回镜头行」。
     /// Agent 分支不做校验（与 Go 一致：agent 有自己的一套工具结果处理）。
+    /// 分镜规划没有服务端模板（<c>promptTemplateOperation</c> 为空）时，
+    /// <see cref="OpenAICanvas.Application.Prompts.StoryboardOutputContract"/> 负责结果校验。
     /// </remarks>
     private static async Task<Dictionary<string, object?>> RunTextTaskWithContractAsync(
         TextTaskInput input,
         IProviderRequestContext context,
         string promptTemplateOperation,
+        string taskOperation,
         CancellationToken cancellationToken)
     {
         Dictionary<string, object?> result = await new ProviderTextTask(context)
@@ -824,6 +840,13 @@ public sealed class TaskWorkerService
         {
             OpenAICanvas.Application.Prompts.PromptTemplateService
                 .ValidatePromptTemplateResult(promptTemplateOperation, result);
+        }
+        if (string.Equals(
+                taskOperation,
+                OpenAICanvas.Application.Prompts.StoryboardOutputContract.PlanTaskOperation,
+                StringComparison.Ordinal))
+        {
+            OpenAICanvas.Application.Prompts.StoryboardOutputContract.ValidateResult(result);
         }
         return result;
     }
