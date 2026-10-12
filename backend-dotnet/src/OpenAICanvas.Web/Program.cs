@@ -165,19 +165,19 @@ builder.Services.AddSingleton(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
     };
 });
-// 媒体物化管线（对应 Go: task_media_storage.go + materializeTaskMedia）：
-// 声明式协议的媒体结果经「检查点→暂存/下载→上传 OSS→登记资源」产出资源化载荷。
-builder.Services.AddSingleton(serviceProvider =>
-{
-    OpenAICanvas.Application.CanvasService canvas =
-        serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasService>();
-    canvas.MediaRecovery.AttachStorage(
-        new OpenAICanvas.Application.TaskMediaStorageService(
-            serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
-            env.DataDir),
-        serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>());
-    return canvas.MediaRecovery;
-});
+// 媒体结果保存路径：声明式协议的媒体结果由 ProviderProtocolTask.FinishResultAsync 走
+// 常规路径下载并内联为 dataUrl，再由 ResourceUploadService.PersistGeneratedMediaResultAsync
+// 落库为账号资源（对应 Go: persistGeneratedMediaResult）。
+//
+// 注意：上游曾尝试接入「检查点→暂存/下载→上传 OSS→登记资源」的媒体物化管线
+// （TaskMediaStorageService + TaskMediaRecoveryService.AttachStorage），但 AttachStorage
+// 被放在独立的惰性 AddSingleton 工厂委托里，而没有任何代码按 TaskMediaRecoveryService
+// 类型解析它 ⇒ 装配永不执行，带参考图生图/生视频 100% 报「媒体保存管线未就绪」，
+// 且失败后 HandleFailureAsync 因检查点为空而空转，任务一直占着租约到过期才被看门狗
+// 捞起（用户可感 ≈11 分钟）。
+//
+// 该管线的 TaskMediaStorageService 从未随仓库提交（origin/main 里不存在该类），
+// 因此本部署不装配它：Materializer 保持 null，worker 明确走上面的常规保存路径。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.ResourceDomainService(
         serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),

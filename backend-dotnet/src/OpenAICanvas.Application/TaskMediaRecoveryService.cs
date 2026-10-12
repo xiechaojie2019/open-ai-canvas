@@ -1,5 +1,6 @@
 #nullable enable
 using Microsoft.Extensions.Logging;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
@@ -81,6 +82,34 @@ public sealed class MediaCheckpointReferenceDto
 /// </remarks>
 public sealed class TaskMediaRecoveryService
 {
+    /// <summary>
+    /// 媒体恢复失败：作品已生成但保存未完成。对应 Go: <c>app.mediaRecoveryError</c>。
+    /// <see cref="Retryable"/> 驱动延迟自动重排队；恢复只重做「保存」，
+    /// 绝不对已经成功的生成再次计费。
+    /// </summary>
+    public sealed class MediaRecoveryException : Exception
+    {
+        public MediaRecoveryException(string stage, bool retryable = false, Exception? cause = null)
+            : base("作品已生成，但保存未完成：" + (cause?.Message ?? stage), cause)
+        {
+            Stage = stage;
+            Retryable = retryable;
+        }
+
+        public MediaRecoveryException(string stage, string message, bool retryable = false, Exception? cause = null)
+            : base(message, cause)
+        {
+            Stage = stage;
+            Retryable = retryable;
+        }
+
+        /// <summary>失败阶段：checkpoint / download / upload / local_save / register。</summary>
+        public string Stage { get; }
+
+        /// <summary>是否可延迟自动重试（预算耗尽后保留检查点转结果持久化失败）。</summary>
+        public bool Retryable { get; }
+    }
+
     /// <summary>自动重试退避序列。对应 Go: <c>mediaRecoveryDelays</c>。</summary>
     public static readonly TimeSpan[] RecoveryDelays =
     [
@@ -320,6 +349,44 @@ public sealed class TaskMediaRecoveryService
         if (project.Status == ProjectStatus.ProjectStatusArchived)
         {
             throw AppError.BadAuthRequest("项目已归档，无法恢复作品");
+        }
+    }
+
+    // ------------------------------------------------------------- 暂存清理
+
+    /// <summary>
+    /// 清理检查点暂存文件（尽力而为）。对应 Go: <c>cleanupMediaCheckpointFiles</c>。
+    /// </summary>
+    /// <remarks>
+    /// 本部署未接入媒体物化管线（<see cref="Materializer"/> 未注册），暂存目录不会
+    /// 产生检查点文件；保留该入口以对齐 worker 的调用点。
+    /// </remarks>
+    public void CleanupTempFiles(TaskEntity task)
+    {
+        if (task.MediaRecoveryJSON.Length == 0)
+        {
+            return;
+        }
+        try
+        {
+            MediaCheckpointDto checkpoint = DecodeCheckpoint(task);
+            string stagingDir = Path.Combine(_dataDir, "media-staging");
+            foreach (MediaCheckpointItemDto item in checkpoint.Items)
+            {
+                if (item.TempName.Length == 0)
+                {
+                    continue;
+                }
+                string path = Path.Combine(stagingDir, item.TempName);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+        catch
+        {
+            // 尽力而为：暂存清理失败不影响任务终态。
         }
     }
 }

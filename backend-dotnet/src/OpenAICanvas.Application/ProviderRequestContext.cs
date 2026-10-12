@@ -33,13 +33,22 @@ public sealed class ProviderRequestContext : IProviderRequestContext
     /// </param>
     /// <param name="auditWriter">调用审计写入器；与 <paramref name="audit"/> 同时提供才记录。</param>
     /// <param name="audit">当前任务调用的审计元数据（对应 Go 的 <c>providerAnalyticsContext</c> 载荷）。</param>
+    /// <param name="mediaRecovery">
+    /// 媒体物化管线。本部署**未接入出站**：<c>Providers</c> 侧没有
+    /// <c>IMediaRecoveryPipeline</c> 调用点，声明式协议的媒体结果由
+    /// <c>ProviderProtocolTask.FinishResultAsync</c> 走常规路径下载并内联为 dataUrl，
+    /// 再由 <c>ResourceUploadService.PersistGeneratedMediaResultAsync</c> 落库为账号资源。
+    /// 参数保留以对齐上游 <c>TaskWorkerService</c> 的调用签名（装配处不得引用未定义类型）；
+    /// 将来接入恢复管线时，在此把它暴露为 <c>IProviderRequestContext.MediaRecovery</c> 即可。
+    /// </param>
     public ProviderRequestContext(
         IRuntimePolicyProvider policy,
         Coordinator? coordinator = null,
         Func<string, int>? channelConcurrencyLimit = null,
         ProtocolAdapterRegistry? declarativeAdapter = null,
         ApiCallAuditWriter? auditWriter = null,
-        ProviderCallAudit? audit = null)
+        ProviderCallAudit? audit = null,
+        TaskMediaRecoveryService? mediaRecovery = null)
     {
         _policy = policy;
         _coordinator = coordinator;
@@ -47,6 +56,8 @@ public sealed class ProviderRequestContext : IProviderRequestContext
         _declarativeAdapter = declarativeAdapter;
         _auditWriter = auditWriter;
         _audit = audit;
+        // 有意不落字段：本部署的媒体结果不经恢复管线（见 mediaRecovery 参数说明）。
+        _ = mediaRecovery;
     }
 
     /// <summary>当前任务调用的审计元数据；null 表示探测/测试执行，不记录。</summary>

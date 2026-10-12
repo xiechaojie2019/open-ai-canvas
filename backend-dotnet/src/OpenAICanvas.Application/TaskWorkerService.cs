@@ -377,9 +377,22 @@ public sealed class TaskWorkerService
                 return null;
             }
 
+            // 带检查点但媒体物化管线未接入：作品已生成、只是保存未完成。
+            // 绝不能落回上游重新生成 —— 那会对同一件作品二次计费。按
+            // 「上游已成功、本地保存失败」收尾，保留检查点与计费待核对，
+            // 等待接入 TaskMediaStorageService 后再恢复。
+            if (claimed.MediaRecoveryJSON.Length > 0 && CanvasService?.MediaRecovery.Materializer is null)
+            {
+                return await _terminal.HandleExecutionFailureAsync(
+                    claimed,
+                    new InvalidOperationException("媒体保存管线未就绪，无法完成作品保存"),
+                    providerSucceeded: true,
+                    channelSlotFailedBeforeRequest: false,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
             // 媒体恢复恢复路径：带检查点的任务是“作品已生成、保存未完成”的重试，
-            // 物化检查点而不是使用原始结果（对应 Go: resumeTaskMedia 分支；
-            // 管线注册 Materializer 后生效，未注册的部署行为不变）。
+            // 物化检查点而不是使用原始结果（对应 Go: resumeTaskMedia 分支）。
             if (claimed.MediaRecoveryJSON.Length > 0 && CanvasService?.MediaRecovery.Materializer is not null)
             {
                 try
