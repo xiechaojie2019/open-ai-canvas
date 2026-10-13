@@ -283,8 +283,12 @@ public sealed partial class CloudAgentRuntimeService
                 cause is AppError or CloudAgentArgumentException or InvalidOperationException
                 or System.Data.Common.DbException)
             {
-                await MediaErrorAsync(run, state, "admission", submitted: false, terminal: false, cause)
-                    .ConfigureAwait(false);
+                bool recorded = await MediaErrorAsync(
+                    run, state, "admission", submitted: false, terminal: false, cause).ConfigureAwait(false);
+                if (!recorded)
+                {
+                    throw CloudAgentSessionService.CreationConflict();
+                }
                 return;
             }
             bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
@@ -293,7 +297,20 @@ public sealed partial class CloudAgentRuntimeService
                 cancellationToken).ConfigureAwait(false);
             if (!claimed)
             {
-                throw CloudAgentSessionService.CreationConflict();
+                // ⚠️ 踩过的坑：这里原本直接抛 409。而 409 会被调度器当成「并发推进，跳过等下一轮」
+                // 静默吞掉（CloudAgentSchedulerWorker 只累计 _conflictStreak）。一旦某个运行稳定落进
+                // 这个分支（线上 run agf09c94b248cbdabb578e15c2ecc16ad9，2026-10-13），
+                // 它就每 2 秒原地重跑同一步，直到 5 分钟看门狗判 failed —— 用户看到的就是「生节点卡死」。
+                // 必须先把失败记进运行（推进 callIndex、留 tool_failed 事件），让模型能换招；
+                // 连失败都写不进去（revision 被持续抢占）才允许推向终态。
+                bool recorded = await MediaErrorAsync(
+                    run, state, "admission", submitted: false, terminal: false,
+                    CloudAgentSessionService.CreationConflict()).ConfigureAwait(false);
+                if (!recorded)
+                {
+                    throw CloudAgentSessionService.CreationConflict();
+                }
+                return;
             }
             run.Revision++;
             return;
@@ -303,7 +320,14 @@ public sealed partial class CloudAgentRuntimeService
             cancellationToken).ConfigureAwait(false);
         if (!claimedPlan)
         {
-            throw CloudAgentSessionService.CreationConflict();
+            bool recorded = await MediaErrorAsync(
+                run, state, "admission", submitted: false, terminal: false,
+                CloudAgentSessionService.CreationConflict()).ConfigureAwait(false);
+            if (!recorded)
+            {
+                throw CloudAgentSessionService.CreationConflict();
+            }
+            return;
         }
         run.Revision++;
     }
@@ -346,8 +370,15 @@ public sealed partial class CloudAgentRuntimeService
             cause is AppError or CloudAgentArgumentException or InvalidOperationException
             or System.Data.Common.DbException)
         {
-            await MediaErrorAsync(run, state, "admission", submitted: false, terminal: false, cause)
-                .ConfigureAwait(false);
+            bool recorded = await MediaErrorAsync(
+                run, state, "admission", submitted: false, terminal: false, cause).ConfigureAwait(false);
+            if (!recorded)
+            {
+                // 连失败检查点都写不进去（revision 被别处持续抢占）。此时返回 false 只会让调度器
+                // 2 秒后原地重跑同一步、再撞同一个错误 —— 正是「生节点卡死」的成因。
+                // 宁可如实终态化，也不要静默空转到看门狗超时。
+                throw CloudAgentSessionService.CreationConflict();
+            }
             return false;
         }
         bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
@@ -693,42 +724,76 @@ public sealed partial class CloudAgentRuntimeService
     // ------------------------------------------------------------ 媒体提交与完成
 
     /// <summary>媒体错误检查点。对应 Go: <c>cloudAgentMediaError</c>。</summary>
-    private Task MediaErrorAsync(
+    /// <remarks>
+    /// ⚠️ 与 Go 的**有意差异（缺陷修复）**：Go 版（<c>cloud_agent_runtime.go:1609</c>）直接把
+    /// <c>MutateCloudAgent</c> 的返回值（CAS 是否成功）丢掉。<c>callIndex</c> 不推进、<c>tool_failed</c>
+    /// 不落库、<c>revision</c> 原地不动 —— 调度器 2 秒后重跑同一步，撞同一个错误，无限循环，
+    /// 直到 5 分钟看门狗判 failed（日志只留一串「连续 15 次 CAS 冲突」）。
+    /// 本 fork 的 count 批量与 auto 免审批让这条路径从「偶发」变成「必现」。
+    /// 因此这里必须：① 用最新 revision 重试 CAS；② 把「是否真的落地」回传给调用方，
+    /// 由调用方决定是继续等下一拍，还是把运行推向终态，绝不允许静默空转。
+    /// </remarks>
+    /// <returns>true 表示错误检查点已成功落库；false 表示连失败都写不进去（调用方必须终态化运行）。</returns>
+    private async Task<bool> MediaErrorAsync(
         CloudAgentExecution run, CloudAgentRuntimeDto state, string phase,
-        bool submitted, bool terminal, Exception cause) =>
-        _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision, (current, context) =>
+        bool submitted, bool terminal, Exception cause)
+    {
+        // 先按调用方手里的 revision 试；冲突（同一拍里 revision 已被别的写入推进）就重取一次再试。
+        long revision = run.Revision;
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            if (state.CallIndex < 0 || state.CallIndex >= state.Calls.Count)
+            bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, revision,
+                (current, context) =>
+                {
+                    if (state.CallIndex < 0 || state.CallIndex >= state.Calls.Count)
+                    {
+                        current.Status = "failed";
+                        CloudAgentContracts.AddEvent(state, run.ID, "run_failed",
+                            CloudAgentContracts.Payload(("text", "Agent 媒体调用状态无效，本轮已停止")));
+                        CloudAgentContracts.Save(current, state);
+                        return context.SaveRunAsync(current);
+                    }
+                    JsonObject detail = new()
+                    {
+                        ["phase"] = phase,
+                        ["taskSubmitted"] = submitted,
+                    };
+                    ToolResult(run.ID, state, state.Calls[state.CallIndex], detail, cause);
+                    if (submitted)
+                    {
+                        state.MediaTaskID = "";
+                    }
+                    // 批次必须一并清空：ToolResult 已经把 CallIndex 推过这次 generate_media 调用，
+                    // 留下 MediaBatch 会让 ValidateRuntime 的「批次必须在 generate_media 调用上」判成状态损坏。
+                    // 已提交项的结果仍留在任务中心（不自动重试收费生成），未提交项的草稿节点留在画布上可续用。
+                    state.MediaBatch = null;
+                    if (terminal)
+                    {
+                        current.Status = "failed";
+                        CloudAgentContracts.AddEvent(state, run.ID, "run_failed",
+                            CloudAgentContracts.Payload(("text", "媒体任务已提交，但结果处理失败；任务不会自动重试")));
+                    }
+                    CloudAgentContracts.Save(current, state);
+                    return context.SaveRunAsync(current);
+                }).ConfigureAwait(false);
+            if (claimed)
             {
-                current.Status = "failed";
-                CloudAgentContracts.AddEvent(state, run.ID, "run_failed",
-                    CloudAgentContracts.Payload(("text", "Agent 媒体调用状态无效，本轮已停止")));
-                CloudAgentContracts.Save(current, state);
-                return context.SaveRunAsync(current);
+                run.Revision++;
+                return true;
             }
-            JsonObject detail = new()
+            // CAS 冲突：库里 revision 比手里新。重取一次最新值再试，最多 3 轮。
+            CloudAgentExecution? latest = await _repository
+                .CloudAgentAsync(run.UserID, run.ID, CancellationToken.None).ConfigureAwait(false);
+            if (latest is null)
             {
-                ["phase"] = phase,
-                ["taskSubmitted"] = submitted,
-            };
-            ToolResult(run.ID, state, state.Calls[state.CallIndex], detail, cause);
-            if (submitted)
-            {
-                state.MediaTaskID = "";
+                return false;
             }
-            // 批次必须一并清空：ToolResult 已经把 CallIndex 推过这次 generate_media 调用，
-            // 留下 MediaBatch 会让 ValidateRuntime 的「批次必须在 generate_media 调用上」判成状态损坏。
-            // 已提交项的结果仍留在任务中心（不自动重试收费生成），未提交项的草稿节点留在画布上可续用。
-            state.MediaBatch = null;
-            if (terminal)
-            {
-                current.Status = "failed";
-                CloudAgentContracts.AddEvent(state, run.ID, "run_failed",
-                    CloudAgentContracts.Payload(("text", "媒体任务已提交，但结果处理失败；任务不会自动重试")));
-            }
-            CloudAgentContracts.Save(current, state);
-            return context.SaveRunAsync(current);
-        });
+            revision = latest.Revision;
+        }
+        Console.Error.WriteLine(
+            $"agent media error checkpoint failed: run={run.ID} phase={phase} revision={revision} cause={cause.Message}");
+        return false;
+    }
 
     /// <summary>已批准媒体调用：等待完成或提交任务。对应 Go: <c>advanceCloudAgentMedia</c>。</summary>
     private async Task AdvanceMediaAsync(
@@ -851,8 +916,12 @@ public sealed partial class CloudAgentRuntimeService
                 cause is AppError or CloudAgentArgumentException or InvalidOperationException
                 or System.Data.Common.DbException)
             {
-                await MediaErrorAsync(run, state, "admission", submitted: false, terminal: false, cause)
-                    .ConfigureAwait(false);
+                bool recorded = await MediaErrorAsync(
+                    run, state, "admission", submitted: false, terminal: false, cause).ConfigureAwait(false);
+                if (!recorded)
+                {
+                    throw CloudAgentSessionService.CreationConflict();
+                }
                 return;
             }
             int submittedBefore = batch.Count(entry => entry.TaskID.Length > 0);

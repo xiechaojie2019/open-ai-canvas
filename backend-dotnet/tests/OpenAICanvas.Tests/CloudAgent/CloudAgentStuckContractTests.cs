@@ -226,6 +226,93 @@ public sealed class CloudAgentStuckContractTests : IDisposable
         Assert.Contains("_conflictStreak", source);
     }
 
+    /// <summary>
+    /// 源码级契约：媒体错误检查点必须用最新 revision 重试 CAS，并把「是否真的落地」回传调用方。
+    ///
+    /// 线上实例（2026-10-13，run <c>agf09c94b248cbdabb578e15c2ecc16ad9</c>）：模型调 generate_media
+    /// 拿到 409「画布已变化」后，<c>MediaErrorAsync</c> 的 CAS 同样失败，而返回值被丢掉 ——
+    /// <c>callIndex</c> 不推进、<c>tool_failed</c> 不落库、<c>revision</c> 原地不动。
+    /// 调度器 2 秒后重跑同一步、撞同一个错误，直到 5 分钟看门狗收尾（日志只有一串「连续 15 次 CAS 冲突」）。
+    /// Go 版（<c>cloud_agent_runtime.go:1609</c>）同样丢掉返回值，本 fork 的 count 批量与 auto 免审批
+    /// 把这条路径从偶发变成必现。
+    ///
+    /// 这个测试盯的是「调用点有没有接线」：只测 helper 会漏掉返回值被忽略。
+    /// </summary>
+    [Fact]
+    public void 媒体错误检查点必须重试CAS并回传是否落地()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeExecution.cs"));
+
+        // ① 媒体错误检查点必须返回 bool，让调用方知道失败有没有写进去。
+        Assert.Contains("private async Task<bool> MediaErrorAsync(", source);
+        // ② 冲突后必须重取最新 revision 再试，而不是拿过期 revision 原地重撞。
+        Assert.Contains("CloudAgentAsync(run.UserID, run.ID, CancellationToken.None)", source);
+        Assert.Contains("revision = latest.Revision;", source);
+        // ③ 写进去了要同步调用方句柄（否则后续 CAS 全用过期的）；这条必须落在 MediaErrorAsync 体内。
+        int bodyStart = source.IndexOf("private async Task<bool> MediaErrorAsync(", StringComparison.Ordinal);
+        Assert.True(bodyStart >= 0);
+        Assert.Contains("run.Revision++;", source[bodyStart..]);
+        // ④ 至少一个调用点检查了返回值；全都不检查就等于没修。
+        int checkedCalls = CountOccurrences(source, "bool recorded = await MediaErrorAsync(");
+        Assert.True(checkedCalls >= 3,
+            $"媒体错误检查点的调用点必须检查返回值（当前只找到 {checkedCalls} 处）");
+        // ⑤ 写不进去时必须推向终态，绝不能返回 false 让调度器原地重跑 —— 那正是卡死的成因。
+        Assert.Contains("if (!recorded)", source);
+        Assert.Contains("throw CloudAgentSessionService.CreationConflict();", source);
+    }
+
+    /// <summary>
+    /// 源码级契约：审批规划阶段的 CAS 失败不得裸抛 409。
+    ///
+    /// 线上实例（2026-10-13，run <c>agf09c94b248cbdabb578e15c2ecc16ad9</c>，request_approval 模式）：
+    /// 模型调 generate_media → <c>PlanApprovalAsync</c> 算出 plan 后 CAS 落审批记录失败 →
+    /// 旧的写法直接 <c>throw CreationConflict()</c>。这个 409 逃出媒体错误处理，
+    /// 被调度器 <c>catch (AppError error) when (error.Status == 409)</c> 静默吞掉，
+    /// 于是每 2 秒原地重跑同一步；事件停在 6 条、revision 停在 6、日志只有一串
+    /// 「连续 15 次 CAS 冲突」，5 分钟后被看门狗判 failed —— 用户看到的「生节点卡死」。
+    ///
+    /// 这段 <c>PlanApprovalAsync</c> 是本 fork 为复用审批逻辑新抽出来的（Go 里是同一条
+    /// <c>advanceCloudAgentTool</c> 的内联流程），所以这个坑由移植引入，必须在调用点堵住：
+    /// CAS 失败要经 <c>MediaErrorAsync</c> 记进运行，让 callIndex 推进、模型能换招。
+    /// </summary>
+    [Fact]
+    public void 审批规划阶段CAS失败必须记入运行而不是裸抛409()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeExecution.cs"));
+
+        int start = source.IndexOf("private async Task PlanApprovalAsync(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "必须存在审批规划阶段");
+        int end = source.IndexOf("private async Task<", start, StringComparison.Ordinal);
+        Assert.True(end > start, "无法界定 PlanApprovalAsync 的函数体");
+        string body = source[start..end];
+
+        // 该函数里出现的每处 409 重抛，前面都必须先经过 MediaErrorAsync 记录。
+        int rethrows = CountOccurrences(body, "throw CloudAgentSessionService.CreationConflict();");
+        int guarded = CountOccurrences(body, "bool recorded = await MediaErrorAsync(");
+        Assert.True(rethrows > 0, "审批规划阶段应当保留「连失败都写不进去才终态化」的兜底重抛");
+        Assert.True(guarded >= rethrows,
+            $"PlanApprovalAsync 里每处 409 重抛都必须先经 MediaErrorAsync 记录（重抛 {rethrows} 处，记录 {guarded} 处）");
+
+        // 反向断言：不允许出现「CAS 失败 → 直接重抛」这种无记录的裸抛。
+        Assert.DoesNotContain(
+            "if (!claimed)\n            {\n                throw CloudAgentSessionService.CreationConflict();\n            }",
+            body.Replace("\r\n", "\n", StringComparison.Ordinal));
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        int count = 0;
+        int index = haystack.IndexOf(needle, StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            count++;
+            index = haystack.IndexOf(needle, index + needle.Length, StringComparison.Ordinal);
+        }
+        return count;
+    }
+
     private static string RepoRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
