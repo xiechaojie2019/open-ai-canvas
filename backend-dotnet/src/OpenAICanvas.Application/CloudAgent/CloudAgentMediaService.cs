@@ -79,6 +79,22 @@ public sealed class CloudAgentMediaArgs
     /// </summary>
     [JsonPropertyName("count")]
     public int Count { get; set; }
+
+    /// <summary>
+    /// 分批提示词：<c>prompts[k]</c> 是第 k+1 张图独立、完整的提示词。
+    /// ⚠️ 本 fork 扩展，<b>Go 没有</b>。
+    /// <para>
+    /// 为什么需要它：若 <c>count&gt;1</c> 时 N 张图共用同一段 prompt，而那段 prompt
+    /// 本身描述的是「一组多张」（如「本组共三张：第1张…第2张…第3张…」），
+    /// 每次调用都会把那组描述整体画进单张图 ⇒ **每张都是拼贴图**。
+    /// 正解是让模型把多张拆成 N 段互不相同的提示词后逐张下发。
+    /// </para>
+    /// <para>
+    /// 缺省（空列表）时回落到 <see cref="Prompt"/>（旧行为，向后兼容、旧 run 状态仍可解码）。
+    /// </para>
+    /// </summary>
+    [JsonPropertyName("prompts")]
+    public List<string> Prompts { get; set; } = [];
 }
 
 /// <summary>媒体计划。对应 Go: <c>app.cloudAgentMediaPlan</c>。</summary>
@@ -615,6 +631,31 @@ public sealed class CloudAgentMediaService
             throw AppError.BadAuthRequest(
                 $"提示词共{args.Prompt.EnumerateRunes().Count()}字符，超过16000字符上限；请先告知用户，不要擅自删改关键内容");
         }
+        // prompts：逐张独立提示词。给了就必须与 count 等长，否则服务端不知道该把哪段发给谁。
+        if (args.Prompts.Count > 0)
+        {
+            if (args.Count <= 1 || mode != "image")
+            {
+                throw AppError.BadAuthRequest("prompts 仅在 mode=image 且 count>1 时使用；单张生成请直接写 prompt");
+            }
+            if (args.Prompts.Count != args.Count)
+            {
+                throw AppError.BadAuthRequest(
+                    $"prompts 段数（{args.Prompts.Count}）必须与 count（{args.Count}）一致，每张图各一段完整提示词");
+            }
+            foreach (string item in args.Prompts)
+            {
+                if (item.Trim().Length == 0)
+                {
+                    throw AppError.BadAuthRequest("prompts 里不能有空段，每张图都要有完整提示词");
+                }
+                if (item.EnumerateRunes().Count() > 16000)
+                {
+                    throw AppError.BadAuthRequest(
+                        $"prompts 中某段提示词超过16000字符上限；请先告知用户，不要擅自删改关键内容");
+                }
+            }
+        }
         if ((mode == "image" || mode == "video") && args.Size.Trim().Length == 0)
         {
             throw AppError.BadAuthRequest("请填写模型支持的具体画幅；用户授权默认时沿用参考图比例或目录默认画幅，无需重复询问");
@@ -771,7 +812,15 @@ public sealed class CloudAgentMediaService
         return ids;
     }
 
-    /// <summary>派生单个产物的参数副本：换节点 ID/标题，其余（含读时快照）沿用父参数。</summary>
+    /// <summary>
+    /// 派生单个产物的参数副本：换节点 ID/标题/提示词，其余（含读时快照）沿用父参数。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ <b>提示词必须逐项不同</b>：批量时若 N 张共用同一段 prompt，而那段 prompt 描述的是
+    /// 「一组多张」（如「本组共三张：第1张…第2张…第3张」），每次调用都会把整组画进单张图
+    /// ⇒ 拼贴图。因此当 <c>prompts.Count == total</c> 时取对应那一段；否则（旧调用/旧 run 状态）
+    /// 回落父 prompt，行为与改动前完全一致。
+    /// </remarks>
     internal static CloudAgentMediaArgs CloneMediaArgs(
         CloudAgentMediaArgs source, string nodeID, int index, int total)
     {
@@ -781,11 +830,12 @@ public sealed class CloudAgentMediaService
             string suffix = " " + (index + 1).ToString(CultureInfo.InvariantCulture);
             title = CloudAgentContracts.TruncateRunes(title, 240 - suffix.Length) + suffix;
         }
+        string prompt = source.Prompts.Count == total ? source.Prompts[index] : source.Prompt;
         return new CloudAgentMediaArgs
         {
             DraftRunID = source.DraftRunID,
             Mode = source.Mode,
-            Prompt = source.Prompt,
+            Prompt = prompt,
             LogicalModelID = source.LogicalModelID,
             ChannelID = source.ChannelID,
             ChannelModelKey = source.ChannelModelKey,
@@ -891,6 +941,11 @@ public sealed class CloudAgentMediaService
         if (args.VideoGenerateAudio is not null)
         {
             details.Add(args.VideoGenerateAudio.Value ? "音频：开启" : "音频：关闭");
+        }
+        // 批量且逐张提示词不同时点明，否则用户看到同一套 details 会以为 N 张是同一张。
+        if (plan.IsBatch && plan.Items.Select(item => item.Prompt).Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            details.Add("每张提示词各不相同");
         }
         List<CloudAgentApprovalPreviewItemDto> items = new(plan.Items.Count);
         foreach (CloudAgentMediaArgs item in plan.Items)

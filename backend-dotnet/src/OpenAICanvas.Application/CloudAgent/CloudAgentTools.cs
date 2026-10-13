@@ -333,7 +333,7 @@ public static class CloudAgentTools
         if (request.PermissionMode != "read_only" && request.ContextScope.Count > 0)
         {
             Add("generate_media",
-                "创建或续用未提交媒体草稿及引用连线。请求审批模式下独立审批通过后才提交收费任务；自动执行模式下建完草稿直接提交，费用由本轮预算上限（积分/生成次数/视频秒数）兜底。用户要求生成且参数齐备时应直接调用本工具，不能只填提示词就结束。一次要出多张图时用 count 指定张数，服务端会一次建好对应数量的节点并并行提交，绝不要为了多出图而反复逐张调用。先读取画布与按本次素材筛选的模型目录。可复用当前草稿、无任务的空白媒体占位节点，以及已结束且清理完成运行留下的未提交草稿；重新读取快照并重新审批。仍在其他运行审批中的草稿、已绑定任务或已有成品不能覆盖，不得循环换ID绕过限制。sourceNodeId仅文本/镜头提示词节点；图片/视频/音频只放referenceNodeIds，参考顺序对应提示词编号，不接受URL。校验错误须针对错误修正；已提交任务失败不得再次收费生成。",
+                "创建或续用未提交媒体草稿及引用连线。请求审批模式下独立审批通过后才提交收费任务；自动执行模式下建完草稿直接提交，费用由本轮预算上限（积分/生成次数/视频秒数）兜底。用户要求生成且参数齐备时应直接调用本工具，不能只填提示词就结束。一次要出多张图时用 count 指定张数，并用 prompts 逐张给出互不相同的完整提示词（每段只描述那一张图的画面，严禁把「本组共N张/第1张…第2张…」这类多张编排写进单段提示词，否则会生成拼贴图）；服务端会一次建好对应数量的节点并并行提交，绝不要为了多出图而反复逐张调用。先读取画布与按本次素材筛选的模型目录。可复用当前草稿、无任务的空白媒体占位节点，以及已结束且清理完成运行留下的未提交草稿；重新读取快照并重新审批。仍在其他运行审批中的草稿、已绑定任务或已有成品不能覆盖，不得循环换ID绕过限制。sourceNodeId仅文本/镜头提示词节点；图片/视频/音频只放referenceNodeIds，参考顺序对应提示词编号，不接受URL。校验错误须针对错误修正；已提交任务失败不得再次收费生成。",
                 new JsonObject
                 {
                     ["mode"] = new JsonObject
@@ -341,7 +341,14 @@ public static class CloudAgentTools
                         ["type"] = "string",
                         ["enum"] = new JsonArray(CloudAgentNodes.GenerationModeNames().Select(m => (JsonNode?)JsonValue.Create(m)).ToArray()),
                     },
-                    ["prompt"] = Str("完整生成提示词"),
+                    ["prompt"] = Str("完整生成提示词。count>1 时这里是该组的共同主体与风格（可作各张的公共部分），单张画面描述放 prompts"),
+                    ["prompts"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["maxItems"] = CloudAgentMediaService.MaxBatchCount,
+                        ["items"] = Str("该张图独立、完整的提示词"),
+                        ["description"] = "逐张独立提示词，仅 mode=image 且 count>1 时使用；段数必须等于 count，第k段就是第k张图的完整画面（只写这一张的动作/构图，不得包含其他张）。不给则所有图共用 prompt，多张编排会被画成拼贴图。",
+                    },
                     ["logicalModelId"] = Str("selection.logicalModelId；与channelId/channelModelKey互斥"),
                     ["channelId"] = Str("selection.channelId"),
                     ["channelModelKey"] = Str("selection.channelModelKey"),
@@ -368,7 +375,7 @@ public static class CloudAgentTools
                         ["type"] = "integer",
                         ["minimum"] = 1,
                         ["maximum"] = CloudAgentMediaService.MaxBatchCount,
-                        ["description"] = "一次要出几张图；仅 mode=image 可用，默认1。服务端会一次建好对应数量的节点并并行提交，因此需要多张时只调用一次、不要逐张重复调用。",
+                        ["description"] = "一次要出几张图；仅 mode=image 可用，默认1。count>1 时必须同时给等长的 prompts，逐张写明各自画面；服务端会一次建好对应数量的节点并并行提交，因此需要多张时只调用一次、不要逐张重复调用。",
                     },
                 }, "mode", "prompt", "snapshotHash", "nodeId", "title", "referenceNodeIds");
         }

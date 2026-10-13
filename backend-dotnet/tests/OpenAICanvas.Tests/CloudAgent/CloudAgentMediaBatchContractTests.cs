@@ -121,6 +121,109 @@ public sealed class CloudAgentMediaBatchContractTests
         Assert.Equal("分镜图", single.Title);
     }
 
+    // ------------------------------------------------------------------ 逐张提示词（拆词）
+
+    /// <summary>
+    /// 批量时必须逐张下发各自的提示词。
+    /// </summary>
+    /// <remarks>
+    /// 线上现象（2026-10-13）：count=3 时三个节点的 prompt 完全相同，
+    /// 而那段 prompt 本身写的是「本组共三张：第1张…第2张…第3张…」，
+    /// 于是每张图都被画成三格拼贴。正解是让模型把多张拆成 N 段互不相同的提示词。
+    /// </remarks>
+    [Fact]
+    public void 批量时逐项使用各自的提示词()
+    {
+        CloudAgentMediaArgs source = Image(count: 3);
+        source.Prompt = "共同主体和风格";
+        source.Prompts = ["第1张：扑蝶", "第2张：伸懒腰", "第3张：舔毛"];
+
+        CloudAgentMediaArgs first = CloudAgentMediaService.CloneMediaArgs(source, "image-new-1", 0, 3);
+        CloudAgentMediaArgs second = CloudAgentMediaService.CloneMediaArgs(source, "image-new-2", 1, 3);
+        CloudAgentMediaArgs third = CloudAgentMediaService.CloneMediaArgs(source, "image-new-3", 2, 3);
+
+        Assert.Equal("第1张：扑蝶", first.Prompt);
+        Assert.Equal("第2张：伸懒腰", second.Prompt);
+        Assert.Equal("第3张：舔毛", third.Prompt);
+        Assert.NotEqual(first.Prompt, second.Prompt);
+    }
+
+    /// <summary>
+    /// 没给 <c>prompts</c> 时回落共同 prompt —— 旧调用与在途旧 run 状态的行为必须一字不变。
+    /// </summary>
+    [Fact]
+    public void 缺省时回落共同提示词()
+    {
+        CloudAgentMediaArgs source = Image(count: 3);
+        source.Prompt = "画一只猫";
+
+        Assert.Equal("画一只猫", CloudAgentMediaService.CloneMediaArgs(source, "image-new-1", 0, 3).Prompt);
+        Assert.Equal("画一只猫", CloudAgentMediaService.CloneMediaArgs(source, "image-new-3", 2, 3).Prompt);
+    }
+
+    /// <summary>段数与张数不一致必须当场拒绝，不能靠猜。</summary>
+    [Fact]
+    public void 提示词段数必须与张数一致()
+    {
+        CloudAgentMediaArgs few = Image(count: 3);
+        few.Prompts = ["甲", "乙"];
+
+        AppError error = Assert.Throws<AppError>(() => CloudAgentMediaService.ValidateArgs(few, State()));
+        Assert.Contains("段数（2）必须与 count（3）一致", error.Message);
+
+        // 一致时放行。
+        CloudAgentMediaArgs exact = Image(count: 2);
+        exact.Prompts = ["甲", "乙"];
+        CloudAgentMediaService.ValidateArgs(exact, State());
+    }
+
+    [Fact]
+    public void 单张或非图片不允许传提示词数组()
+    {
+        CloudAgentMediaArgs single = Image(count: 1);
+        single.Prompts = ["甲"];
+        AppError one = Assert.Throws<AppError>(() => CloudAgentMediaService.ValidateArgs(single, State()));
+        Assert.Contains("仅在 mode=image 且 count>1 时使用", one.Message);
+
+        // 视频 count>1 会更早撞上「只有图片支持一次出多张」，那也是对的——这里只锁单张这条。
+        CloudAgentMediaArgs video = Image(count: 1);
+        video.Mode = "video";
+        video.Duration = 3;
+        video.Prompts = ["甲"];
+        AppError two = Assert.Throws<AppError>(() => CloudAgentMediaService.ValidateArgs(video, State()));
+        Assert.Contains("仅在 mode=image 且 count>1 时使用", two.Message);
+    }
+
+    [Fact]
+    public void 提示词数组里不能有空段()
+    {
+        CloudAgentMediaArgs args = Image(count: 2);
+        args.Prompts = ["甲", "   "];
+
+        AppError error = Assert.Throws<AppError>(() => CloudAgentMediaService.ValidateArgs(args, State()));
+        Assert.Contains("prompts 里不能有空段", error.Message);
+    }
+
+    /// <summary>
+    /// 逐张提示词必须真接线到服务端。<c>CloneMediaArgs</c> 写对了但没人调它照样不生效。
+    /// </summary>
+    [Fact]
+    public void 拆词必须接线到工具schema与参数副本()
+    {
+        string tools = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentTools.cs"));
+        // schema 要暴露 prompts，且描述必须写清「逐张」「段数等于 count」「否则拼贴图」。
+        Assert.Contains("[\"prompts\"]", tools);
+        Assert.Contains("段数必须等于 count", tools);
+        Assert.Contains("拼贴图", tools);
+
+        string media = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentMediaService.cs"));
+        // 参数副本必须按序号取各自提示词，而不是一律沿用父 prompt。
+        Assert.Contains("string prompt = source.Prompts.Count == total ? source.Prompts[index] : source.Prompt;", media);
+        Assert.Contains("Prompt = prompt,", media);
+    }
+
     // ------------------------------------------------------------------ 预算
 
     [Fact]
