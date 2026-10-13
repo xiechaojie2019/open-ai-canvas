@@ -747,6 +747,13 @@ function ImageContent({ node, theme, isBatchRoot, batchCount, batchPreviewNodes,
     );
 }
 
+/**
+ * 媒体展示地址是短签名地址：本地资源 display 与云资源 OSS 直链都只有 5 分钟寿命
+ * （后端 refreshAt 是它的 80%）。节点常驻画布时必须早于签名失效换签，否则 <img>
+ * 重建或懒加载真正发起请求时会拿到已过期的地址（403）→ 节点裂图到下次整页刷新。
+ */
+const MEDIA_URL_REFRESH_MS = 4 * 60 * 1000;
+
 function useNodeResourceUrl(node: CanvasNodeData, eager: boolean) {
     const storageKey = node.metadata?.storageKey || "";
     const rawContent = node.metadata?.content || "";
@@ -782,20 +789,35 @@ function useNodeResourceUrl(node: CanvasNodeData, eager: boolean) {
             return;
         }
         let cancelled = false;
-        setUrl("");
-        setLoading(true);
-        void resolveMediaUrl(storageKey, fallback)
-            .then((resolved) => {
-                if (!cancelled) setUrl(resolved);
-            })
-            .catch(() => {
-                if (!cancelled) setUrl(fallback);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
+        let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+        // 换签时不清空 url：旧地址只要还没过期就继续显示，等新签名回来再替换，避免闪一下空白。
+        const load = (initial: boolean) => {
+            if (initial) {
+                setUrl("");
+                setLoading(true);
+            }
+            void resolveMediaUrl(storageKey, fallback)
+                .then((resolved) => {
+                    if (!cancelled && resolved) setUrl(resolved);
+                })
+                .catch(() => {
+                    if (!cancelled && initial) setUrl(fallback);
+                })
+                .finally(() => {
+                    if (!cancelled) setLoading(false);
+                });
+        };
+        load(true);
+        const scheduleRefresh = () => {
+            refreshTimer = setTimeout(() => {
+                load(false);
+                scheduleRefresh();
+            }, MEDIA_URL_REFRESH_MS);
+        };
+        scheduleRefresh();
         return () => {
             cancelled = true;
+            if (refreshTimer !== undefined) clearTimeout(refreshTimer);
         };
     }, [eager, fallback, isLazyVisual, isRemoteResource, storageKey]);
 
