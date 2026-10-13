@@ -168,12 +168,18 @@ public sealed partial class CloudAgentRuntimeService
             throw new InvalidOperationException("Agent runtime media task is not attached to current call");
         }
         // 批量产物（本 fork 扩展）：任务 ID 挂在批次项上，与单槽 mediaTaskId 互斥。
+        //
+        // ⚠️ 这里**不要求**批次还挂在当前调用上（与单槽 mediaTaskId 的约束不同）：
+        // 批次是「已经交出去、正在等结果」的在途工作，它的生命周期比那条 generate_media 调用长。
+        // 模型在提交成功后常会**再发一次** generate_media（复用草稿），那次调用会失败并推动
+        // CallIndex 越过表尾；此时批次仍在跑。若沿用「必须挂在当前调用上」，这种状态会被
+        // 判成损坏 ⇒ Decode 抛错 ⇒ 409 被调度器静默吞掉 ⇒ 运行永久卡 running。
+        // 因此只要求：与单槽互斥、每项 NodeID 合法、已填 TaskID 必须在任务历史里。
         if (state.MediaBatch is { Count: > 0 } batch)
         {
-            if (state.MediaTaskID.Length > 0 || state.CallIndex >= state.Calls.Count
-                || state.Calls[state.CallIndex].Function.Name != "generate_media")
+            if (state.MediaTaskID.Length > 0)
             {
-                throw new InvalidOperationException("Agent runtime media batch is not attached to current call");
+                throw new InvalidOperationException("Agent runtime media batch conflicts with single media task");
             }
             foreach (CloudAgentMediaBatchItemDto item in batch)
             {
@@ -490,12 +496,22 @@ public sealed partial class CloudAgentRuntimeService
             {
                 FlushPendingImages(state);
             }
-            state.CallIndex++;
+            if (state.CallIndex < state.Calls.Count)
+            {
+                state.CallIndex++;
+            }
             state.Approval = null;
             // 看图是只读成功路径，不占自动纠错名额。
             return;
         }
         CloudAgentContracts.AddEvent(state, runID, kind, payload);
+        // ⚠️ 批次收尾时调用槽可能已经走完（CallIndex 越界）：那条 generate_media 调用早被
+        // 一次失败的重复调用推过表尾，而批次仍在跑。此时只落事件、不追加 canonical 消息、
+        // 不推进索引 —— 否则会写出没有对应 tool_call 的孤立 tool 消息，破坏上游配对约束。
+        if (state.CallIndex < 0 || state.CallIndex >= state.Calls.Count)
+        {
+            return;
+        }
         state.Canonical.Messages.Add(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
         {
             ["role"] = JsonSerializer.SerializeToElement("tool"),
@@ -748,6 +764,22 @@ public sealed partial class CloudAgentRuntimeService
         if (state.CallIndex < state.Calls.Count)
         {
             await AdvanceToolAsync(run, state, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        // ⚠️ 批次仍在跑但调用槽已走完：先把这一批等完、回写完，再进下一轮模型。
+        // 场景：模型提交 count>1 批次后又多发一次 generate_media（复用草稿），那次调用失败
+        // 把 CallIndex 推过表尾；批次本身还在等任务结果。此路径就是它唯一的驱动来源。
+        if (state.MediaBatch is { Count: > 0 } outstandingBatch)
+        {
+            CloudAgentCallDto batchCall = state.Calls.LastOrDefault(c => c.Function.Name == "generate_media")
+                ?? state.Calls.LastOrDefault()
+                ?? new CloudAgentCallDto
+                {
+                    ID = $"{run.ID}:media-batch",
+                    Function = new CloudAgentCallFunctionDto { Name = "generate_media", Arguments = "{}" },
+                };
+            await AdvanceMediaBatchAsync(run, state, batchCall, outstandingBatch, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
         // 兜底 flush：本批调用都执行完了，缓冲里的图片必须在这里合并成一条 user 消息

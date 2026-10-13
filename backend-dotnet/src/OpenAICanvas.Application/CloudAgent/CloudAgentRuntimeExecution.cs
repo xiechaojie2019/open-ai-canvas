@@ -826,12 +826,10 @@ public sealed partial class CloudAgentRuntimeService
                     // 若此时把 MediaBatch 清掉，等于把"已经交出去、正在等结果"的一批任务的回写通道
                     // 一并掐断 —— 任务会成功、成品会落存储，但画布节点永远停在 loading。
                     //
-                    // ⚠️⚠️ 这时**绝不能走 ToolResult**：ToolResult 会 state.CallIndex++，
-                    // 而本批仍挂在当前那条 generate_media 调用上（这是 ValidateRuntime 的硬要求：
-                    // CallIndex < Calls.Count 且 Calls[CallIndex].Function.Name == "generate_media"）。
-                    // 索引一旦推过表尾，下一拍 Decode 就抛「media batch is not attached to current call」
-                    // ⇒ 409 被调度器静默吞掉 ⇒ 运行永久卡 running（比原缺陷更糟）。
-                    // 所以这里只追加一条 tool_failed 事件留痕，**不动 CallIndex、不动 canonical 消息**。
+                    // 正确处理：ToolResult 照常推进 CallIndex（这次调用确实失败了，必须前进，
+                    // 否则每拍重跑同一条调用、事件无限增长 = 死循环），但**保留 MediaBatch**。
+                    // 批次不依赖 CallIndex 挂载（ValidateRuntime 对此已放宽），
+                    // 它由 AdvanceCoreAsync 在「调用槽已走完但批次未终态」时继续驱动回写。
                     bool batchAlreadySubmitted = state.MediaBatch is { Count: > 0 } submittedBatch
                         && submittedBatch.Any(entry => entry.TaskID.Length > 0);
                     JsonObject detail = new()
@@ -839,28 +837,7 @@ public sealed partial class CloudAgentRuntimeService
                         ["phase"] = phase,
                         ["taskSubmitted"] = submitted || batchAlreadySubmitted,
                     };
-                    if (batchAlreadySubmitted)
-                    {
-                        // 与 ToolResult 同构的事件载荷（但**不**推进 CallIndex、**不**追加 canonical 消息）。
-                        CloudAgentCallDto pending = state.Calls[state.CallIndex];
-                        string message = SafeToolError(cause);
-                        Console.Error.WriteLine(
-                            $"cloud agent tool error: run={run.ID} tool={pending.Function.Name} "
-                            + $"cause={cause.GetType().FullName}: {cause.Message}\n{cause.StackTrace}");
-                        detail["error"] = message;
-                        CloudAgentContracts.AddEvent(state, run.ID, "tool_failed",
-                            CloudAgentContracts.Payload(
-                                ("toolName", pending.Function.Name),
-                                ("callId", pending.ID),
-                                ("arguments", JsonSerializer.SerializeToElement(pending.Function.Arguments)),
-                                ("text", message),
-                                ("result", JsonSerializer.SerializeToElement(
-                                    (JsonNode?)detail ?? new JsonObject(), GoJson.WriteOptions))));
-                    }
-                    else
-                    {
-                        ToolResult(run.ID, state, state.Calls[state.CallIndex], detail, cause);
-                    }
+                    ToolResult(run.ID, state, state.Calls[state.CallIndex], detail, cause);
                     if (submitted)
                     {
                         state.MediaTaskID = "";

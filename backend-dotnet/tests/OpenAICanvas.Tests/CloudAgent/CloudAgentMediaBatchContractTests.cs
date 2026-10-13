@@ -232,10 +232,11 @@ public sealed class CloudAgentMediaBatchContractTests
     /// 表现为「任务 succeeded、成品已落存储，画布节点永远 loading」。
     /// </summary>
     /// <remarks>
-    /// ⚠️ 同时**绝不能**走 <c>ToolResult</c>：它会 <c>CallIndex++</c>，把索引推过表尾，
-    /// 而本批仍挂在当前那条 <c>generate_media</c> 调用上（<c>ValidateRuntime</c> 的硬要求）。
-    /// 索引越界 ⇒ 下一拍 Decode 抛「media batch is not attached to current call」
-    /// ⇒ 409 被调度器静默吞掉 ⇒ 运行永久卡 running（比原缺陷更糟）。
+    /// ⚠️ 两个坑的平衡：
+    /// ① 清空批次 ⇒ 回写断（原缺陷）；
+    /// ② 保留批次但**不推进** <c>CallIndex</c> ⇒ 每拍重跑同一条失败调用、事件无限增长 = 死循环。
+    /// 正解是：照常走 <c>ToolResult</c>（推进索引、结束这条调用），同时保留批次；
+    /// 批次不再依赖 <c>CallIndex</c> 挂载，由 <c>AdvanceCoreAsync</c> 在调用槽走完后继续驱动。
     /// </remarks>
     [Fact]
     public void 已提交批次不得被失败的重试调用清掉()
@@ -252,19 +253,33 @@ public sealed class CloudAgentMediaBatchContractTests
         Assert.Contains("if (!batchAlreadySubmitted)", execution);
         // 工具失败回执的 taskSubmitted 要如实反映"这批已经交出去了"。
         Assert.Contains("[\"taskSubmitted\"] = submitted || batchAlreadySubmitted,", execution);
+        // 索引必须照常推进（否则死循环）：ToolResult 在两个分支合并之后、无条件调用。
+        int toolResult = execution.IndexOf("ToolResult(run.ID, state, state.Calls[state.CallIndex], detail, cause);", guard, StringComparison.Ordinal);
+        Assert.True(toolResult > guard && toolResult < clear, "ToolResult 必须在清空判定之前无条件调用");
+    }
 
-        // 关键：已提交批次的这条失败**不得**借用 ToolResult（会推进 CallIndex ⇒ 批次失去挂载点）。
-        // 只能走「追加 tool_failed 事件」这条路；ToolResult 只保留在 else（批次尚未提交的常规失败路径）。
-        int batchBranch = execution.IndexOf("if (batchAlreadySubmitted)", StringComparison.Ordinal);
-        Assert.True(batchBranch > guard, "必须有 batchAlreadySubmitted 分支");
-        int elseBranch = execution.IndexOf("else", batchBranch, StringComparison.Ordinal);
-        Assert.True(elseBranch > batchBranch, "batchAlreadySubmitted 分支必须有对应的 else");
-        string batchBody = execution[batchBranch..elseBranch];
-        Assert.Contains("CloudAgentContracts.AddEvent(state, run.ID, \"tool_failed\"", batchBody);
-        Assert.DoesNotContain("ToolResult(run.ID, state,", batchBody);
-        // 常规失败路径仍然走 ToolResult（否则 CallIndex 永远推不过去）。
-        string elseBody = execution[elseBranch..clear];
-        Assert.Contains("ToolResult(run.ID, state,", elseBody);
+    /// <summary>
+    /// 批次必须能脱离「当前调用」独立存活：
+    /// ① <c>ValidateRuntime</c> 不再要求批次挂在当前调用上；
+    /// ② 调用槽走完但批次未终态时，<c>AdvanceCoreAsync</c> 仍要驱动它回写；
+    /// ③ <c>ToolResult</c> 在索引越界时只落事件，不写孤立 tool 消息。
+    /// </summary>
+    [Fact]
+    public void 批次必须能脱离当前调用独立回写()
+    {
+        string runtime = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeService.cs"));
+
+        // ① 校验放宽：只留与单槽互斥 + item 合法性。
+        Assert.Contains("Agent runtime media batch conflicts with single media task", runtime);
+        Assert.DoesNotContain("Agent runtime media batch is not attached to current call", runtime);
+
+        // ② 调用槽走完后的批次驱动分支。
+        Assert.Contains("if (state.MediaBatch is { Count: > 0 } outstandingBatch)", runtime);
+        Assert.Contains("await AdvanceMediaBatchAsync(run, state, batchCall, outstandingBatch, cancellationToken)", runtime);
+
+        // ③ 索引越界保护：只落事件、不追加孤立 tool 消息。
+        Assert.Contains("if (state.CallIndex < 0 || state.CallIndex >= state.Calls.Count)", runtime);
     }
 
     /// <summary>
