@@ -674,6 +674,20 @@ public sealed partial class CloudAgentRuntimeService
             {
                 if (media is not null)
                 {
+                    // ⚠️ 提交前必须用**当前**画布刷新快照：批量（count>1）里前一项的任务一旦提交，
+                    // CreateMediaNodeAsync 就把它自己的草稿节点写进画布（status 由 idle 变 loading），
+                    // 后一项手里的快照立刻过期 → 409「画布已变化」，整批提交卡在中途。
+                    // 单产物路径（batchItem 为 null）刷新也无害：值不变，等价于原样。
+                    CanvasProject? current0 = await context.CanvasProjectForUserAsync(
+                        run.UserID, state.Request.CanvasID).ConfigureAwait(false);
+                    if (current0 is not null)
+                    {
+                        JsonObject currentDoc = CloudAgentJsonHelpers.Document(current0.PayloadJSON);
+                        media.Args.SnapshotHash = CloudAgentContracts.MediaContentHash(currentDoc);
+                        // 依赖哈希同样按当前投影重算：它才是执行准入真正要比对的基线。
+                        media.Args.DependencyHash =
+                            CloudAgentMediaService.MediaDependencyHash(currentDoc, media.Args);
+                    }
                     await _media.CreateMediaNodeAsync(
                         context, run.UserID, state.Request.CanvasID, media, task, policy,
                         CloudAgentMutations.RecorderForRun(run.ID, state), state, run.ID).ConfigureAwait(false);
@@ -959,6 +973,18 @@ public sealed partial class CloudAgentRuntimeService
             {
                 await using CloudAgentMutationContext planningContext =
                     await _repository.OpenCloudAgentContextAsync(cancellationToken).ConfigureAwait(false);
+                // ⚠️ 先把本项快照刷到当前画布：前一项提交时把自己的草稿节点写成 loading，
+                // 画布已经变了；沿用固化时的旧快照，PrepareItemAsync 会直接 409
+                //（「画布已变化」），整批卡在中途 —— 这正是 count>1 卡死的直接来源。
+                CanvasProject? currentItem = await planningContext.CanvasProjectForUserAsync(
+                    run.UserID, state.Request.CanvasID).ConfigureAwait(false);
+                if (currentItem is not null)
+                {
+                    JsonObject currentItemDoc = CloudAgentJsonHelpers.Document(currentItem.PayloadJSON);
+                    item.Args.SnapshotHash = CloudAgentContracts.MediaContentHash(currentItemDoc);
+                    item.Args.DependencyHash =
+                        CloudAgentMediaService.MediaDependencyHash(currentItemDoc, item.Args);
+                }
                 (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan prepared) =
                     await _media.PrepareItemAsync(
                         planningContext, run, state, item.Args, call.ID, cancellationToken)

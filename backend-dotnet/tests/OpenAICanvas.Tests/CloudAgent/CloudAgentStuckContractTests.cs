@@ -340,6 +340,46 @@ public sealed class CloudAgentStuckContractTests : IDisposable
     }
 
     /// <summary>
+    /// 源码级契约：批量**提交**阶段（不只是建草稿）也必须逐项刷新快照。
+    ///
+    /// 线上实例（2026-10-13，run <c>ag222ed42db80776e0332130b9ad771bfd</c>，修复建草稿快照后复测）：
+    /// 建草稿阶段过了，但提交阶段仍卡——<c>AdvanceMediaBatchAsync</c> 逐项
+    /// <c>PrepareItemAsync</c> + <c>EnqueueTaskAsync</c>，而前者走 <c>MediaDocumentAsync</c>、
+    /// 后者的 <c>CreateMediaNodeAsync</c> 也走一次；前一项提交把自己的草稿节点写成 loading，
+    /// 后一项手里的快照立刻过期 ⇒ 409，整批停在中途（实测留下 cat3-2/cat3-3 两个 idle 草稿）。
+    /// 因此提交阶段的两处都必须按当前画布重算 SnapshotHash/DependencyHash。
+    /// </summary>
+    [Fact]
+    public void 批量提交阶段也必须逐项刷新快照()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeExecution.cs"));
+
+        int start = source.IndexOf("private async Task AdvanceMediaBatchAsync(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "必须存在批量提交方法");
+        int end = source.IndexOf("private async Task<", start, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            end = source.IndexOf("private async Task ", start + 10, StringComparison.Ordinal);
+        }
+        Assert.True(end > start, "无法界定 AdvanceMediaBatchAsync 的函数体");
+        string body = source[start..end];
+
+        int prepare = body.IndexOf("_media.PrepareItemAsync(", StringComparison.Ordinal);
+        Assert.True(prepare > 0, "批量提交必须逐项 PrepareItemAsync");
+        int refresh = body.IndexOf(
+            "item.Args.SnapshotHash = CloudAgentContracts.MediaContentHash(currentItemDoc);", StringComparison.Ordinal);
+        Assert.True(refresh >= 0 && refresh < prepare,
+            "PrepareItemAsync 之前必须用当前画布刷新该项快照，否则第二项起必然 409");
+
+        // EnqueueTaskAsync 内部（提交真正落节点那一步）也要刷新 plan 快照。
+        int enqueue = source.IndexOf("private async Task EnqueueTaskAsync(", StringComparison.Ordinal);
+        Assert.True(enqueue > 0, "必须存在 EnqueueTaskAsync");
+        string enqueueBody = source[enqueue..Math.Min(source.Length, enqueue + 12000)];
+        Assert.Contains("media.Args.SnapshotHash = CloudAgentContracts.MediaContentHash(currentDoc);", enqueueBody);
+    }
+
+    /// <summary>
     /// 源码级契约：CAS 回调里建草稿失败必须当场记成工具失败，不得穿出事务变成静默 409。
     /// 这是「批量快照」之外的第二道保险：任何残留的建草稿异常都不能再让运行空转。
     /// </summary>
