@@ -74,7 +74,13 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentExecution run, CloudAgentRuntimeDto state, CancellationToken cancellationToken)
     {
         // Go 还会检查 storyboardTaskId；两边的分镜都是同步写、该字段从未被赋值，故不移植。
-        foreach (string taskID in new[] { state.ActiveTaskID, state.MediaTaskID })
+        // 批量产物（本 fork 扩展）的任务 ID 挂在批次项上，这里必须一并纳入，否则批量在跑时会被误判卡住。
+        List<string> taskIDs = [state.ActiveTaskID, state.MediaTaskID];
+        if (state.MediaBatch is { Count: > 0 } stuckBatch)
+        {
+            taskIDs.AddRange(stuckBatch.Select(item => item.TaskID));
+        }
+        foreach (string taskID in taskIDs)
         {
             if (taskID.Length == 0)
             {

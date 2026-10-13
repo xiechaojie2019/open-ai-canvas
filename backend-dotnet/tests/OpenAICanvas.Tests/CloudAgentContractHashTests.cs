@@ -32,12 +32,21 @@ public class CloudAgentContractHashTests
     public async Task AgentPolicyDocuments_MatchGoBaselines()
     {
         (AgentPolicy system, AgentPolicy media) = await AgentPolicyDocuments.LoadAgentPoliciesAsync();
+        // 系统策略未改：解析 + 哈希必须与 Go 逐字节一致，这条就是「同一份文档两边算出同一个哈希」的证据。
         Assert.Equal("cloud-agent-system", system.Id);
         Assert.Equal(2, system.Version);
         Assert.Equal("82fc03c3b8a5b484acc4119569eaf0f3ffdffabd459839b6ce89e0598cb40d43", system.Hash);
         Assert.Equal("cloud-agent-media", media.Id);
-        Assert.Equal(2, media.Version);
-        Assert.Equal("abcd5762760a551595e9e5f972d4f6e7d1d616c2f1323a949669e7cce9846cf4", media.Hash);
+        // ⚠️ 媒体策略**有意偏离 Go 基线**（Go 为 version 2 / abcd5762…）：
+        // 本 fork 按产品要求放开了两处规则 —— auto 模式不再对 generate_media 强制人工审批、
+        // 且允许一次出多张（count）。两处都必须写进策略正文，否则模型仍会逐张调用并等审批。
+        // 策略正文是 MediaPolicyHash 的输入 ⇒ 改文必然改哈希，在途旧运行会被
+        // ValidatePolicyVersions 判 409（预期行为：规则变了就不让旧运行带着旧规则跑完）。
+        Assert.Equal(3, media.Version);
+        Assert.Equal("6808c76bb401ca7be521bc06381a66c9636413ae2cc93bbf99b4df87ffc9ff75", media.Hash);
+        // 放宽范围必须是「有界」的：策略里仍要明确收费授权与预算兜底的边界。
+        Assert.Contains("自动执行模式不做独立审批", media.Text);
+        Assert.Contains("count", media.Text);
     }
 
     [Fact]

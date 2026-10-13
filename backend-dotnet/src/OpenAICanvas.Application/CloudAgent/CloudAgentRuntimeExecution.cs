@@ -32,6 +32,10 @@ public sealed partial class CloudAgentRuntimeService
             return;
         }
         CloudAgentCallDto call = state.Calls[state.CallIndex];
+        // 同轮多写接续快照：把本轮后续写调用手里的 snapshotHash 接到最新画布上。
+        // 必须在审批判定之前——模型读一次画布后连下多个写调用时，第一个写成功就会让后面的快照过期。
+        call = await RefreshStepSnapshotHashAsync(run, state, call, cancellationToken).ConfigureAwait(false);
+        state.Calls[state.CallIndex] = call;
         if (state.Approval is not null && state.Approval.Decision.Length == 0)
         {
             return; // 等待审批。
@@ -45,18 +49,32 @@ public sealed partial class CloudAgentRuntimeService
         }
         string name = call.Function.Name;
         bool allowed = CloudAgentTools.Allowed(state.Request, name);
-        if (allowed && CloudAgentTools.IsWrite(name)
-            && (state.Request.PermissionMode == "request_approval" || name == "generate_media")
-            && state.Approval is null)
+        // 审批边界：request_approval 下所有写工具都要人工审批；auto 下写工具直接执行。
+        // ⚠️ 与 Go 的有意差异：Go 对 generate_media 是**无条件**审批（媒体策略 v2 原文
+        // 「创建媒体草稿及连线不等于收费授权；所有模式都必须等待界面独立审批」）。
+        // 本 fork 按产品要求改为 auto 直接提交，费用边界完全交给本轮 Budget
+        //（maxCredits / maxGenerationTasks / maxVideoSeconds）兜底。
+        bool needsApproval = state.Request.PermissionMode == "request_approval";
+        if (allowed && CloudAgentTools.IsWrite(name) && needsApproval && state.Approval is null)
         {
             await PlanApprovalAsync(run, state, call, cancellationToken).ConfigureAwait(false);
             return;
         }
-        if (allowed && name == "generate_media"
-            && state.Approval is not null && state.Approval.Decision == "approve")
+        if (allowed && name == "generate_media")
         {
-            await AdvanceMediaAsync(run, state, call, cancellationToken).ConfigureAwait(false);
-            return;
+            if (state.Approval is null && !needsApproval)
+            {
+                // auto：先建草稿并固化快照/依赖哈希（与审批路径同一套固化逻辑），再提交。
+                if (!await PrepareAutoMediaDraftAsync(run, state, call, cancellationToken).ConfigureAwait(false))
+                {
+                    return; // 草稿或准入失败，已记成工具失败。
+                }
+            }
+            if (state.Approval is null || state.Approval.Decision == "approve")
+            {
+                await AdvanceMediaAsync(run, state, call, cancellationToken).ConfigureAwait(false);
+                return;
+            }
         }
         RuntimePolicySetting policy = _runtimePolicy.Current();
 
@@ -242,12 +260,22 @@ public sealed partial class CloudAgentRuntimeService
             {
                 await using CloudAgentMutationContext planningContext =
                     await _repository.OpenCloudAgentContextAsync(cancellationToken).ConfigureAwait(false);
-                (CreateTaskRequestDto request, CloudAgentMediaPlan prepared) = await _media.PrepareAsync(
+                (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan prepared) = await _media.PrepareAsync(
                     planningContext, run, state, call, cancellationToken).ConfigureAwait(false);
-                // 干跑准入：不落库、不计费，仅校验模型与规格。
-                await _taskCreation.AdmitQueuedAsync(
-                    run.UserID, request, request.Input, request.Type!,
-                    request.Prompt, "", "", cancellationToken).ConfigureAwait(false);
+                // 批量产物会同时占用多个「排队或运行」额度：不足时必须在建草稿之前就拒绝。
+                if (prepared.IsBatch)
+                {
+                    await EnsureBatchConcurrencyAsync(
+                        run.UserID, planningContext.Repository, prepared.Items.Count,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                // 干跑准入：不落库、不计费，仅校验模型与规格。批量时逐项都验一遍。
+                foreach (CreateTaskRequestDto request in requests)
+                {
+                    await _taskCreation.AdmitQueuedAsync(
+                        run.UserID, request, request.Input, request.Type!,
+                        request.Prompt, "", "", cancellationToken).ConfigureAwait(false);
+                }
                 plan = prepared;
                 modelName = await _media.ModelNameAsync(plan.Args, cancellationToken).ConfigureAwait(false);
             }
@@ -280,6 +308,127 @@ public sealed partial class CloudAgentRuntimeService
         run.Revision++;
     }
 
+    /// <summary>
+    /// auto 模式下 generate_media 的前置：建草稿节点，并把快照/依赖哈希固化进当前调用参数。
+    /// 与审批路径共用同一套固化逻辑（<see cref="BakeMediaDraftAsync"/>），但不产生审批记录、
+    /// 不进入 waiting_approval、不钉资源租约（草稿与提交在同一拍完成，窗口极短）。
+    /// ⚠️ 与 Go 的有意差异：Go 在 auto 下也会 suspend 到人工审批。
+    /// 返回 false 表示已记成工具失败，调用方必须直接返回。
+    /// </summary>
+    private async Task<bool> PrepareAutoMediaDraftAsync(
+        CloudAgentExecution run, CloudAgentRuntimeDto state, CloudAgentCallDto call,
+        CancellationToken cancellationToken)
+    {
+        CloudAgentMediaPlan plan;
+        try
+        {
+            await using CloudAgentMutationContext planningContext =
+                await _repository.OpenCloudAgentContextAsync(cancellationToken).ConfigureAwait(false);
+            (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan prepared) = await _media.PrepareAsync(
+                planningContext, run, state, call, cancellationToken).ConfigureAwait(false);
+            // 批量产物会同时占用多个「排队或运行」额度：不足时必须在建草稿之前就拒绝。
+            if (prepared.IsBatch)
+            {
+                await EnsureBatchConcurrencyAsync(
+                    run.UserID, planningContext.Repository, prepared.Items.Count,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            // 干跑准入：与审批路径一致，不落库、不计费，仅校验模型与规格。批量时逐项都验一遍。
+            foreach (CreateTaskRequestDto request in requests)
+            {
+                await _taskCreation.AdmitQueuedAsync(
+                    run.UserID, request, request.Input, request.Type!,
+                    request.Prompt, "", "", cancellationToken).ConfigureAwait(false);
+            }
+            plan = prepared;
+        }
+        catch (Exception cause) when (
+            cause is AppError or CloudAgentArgumentException or InvalidOperationException
+            or System.Data.Common.DbException)
+        {
+            await MediaErrorAsync(run, state, "admission", submitted: false, terminal: false, cause)
+                .ConfigureAwait(false);
+            return false;
+        }
+        bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
+            async (current, context) =>
+            {
+                await BakeMediaDraftAsync(context, run, state, _runtimePolicy.Current(), plan)
+                    .ConfigureAwait(false);
+                CloudAgentContracts.Save(current, state);
+                await context.SaveRunAsync(current).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
+        if (!claimed)
+        {
+            throw CloudAgentSessionService.CreationConflict();
+        }
+        run.Revision++;
+        return true;
+    }
+
+    /// <summary>
+    /// 批量产物（count&gt;1）与平台并发额度的前置校验。
+    /// </summary>
+    /// <remarks>
+    /// 批量提交是一条条落库的，而平台对「排队或运行」的任务数有硬上限
+    /// （<see cref="RuntimePolicySetting.Task"/>.<c>ActiveTaskLimit</c>，默认 5）。
+    /// 干跑准入查的是<b>当前库里</b>的活动任务数，看不到本批还没落库的那些，
+    /// 于是 N 张图会在提交到第 limit+1 张时才被配额拒 —— 前面几张已经在跑了，
+    /// 收不回来，整轮只能判失败。所以必须在建草稿之前就用「当前活动数 + 本批张数」预判。
+    /// 拒绝文案要给出剩余额度，模型才知道该减到几张。
+    /// </remarks>
+    private async Task EnsureBatchConcurrencyAsync(
+        string userID, Repository repository, int count, CancellationToken cancellationToken)
+    {
+        int limit = _runtimePolicy.Current().Task.ActiveTaskLimit;
+        long active = await repository.ActiveTaskCountForUserAsync(userID, cancellationToken).ConfigureAwait(false);
+        if (active + count > limit)
+        {
+            throw AppError.BadAuthRequest(
+                $"平台最多同时排队或运行 {limit} 个任务，当前已有 {active} 个，一次生成 {count} 个会超出；"
+                + "请减少张数或等已有任务完成");
+        }
+    }
+
+    /// <summary>
+    /// 建媒体草稿节点，并把每项的快照哈希与依赖哈希固化进参数。
+    /// <b>必须此刻计算</b>：草稿节点与引用连线已经落画布，依赖哈希才反映真实投影；
+    /// 执行准入时依赖匹配可替代全画布快照，使同画布其他生成的回写不致连坐判「画布已变化」。
+    /// count&gt;1 时逐项建节点（每项的投影互相独立，因此后一项提交时前一项已改画布也不受影响），
+    /// 并把整批参数写进 <see cref="CloudAgentRuntimeDto.MediaBatch"/>。
+    /// 对应 Go: <c>cloudAgentPreparedMedia</c> 的 SnapshotHash / DependencyHash 赋值。
+    /// </summary>
+    private async Task BakeMediaDraftAsync(
+        CloudAgentMutationContext context, CloudAgentExecution run, CloudAgentRuntimeDto state,
+        RuntimePolicySetting policy, CloudAgentMediaPlan plan)
+    {
+        CloudAgentCallDto call = state.Calls[state.CallIndex];
+        List<CloudAgentMediaBatchItemDto>? batch =
+            plan.IsBatch ? new List<CloudAgentMediaBatchItemDto>() : null;
+        foreach (CloudAgentMediaArgs item in plan.Items)
+        {
+            await _media.CreateMediaNodeAsync(
+                context, run.UserID, state.Request.CanvasID,
+                new CloudAgentMediaPlan { Items = [item], CallID = plan.CallID },
+                task: null, policy, CloudAgentMutations.RecorderForRun(run.ID, state), state, run.ID)
+                .ConfigureAwait(false);
+            CanvasProject? canvas = await context.CanvasProjectForUserAsync(
+                run.UserID, state.Request.CanvasID).ConfigureAwait(false)
+                ?? throw AppError.NotFound("画布不存在");
+            JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
+            item.SnapshotHash = CloudAgentContracts.MediaContentHash(doc);
+            item.DependencyHash = CloudAgentMediaService.MediaDependencyHash(doc, item);
+            batch?.Add(new CloudAgentMediaBatchItemDto { Args = item });
+        }
+        if (batch is not null)
+        {
+            state.MediaBatch = batch;
+        }
+        // 首项始终写回调用参数：审批哈希、撤销与单产物路径都按 call.Function.Arguments 走。
+        call.Function.Arguments = JsonSerializer.Serialize(plan.Args, GoJson.WriteOptions);
+        state.Calls[state.CallIndex] = call;
+    }
+
     private async Task MutatePlanApprovalAsync(
         CloudAgentExecution current, CloudAgentMutationContext context, CloudAgentExecution run,
         CloudAgentRuntimeDto state, CloudAgentCallDto call, RuntimePolicySetting policy,
@@ -290,20 +439,8 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentApprovalPreviewDto preview;
         if (plan is not null)
         {
-            await _media.CreateMediaNodeAsync(
-                context, run.UserID, state.Request.CanvasID, plan, task: null, policy,
-                CloudAgentMutations.RecorderForRun(run.ID, state), state, run.ID).ConfigureAwait(false);
-            CanvasProject? canvas = await context.CanvasProjectForUserAsync(
-                run.UserID, state.Request.CanvasID).ConfigureAwait(false)
-                ?? throw AppError.NotFound("画布不存在");
-            JsonObject doc = CloudAgentJsonHelpers.Document(canvas.PayloadJSON);
-            plan.Args.SnapshotHash = CloudAgentContracts.MediaContentHash(doc);
-            // 依赖哈希随服务端 args 固化（对应 Go: cloudAgentPreparedMedia.DependencyHash）：
-            // 执行准入时依赖匹配可替代全画布快照，同画布其他生成的回写不会连坐判
-            // 「画布已变化」。必须在此刻计算——此时草稿节点与引用连线已落画布。
-            plan.Args.DependencyHash = CloudAgentMediaService.MediaDependencyHash(doc, plan.Args);
-            call.Function.Arguments = JsonSerializer.Serialize(plan.Args, GoJson.WriteOptions);
-            state.Calls[state.CallIndex] = call;
+            // 草稿节点 + 快照/依赖哈希固化，与 auto 路径共用同一段逻辑。
+            await BakeMediaDraftAsync(context, run, state, policy, plan).ConfigureAwait(false);
             preview = CloudAgentMediaService.ApprovalPreview(plan, modelName);
         }
         else
@@ -374,7 +511,8 @@ public sealed partial class CloudAgentRuntimeService
     private async Task EnqueueTaskAsync(
         CloudAgentExecution run, CloudAgentRuntimeDto state, string taskType, string prompt,
         string model, string logicalModelID, Dictionary<string, JsonElement> input,
-        CloudAgentMediaPlan? media, string mediaOperation = "", CancellationToken cancellationToken = default)
+        CloudAgentMediaPlan? media, string mediaOperation = "", CancellationToken cancellationToken = default,
+        CloudAgentMediaBatchItemDto? batchItem = null, bool batchPartiallySubmitted = false)
     {
         Dictionary<string, BillingOrder> existingOrders = await _repository.BillingOrdersByTaskIDsAsync(
             run.UserID, state.TaskIDs, cancellationToken).ConfigureAwait(false);
@@ -419,8 +557,10 @@ public sealed partial class CloudAgentRuntimeService
         {
             if (media is not null)
             {
-                await MediaErrorAsync(run, state, "admission", submitted: false, terminal: false, cause)
-                    .ConfigureAwait(false);
+                // 批量途中被拒且前面已有项提交出去时，不能只记一次工具失败就走人：
+                // 那些已提交的收费任务收不回来，本轮必须如实终态化（与"部分成功"同一套口径）。
+                await MediaErrorAsync(run, state, "admission", submitted: false,
+                    terminal: batchPartiallySubmitted, cause).ConfigureAwait(false);
             }
             else
             {
@@ -458,7 +598,15 @@ public sealed partial class CloudAgentRuntimeService
                 state.TaskIDs.Add(task.ID);
                 if (media is not null)
                 {
-                    state.MediaTaskID = task.ID;
+                    if (batchItem is not null)
+                    {
+                        // 批量产物：任务 ID 挂在批次项上，等待/回写按整批处理。
+                        batchItem.TaskID = task.ID;
+                    }
+                    else
+                    {
+                        state.MediaTaskID = task.ID;
+                    }
                     state.Generations++;
                     state.VideoSeconds += media.Args.Duration;
                     // 审批通过即提交：租约从审批所有者转移到任务所有者
@@ -568,6 +716,10 @@ public sealed partial class CloudAgentRuntimeService
             {
                 state.MediaTaskID = "";
             }
+            // 批次必须一并清空：ToolResult 已经把 CallIndex 推过这次 generate_media 调用，
+            // 留下 MediaBatch 会让 ValidateRuntime 的「批次必须在 generate_media 调用上」判成状态损坏。
+            // 已提交项的结果仍留在任务中心（不自动重试收费生成），未提交项的草稿节点留在画布上可续用。
+            state.MediaBatch = null;
             if (terminal)
             {
                 current.Status = "failed";
@@ -583,6 +735,12 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentExecution run, CloudAgentRuntimeDto state, CloudAgentCallDto call,
         CancellationToken cancellationToken)
     {
+        if (state.MediaBatch is { Count: > 0 } batch)
+        {
+            // count>1（本 fork 扩展）：草稿已在建批时落好，这里负责补齐提交并等整批到终态。
+            await AdvanceMediaBatchAsync(run, state, call, batch, cancellationToken).ConfigureAwait(false);
+            return;
+        }
         if (state.MediaTaskID.Length > 0)
         {
             TaskEntity? task = await _repository.TaskForUserAsync(
@@ -633,12 +791,12 @@ public sealed partial class CloudAgentRuntimeService
             run.Revision++;
             return;
         }
-        (CreateTaskRequestDto Request, CloudAgentMediaPlan Plan)? preparedPair =
+        (List<CreateTaskRequestDto> Requests, CloudAgentMediaPlan Plan)? preparedPair =
             await _repository.MutateCloudAgentAsync(
                 run.UserID, run.ID, run.Revision,
                 async (current, context) =>
                 {
-                    (CreateTaskRequestDto Request, CloudAgentMediaPlan Plan) prepared =
+                    (List<CreateTaskRequestDto> Requests, CloudAgentMediaPlan Plan) prepared =
                         await _media.PrepareAsync(context, run, state, call, cancellationToken)
                             .ConfigureAwait(false);
                     current.Status = "running";
@@ -650,12 +808,171 @@ public sealed partial class CloudAgentRuntimeService
         {
             throw CloudAgentSessionService.CreationConflict();
         }
-        (CreateTaskRequestDto request, CloudAgentMediaPlan plan) = preparedPair.Value;
+        (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan plan) = preparedPair.Value;
         run.Revision++;
+        CreateTaskRequestDto request = requests[0];
         await EnqueueTaskAsync(run, state, request.Type!, request.Prompt,
             request.Model, request.LogicalModelID, request.Input, plan, request.Operation,
             cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 批量产物（count&gt;1，本 fork 扩展）的提交与等待。
+    /// 与单产物路径只差两点：任务 ID 记在批次项上（<see cref="CloudAgentMediaBatchItemDto.TaskID"/>），
+    /// 且必须整批都到终态才收尾——这样 N 个任务才能真正并行跑。
+    /// </summary>
+    private async Task AdvanceMediaBatchAsync(
+        CloudAgentExecution run, CloudAgentRuntimeDto state, CloudAgentCallDto call,
+        List<CloudAgentMediaBatchItemDto> batch, CancellationToken cancellationToken)
+    {
+        // 先把还没提交的项补齐。逐项提交而不是一次性事务：每项各自计算预算与配额，
+        // 任何一项被拒都会立刻终止本批，不会留下"节点建了但没提交"的静默状态。
+        foreach (CloudAgentMediaBatchItemDto item in batch)
+        {
+            if (item.TaskID.Length > 0)
+            {
+                continue;
+            }
+            CreateTaskRequestDto request;
+            CloudAgentMediaPlan itemPlan;
+            try
+            {
+                await using CloudAgentMutationContext planningContext =
+                    await _repository.OpenCloudAgentContextAsync(cancellationToken).ConfigureAwait(false);
+                (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan prepared) =
+                    await _media.PrepareItemAsync(
+                        planningContext, run, state, item.Args, call.ID, cancellationToken)
+                        .ConfigureAwait(false);
+                request = requests[0];
+                itemPlan = prepared;
+            }
+            catch (Exception cause) when (
+                cause is AppError or CloudAgentArgumentException or InvalidOperationException
+                or System.Data.Common.DbException)
+            {
+                await MediaErrorAsync(run, state, "admission", submitted: false, terminal: false, cause)
+                    .ConfigureAwait(false);
+                return;
+            }
+            int submittedBefore = batch.Count(entry => entry.TaskID.Length > 0);
+            await EnqueueTaskAsync(run, state, request.Type!, request.Prompt, request.Model,
+                request.LogicalModelID, request.Input, itemPlan, request.Operation, cancellationToken,
+                batchItem: item, batchPartiallySubmitted: submittedBefore > 0).ConfigureAwait(false);
+            // EnqueueTaskAsync 内部吞掉准入异常并直接返回：它没能建出任务，本批就此中断。
+            // 已提交项是否终态化由 batchPartiallySubmitted 决定，这里只需停手。
+            if (item.TaskID.Length == 0)
+            {
+                return;
+            }
+        }
+        List<TaskEntity> completed = [];
+        foreach (CloudAgentMediaBatchItemDto item in batch)
+        {
+            TaskEntity? task = await _repository.TaskForUserAsync(
+                run.UserID, item.TaskID, cancellationToken).ConfigureAwait(false);
+            if (task is null)
+            {
+                await MediaErrorAsync(run, state, "completion", submitted: true, terminal: true,
+                    AppError.BadAuthRequest("媒体任务不存在或已失去归属，结果未回写画布"))
+                    .ConfigureAwait(false);
+                return;
+            }
+            if (task.Status is TaskStatus.TaskStatusQueued or TaskStatus.TaskStatusRunning)
+            {
+                return; // 还有在跑的，下一拍再看。
+            }
+            completed.Add(task);
+        }
+        RuntimePolicySetting policy = _runtimePolicy.Current();
+        bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
+            async (current, context) =>
+            {
+                CanvasProject? before = await context.CanvasProjectForUserAsync(
+                    run.UserID, state.Request.CanvasID).ConfigureAwait(false);
+                List<JsonObject> results = new(completed.Count);
+                Exception? firstError = null;
+                int succeeded = 0;
+                foreach (TaskEntity task in completed)
+                {
+                    string nodeID;
+                    Exception? writeError = null;
+                    try
+                    {
+                        nodeID = await _media.CompleteMediaNodeAsync(
+                            context, run.UserID, state.Request.CanvasID, task, policy).ConfigureAwait(false);
+                    }
+                    catch (Exception cause) when (
+                        cause is AppError error && error.Status is 400 or 409
+                            || cause is InvalidOperationException
+                            || cause.Message == "record not found")
+                    {
+                        writeError = cause;
+                        nodeID = await CompleteLenientAsync(
+                            context, run.UserID, state.Request.CanvasID, task, policy).ConfigureAwait(false);
+                    }
+                    if (nodeID.Length > 0 && before is not null)
+                    {
+                        await CloudAgentMutations.EmitCanvasChangeOnlyAsync(
+                            context, run.ID, state, new CloudAgentMutationInput
+                            {
+                                UserID = run.UserID,
+                                CanvasID = state.Request.CanvasID,
+                                Operation = "generate_media_complete",
+                                BeforeJSON = before.PayloadJSON,
+                            }).ConfigureAwait(false);
+                    }
+                    JsonObject item = new()
+                    {
+                        ["taskId"] = task.ID,
+                        ["nodeId"] = nodeID,
+                        ["status"] = task.Status,
+                    };
+                    if (task.Status == TaskStatus.TaskStatusSucceeded && writeError is null)
+                    {
+                        succeeded++;
+                        item["summary"] = "生成结果已回写画布节点";
+                    }
+                    else
+                    {
+                        firstError ??= writeError ?? AppError.BadAuthRequest(
+                            "媒体任务" + task.Status + "：" + CloudAgentMediaService.SafeMediaTaskError(task)
+                            + "；请在任务中心查看任务 " + task.ID + "，不会自动重试收费生成");
+                        item["summary"] = writeError is not null
+                            ? "未回写画布；任务结果保留在任务中心"
+                            : "媒体任务未成功；结果保留在任务中心";
+                    }
+                    results.Add(item);
+                }
+                JsonObject result = new()
+                {
+                    ["phase"] = "completion",
+                    ["taskSubmitted"] = true,
+                    ["batchSize"] = completed.Count,
+                    ["succeeded"] = succeeded,
+                    ["items"] = new JsonArray(results.Select(r => (JsonNode?)r).ToArray()),
+                    ["summary"] = $"本批 {completed.Count} 个生成任务中 {succeeded} 个已回写画布"
+                        + (firstError is null ? "" : "；其余请在任务中心查看"),
+                };
+                // 工具诊断保持为最后一个事件；终态事件先行，保证失败完成有 run 级信号。
+                if (firstError is not null && current.Status != "cancelled")
+                {
+                    current.Status = "failed";
+                    CloudAgentContracts.AddEvent(state, run.ID, "run_failed", CloudAgentContracts.Payload(
+                        ("text", "批量媒体任务部分失败；任务不会自动重试"),
+                        ("succeeded", succeeded),
+                        ("total", completed.Count)));
+                }
+                ToolResult(run.ID, state, call, result, firstError);
+                state.MediaBatch = null;
+                CloudAgentContracts.Save(current, state);
+                await context.SaveRunAsync(current).ConfigureAwait(false);
+            }, cancellationToken).ConfigureAwait(false);
+        if (!claimed)
+        {
+            throw CloudAgentSessionService.CreationConflict();
+        }
+        run.Revision++;
     }
 
     /// <summary>canvas_apply_ops 执行。对应 Go: <c>applyCloudAgentCanvas</c>。</summary>
@@ -951,24 +1268,40 @@ public sealed partial class CloudAgentRuntimeService
         {
             throw AppError.BadAuthRequest("仅图片生成审批支持修改模型、画幅和质量");
         }
-        args.LogicalModelID = settings.LogicalModelID;
-        args.ChannelID = settings.ChannelID;
-        args.ChannelModelKey = settings.ChannelModelKey;
-        args.Size = settings.Size;
-        args.Quality = settings.Quality;
-        call.Function.Arguments = JsonSerializer.Serialize(args, GoJson.WriteOptions);
-        CloudAgentMediaPlan plan = new() { Args = args, CallID = call.ID };
+        // 批量产物（count>1）：真实参数在 state.MediaBatch 里，call.Function.Arguments 只是首项快照。
+        // 必须整批一起改，否则预览会显示 1 张、后几张却按旧的模型/画幅提交。
+        List<CloudAgentMediaArgs> items = state.MediaBatch is { Count: > 0 } batch
+            ? [.. batch.Select(entry => entry.Args)]
+            : [args];
+        foreach (CloudAgentMediaArgs item in items)
+        {
+            item.LogicalModelID = settings.LogicalModelID;
+            item.ChannelID = settings.ChannelID;
+            item.ChannelModelKey = settings.ChannelModelKey;
+            item.Size = settings.Size;
+            item.Quality = settings.Quality;
+        }
+        // 首项回写调用参数：审批哈希、撤销与「审批内容一致性」校验都按它走。
+        call.Function.Arguments = JsonSerializer.Serialize(items[0], GoJson.WriteOptions);
         await using CloudAgentMutationContext planningContext =
             await _repository.OpenCloudAgentContextAsync(cancellationToken).ConfigureAwait(false);
-        (CreateTaskRequestDto request, CloudAgentMediaPlan _) = await _media.PrepareAsync(
-            planningContext, run, state, call, cancellationToken).ConfigureAwait(false);
-        // 干跑准入使用与提交相同的模型、归属与规格校验，不预留积分、不建任务。
-        (TaskEntity admitted, BillingOrder? _) = await _taskCreation.AdmitQueuedAsync(
-            run.UserID, request, request.Input, request.Type!, request.Prompt, "", "",
-            cancellationToken).ConfigureAwait(false);
-        Dictionary<string, JsonElement>? resolvedConfig = InputConfigInputJson(admitted.InputJSON);
-        CloudAgentMediaService.ValidateResolvedOptions(InputConfig(request.Input), resolvedConfig!);
-        string modelName = await _media.ModelNameAsync(args, cancellationToken).ConfigureAwait(false);
+        // 只重算请求与预览，不重建草稿节点：节点在首次 prepare 时已落画布，
+        // PrepareCoreAsync 本身不写画布（写画布的是 BakeMediaDraftAsync）。
+        // 逐项走 PrepareItemAsync：批量项的 Count 已是 1，再走 PrepareAsync 会把编号节点
+        // 又派生一层（image-new-1-1）。
+        foreach (CloudAgentMediaArgs item in items)
+        {
+            (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan _) = await _media.PrepareItemAsync(
+                planningContext, run, state, item, call.ID, cancellationToken).ConfigureAwait(false);
+            // 干跑准入使用与提交相同的模型、归属与规格校验，不预留积分、不建任务。
+            (TaskEntity admitted, BillingOrder? _) = await _taskCreation.AdmitQueuedAsync(
+                run.UserID, requests[0], requests[0].Input, requests[0].Type!, requests[0].Prompt, "", "",
+                cancellationToken).ConfigureAwait(false);
+            Dictionary<string, JsonElement>? resolvedConfig = InputConfigInputJson(admitted.InputJSON);
+            CloudAgentMediaService.ValidateResolvedOptions(InputConfig(requests[0].Input), resolvedConfig!);
+        }
+        CloudAgentMediaPlan plan = new() { Items = [.. items.Select(item => item)], CallID = call.ID };
+        string modelName = await _media.ModelNameAsync(plan.Args, cancellationToken).ConfigureAwait(false);
         state.Calls[state.CallIndex] = call;
         state.Approval.Call = call;
         state.Approval.CallHash = CloudAgentMutations.ApprovalCallHash(call);
@@ -1052,8 +1385,14 @@ public sealed partial class CloudAgentRuntimeService
         string activeID = state?.ActiveTaskID ?? run.ActiveTaskID;
         string mediaID = state?.MediaTaskID ?? run.MediaTaskID;
         string canvasID = state?.Request.CanvasID ?? run.CanvasID;
+        // 批量产物（本 fork 扩展）的任务 ID 在批次项上：收尾时要一并取消，否则会留下没人管的收费任务。
+        List<string> cleanupIDs = [run.ID, activeID, mediaID];
+        if (state?.MediaBatch is { Count: > 0 } cleanupBatch)
+        {
+            cleanupIDs.AddRange(cleanupBatch.Select(item => item.TaskID));
+        }
         HashSet<string> seen = new(StringComparer.Ordinal);
-        foreach (string id in new[] { run.ID, activeID, mediaID })
+        foreach (string id in cleanupIDs)
         {
             if (id.Length == 0 || !seen.Add(id))
             {
@@ -1087,7 +1426,8 @@ public sealed partial class CloudAgentRuntimeService
                 }
             }
         }
-        if (mediaID.Length > 0 && state is not null && state.CallIndex < state.Calls.Count)
+        if ((mediaID.Length > 0 || state?.MediaBatch is { Count: > 0 })
+            && state is not null && state.CallIndex < state.Calls.Count)
         {
             try
             {

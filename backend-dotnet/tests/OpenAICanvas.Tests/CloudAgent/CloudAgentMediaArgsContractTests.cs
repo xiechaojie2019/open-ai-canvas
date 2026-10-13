@@ -54,7 +54,7 @@ public sealed class CloudAgentMediaArgsContractTests
         [
             "mode", "prompt", "logicalModelId", "channelId", "channelModelKey",
             "durationSeconds", "size", "quality", "videoGenerateAudio",
-            "snapshotHash", "nodeId", "title", "sourceNodeId", "referenceNodeIds",
+            "snapshotHash", "nodeId", "title", "sourceNodeId", "referenceNodeIds", "count",
         ];
         foreach (string field in schemaFields)
         {
@@ -87,6 +87,7 @@ public sealed class CloudAgentMediaArgsContractTests
     [InlineData("referenceNodeIds")]
     [InlineData("videoGenerateAudio")]
     [InlineData("snapshotHash")]
+    [InlineData("count")]
     public void Go的json_tag必须被接受(string field)
     {
         string json = $$"""
@@ -110,6 +111,44 @@ public sealed class CloudAgentMediaArgsContractTests
             """{"mode":"video","prompt":"p","snapshotHash":"h","nodeId":"n","title":"t","referenceNodeIds":[],"duratioSeconds":3}"""));
     }
 
+    /// <summary>
+    /// 批量出图（count&gt;1，本 fork 扩展）的 schema 契约：字段必须真的下发给模型，
+    /// 且上限与 <see cref="CloudAgentMediaService.MaxBatchCount"/> 同源——两处各写一个数字
+    /// 迟早会漂移成「schema 允许 12、服务端只放 8」。
+    /// </summary>
+    [Fact]
+    public void 工具schema必须声明count且上限与服务端一致()
+    {
+        Dictionary<string, System.Text.Json.JsonElement> tool = CloudAgentTools.BuildTools(null)
+            .Single(item => item["function"].GetProperty("name").GetString() == "generate_media");
+        System.Text.Json.JsonElement parameters = tool["function"].GetProperty("parameters");
+        System.Text.Json.JsonElement properties = parameters.GetProperty("properties");
+
+        Assert.True(properties.TryGetProperty("count", out System.Text.Json.JsonElement count),
+            "generate_media schema 必须声明 count，否则模型无从表达「一次出几张」");
+        Assert.Equal("integer", count.GetProperty("type").GetString());
+        Assert.Equal(1, count.GetProperty("minimum").GetInt32());
+        Assert.Equal(CloudAgentMediaService.MaxBatchCount, count.GetProperty("maximum").GetInt32());
+        Assert.Contains("image", count.GetProperty("description").GetString()!);
+
+        // count 不是必填：不传等价于 1，单产物路径与 Go 保持同形。
+        Assert.DoesNotContain("count", parameters.GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+    }
+
+    /// <summary>批量参数必须能解码出张数，且单张时默认 1。</summary>
+    [Fact]
+    public void 批量张数可解码()
+    {
+        CloudAgentMediaArgs batch = CloudAgentContracts.DecodeObject<CloudAgentMediaArgs>(
+            """{"mode":"image","prompt":"p","snapshotHash":"h","nodeId":"n","title":"t","referenceNodeIds":[],"count":3}""");
+        Assert.Equal(3, batch.Count);
+
+        CloudAgentMediaArgs single = CloudAgentContracts.DecodeObject<CloudAgentMediaArgs>(
+            """{"mode":"image","prompt":"p","snapshotHash":"h","nodeId":"n","title":"t","referenceNodeIds":[]}""");
+        Assert.Equal(0, single.Count); // 0 = 未传；PrepareCoreAsync 会归一成 1。
+    }
+
     private static string SampleFor(string field) => field switch
     {
         "mode" => "\"video\"",
@@ -126,6 +165,7 @@ public sealed class CloudAgentMediaArgsContractTests
         "title" => "\"t\"",
         "sourceNodeId" => "\"s\"",
         "referenceNodeIds" => "[\"img-1\"]",
+        "count" => "3",
         _ => "null",
     };
 }

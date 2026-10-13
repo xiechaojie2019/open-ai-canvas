@@ -1,4 +1,5 @@
 #nullable enable
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Nodes;
@@ -69,13 +70,33 @@ public sealed class CloudAgentMediaArgs
     public string SourceNodeID { get; set; } = "";
     [JsonPropertyName("referenceNodeIds")]
     public List<string> ReferenceNodeIDs { get; set; } = [];
+
+    /// <summary>
+    /// 本次要出的产物数量（只有图片生成支持 &gt;1）。
+    /// ⚠️ 本 fork 扩展，<b>Go 的 <c>cloudAgentMediaArgs</c> 没有这个字段</b>：
+    /// Go 一次调用只出一个产物。这里由服务端展开成 N 个节点 + N 个 count=1 的任务，
+    /// 对齐前端「直接图片生成选 N 张」的行为（<c>canvas-image-generation-executor.ts</c>）。
+    /// </summary>
+    [JsonPropertyName("count")]
+    public int Count { get; set; }
 }
 
 /// <summary>媒体计划。对应 Go: <c>app.cloudAgentMediaPlan</c>。</summary>
+/// <remarks>
+/// <see cref="Items"/> 恒有 ≥1 项：count==1 时就是 1 项（与 Go 完全一致），
+/// count&gt;1 时是服务端按派生节点 ID 展开的 N 项（本 fork 扩展）。
+/// 所有既有调用点用的 <see cref="Args"/> 即首项，因此单产物路径行为不变。
+/// </remarks>
 public sealed class CloudAgentMediaPlan
 {
-    public CloudAgentMediaArgs Args { get; init; } = new();
+    public List<CloudAgentMediaArgs> Items { get; init; } = [];
     public string CallID { get; init; } = "";
+
+    /// <summary>首项（单产物路径等价于「那个」参数集）。</summary>
+    public CloudAgentMediaArgs Args => Items[0];
+
+    /// <summary>是否是一次出多个产物的批量计划。</summary>
+    public bool IsBatch => Items.Count > 1;
 }
 
 /// <summary>审批边界允许修改的图片参数。对应 Go: <c>app.CloudAgentMediaSettings</c>。</summary>
@@ -104,6 +125,9 @@ public sealed class CloudAgentMediaService
     }
 
     public static bool GenerationModeSupported(string mode) => CloudAgentNodes.GenerationModeSupported(mode);
+
+    /// <summary>一次 generate_media 最多出多少个图片产物。本 fork 扩展（Go 恒为 1）。</summary>
+    public const int MaxBatchCount = 8;
 
     public static string Operation(string mode, IReadOnlyDictionary<string, List<JsonObject>> references)
     {
@@ -549,6 +573,18 @@ public sealed class CloudAgentMediaService
             throw AppError.BadAuthRequest("生成模式当前不受 Agent 支持");
         }
         args.Mode = mode;
+        if (args.Count < 0)
+        {
+            throw AppError.BadAuthRequest("生成数量不能为负数");
+        }
+        if (args.Count > MaxBatchCount)
+        {
+            throw AppError.BadAuthRequest($"一次最多生成 {MaxBatchCount} 个产物");
+        }
+        if (args.Count > 1 && mode != "image")
+        {
+            throw AppError.BadAuthRequest("只有图片生成支持一次出多张；视频与音频请固定为 1");
+        }
         if (args.SnapshotHash.Length == 0)
         {
             throw AppError.BadAuthRequest("缺少画布快照，请先读取当前画布");
@@ -623,7 +659,12 @@ public sealed class CloudAgentMediaService
     }
 
     /// <summary>组装媒体任务请求。对应 Go: <c>prepareCloudAgentMedia</c>。</summary>
-    public async Task<(CreateTaskRequestDto Request, CloudAgentMediaPlan Plan)> PrepareAsync(
+    /// <remarks>
+    /// count&gt;1 时返回 N 个请求（每项的 <c>config.count</c> 固定为 "1"——服务端硬约束
+    /// 「每个获批执行项只能生成一个产物」），<c>Plan.Items[k]</c> 与 <c>Requests[k]</c> 一一对应。
+    /// count==1 时与 Go 完全同形：1 个请求、1 项 Items。
+    /// </remarks>
+    public async Task<(List<CreateTaskRequestDto> Requests, CloudAgentMediaPlan Plan)> PrepareAsync(
         CloudAgentMutationContext context, CloudAgentExecution run, CloudAgentRuntimeDto state,
         CloudAgentCallDto call, CancellationToken cancellationToken)
     {
@@ -640,16 +681,133 @@ public sealed class CloudAgentMediaService
         {
             throw AppError.BadAuthRequest("生成参数必须是只含支持字段的单个JSON对象");
         }
+        return await PrepareCoreAsync(context, run, state, args, call.ID, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 按已固化参数重走校验与请求组装。批量路径专用：参数存在
+    /// <see cref="CloudAgentRuntimeDto.MediaBatch"/> 里，不再是 <c>call.Function.Arguments</c>。
+    /// </summary>
+    public Task<(List<CreateTaskRequestDto> Requests, CloudAgentMediaPlan Plan)> PrepareItemAsync(
+        CloudAgentMutationContext context, CloudAgentExecution run, CloudAgentRuntimeDto state,
+        CloudAgentMediaArgs args, string callID, CancellationToken cancellationToken) =>
+        PrepareCoreAsync(context, run, state, args, callID, cancellationToken);
+
+    private async Task<(List<CreateTaskRequestDto> Requests, CloudAgentMediaPlan Plan)> PrepareCoreAsync(
+        CloudAgentMutationContext context, CloudAgentExecution run, CloudAgentRuntimeDto state,
+        CloudAgentMediaArgs args, string callID, CancellationToken cancellationToken)
+    {
         args.Mode = args.Mode.Trim().ToLowerInvariant();
         args.DraftRunID = run.ID;
+        if (args.Count <= 0)
+        {
+            args.Count = 1; // 未传 count 等价于 1，单产物语义与 Go 一致。
+        }
         ValidateArgs(args, state);
         if ((args.LogicalModelID.Length == 0 && (args.ChannelID.Length == 0 || args.ChannelModelKey.Length == 0))
             || (args.LogicalModelID.Length > 0 && (args.ChannelID.Length > 0 || args.ChannelModelKey.Length > 0)))
         {
             throw AppError.BadAuthRequest("请复制 model_list 的 selection：逻辑模型或系统渠道二选一，不得混用");
         }
+        EnsureBatchBudget(args, state);
         (_, _, Dictionary<string, List<JsonObject>> refs) = await MediaDocumentAsync(
             context, run.UserID, state.Request.CanvasID, args, cancellationToken).ConfigureAwait(false);
+        ValidateReferences(args.Mode, refs);
+        string operation = Operation(args.Mode, refs);
+        if (operation.Length == 0)
+        {
+            throw AppError.BadAuthRequest("生成模式尚未实现媒体任务适配器");
+        }
+        List<string> nodeIDs = BatchNodeIDs(args);
+        List<CloudAgentMediaArgs> items = new(nodeIDs.Count);
+        List<CreateTaskRequestDto> requests = new(nodeIDs.Count);
+        for (int index = 0; index < nodeIDs.Count; index++)
+        {
+            CloudAgentMediaArgs item = CloneMediaArgs(args, nodeIDs[index], index, nodeIDs.Count);
+            items.Add(item);
+            requests.Add(BuildMediaRequest(state, item, refs, operation));
+        }
+        return (requests, new CloudAgentMediaPlan { Items = items, CallID = callID });
+    }
+
+    /// <summary>批量产物数是否超出本轮预算。必须在建草稿前拦，避免建了节点却提交不了。</summary>
+    internal static void EnsureBatchBudget(CloudAgentMediaArgs args, CloudAgentRuntimeDto state)
+    {
+        if (state.Request.Budget.MaxGenerationTasks > 0
+            && state.Generations + args.Count > state.Request.Budget.MaxGenerationTasks)
+        {
+            int remaining = Math.Max(0, state.Request.Budget.MaxGenerationTasks - state.Generations);
+            throw AppError.BadAuthRequest(
+                $"本轮剩余生成次数不足：还可生成 {remaining} 个，本次请求 {args.Count} 个");
+        }
+        if (args.Mode == "video" && state.Request.Budget.MaxVideoSeconds > 0
+            && state.VideoSeconds + args.Count * args.Duration > state.Request.Budget.MaxVideoSeconds)
+        {
+            throw AppError.BadAuthRequest("已超过本轮视频时长预算");
+        }
+    }
+
+    /// <summary>把一次调用要出的每个产物映射到自己的节点 ID。count==1 时原样返回模型给的 ID。</summary>
+    internal static List<string> BatchNodeIDs(CloudAgentMediaArgs args)
+    {
+        if (args.Count <= 1)
+        {
+            return [args.NodeID];
+        }
+        // 派生而不是服务端自造随机 ID：模型才能在后续轮次里按 ID 指认/复用这些草稿。
+        if (args.NodeID.Length + 3 > 80)
+        {
+            throw AppError.BadAuthRequest(
+                "一次生成多张时 nodeId 不能超过 77 个字符（服务端要追加 -1、-2 …）");
+        }
+        List<string> ids = new(args.Count);
+        for (int index = 1; index <= args.Count; index++)
+        {
+            string id = args.NodeID + "-" + index.ToString(CultureInfo.InvariantCulture);
+            CloudAgentContracts.ValidateCloudAgentID(id, "生成节点 ID", 80);
+            ids.Add(id);
+        }
+        return ids;
+    }
+
+    /// <summary>派生单个产物的参数副本：换节点 ID/标题，其余（含读时快照）沿用父参数。</summary>
+    internal static CloudAgentMediaArgs CloneMediaArgs(
+        CloudAgentMediaArgs source, string nodeID, int index, int total)
+    {
+        string title = source.Title.Trim();
+        if (total > 1)
+        {
+            string suffix = " " + (index + 1).ToString(CultureInfo.InvariantCulture);
+            title = CloudAgentContracts.TruncateRunes(title, 240 - suffix.Length) + suffix;
+        }
+        return new CloudAgentMediaArgs
+        {
+            DraftRunID = source.DraftRunID,
+            Mode = source.Mode,
+            Prompt = source.Prompt,
+            LogicalModelID = source.LogicalModelID,
+            ChannelID = source.ChannelID,
+            ChannelModelKey = source.ChannelModelKey,
+            Duration = source.Duration,
+            Size = source.Size,
+            Quality = source.Quality,
+            VideoGenerateAudio = source.VideoGenerateAudio,
+            // 读时快照先原样带过来（草稿准入要校验它），SnapshotHash/DependencyHash
+            // 由 BakeMediaDraftAsync 在建完草稿后逐项重算覆盖。
+            SnapshotHash = source.SnapshotHash,
+            NodeID = nodeID,
+            Title = title,
+            SourceNodeID = source.SourceNodeID,
+            ReferenceNodeIDs = [.. source.ReferenceNodeIDs],
+            Count = 1,
+        };
+    }
+
+    private static CreateTaskRequestDto BuildMediaRequest(
+        CloudAgentRuntimeDto state, CloudAgentMediaArgs args,
+        IReadOnlyDictionary<string, List<JsonObject>> refs, string operation)
+    {
         JsonObject config = new() { ["count"] = "1" };
         if (args.ChannelID.Length > 0)
         {
@@ -680,12 +838,6 @@ public sealed class CloudAgentMediaService
         input["mode"] = JsonSerializer.SerializeToElement(args.Mode);
         input["prompt"] = JsonSerializer.SerializeToElement(args.Prompt);
         input["config"] = JsonSerializer.SerializeToElement(config);
-        ValidateReferences(args.Mode, refs);
-        string operation = Operation(args.Mode, refs);
-        if (operation.Length == 0)
-        {
-            throw AppError.BadAuthRequest("生成模式尚未实现媒体任务适配器");
-        }
         JsonObject metadata = new()
         {
             ["nodeId"] = args.NodeID,
@@ -696,7 +848,7 @@ public sealed class CloudAgentMediaService
             metadata["videoEditOperation"] = operation;
         }
         input["metadata"] = JsonSerializer.SerializeToElement(metadata);
-        return (new CreateTaskRequestDto
+        return new CreateTaskRequestDto
         {
             ProjectID = state.Request.CanvasID,
             Type = "canvas_" + args.Mode,
@@ -705,19 +857,17 @@ public sealed class CloudAgentMediaService
             LogicalModelID = args.LogicalModelID,
             Model = args.ChannelModelKey,
             Input = input,
-        }, new CloudAgentMediaPlan { Args = args, CallID = call.ID });
+        };
     }
 
-    /// <summary>媒体审批预览。对应 Go: <c>cloudAgentMediaApprovalPreview</c>。</summary>
+    /// <summary>
+    /// 媒体审批预览。对应 Go: <c>cloudAgentMediaApprovalPreview</c>。
+    /// count&gt;1（本 fork 扩展）时按节点逐项列出，用户一张卡授权整批。
+    /// </summary>
     public static CloudAgentApprovalPreviewDto ApprovalPreview(CloudAgentMediaPlan plan, string modelName)
     {
         CloudAgentMediaArgs args = plan.Args;
         (CapabilityDescriptor descriptor, bool _) = CloudAgentNodes.ForGenerationMode(args.Mode);
-        string nodeTitle = CloudAgentContracts.TruncateRunes(args.Title.Trim(), 120);
-        if (nodeTitle.Length == 0)
-        {
-            nodeTitle = "未命名" + descriptor.Label;
-        }
         List<string> details = new(6);
         if (modelName.Length > 0)
         {
@@ -742,25 +892,37 @@ public sealed class CloudAgentMediaService
         {
             details.Add(args.VideoGenerateAudio.Value ? "音频：开启" : "音频：关闭");
         }
+        List<CloudAgentApprovalPreviewItemDto> items = new(plan.Items.Count);
+        foreach (CloudAgentMediaArgs item in plan.Items)
+        {
+            string nodeTitle = CloudAgentContracts.TruncateRunes(item.Title.Trim(), 120);
+            if (nodeTitle.Length == 0)
+            {
+                nodeTitle = "未命名" + descriptor.Label;
+            }
+            items.Add(new CloudAgentApprovalPreviewItemDto
+            {
+                Operation = "generate_media",
+                NodeID = item.NodeID,
+                NodeTitle = nodeTitle,
+                NodeType = descriptor.Type,
+                NodeTypeLabel = descriptor.Label,
+                Details = details,
+                Summary = "生成" + descriptor.Label + "《" + nodeTitle + "》",
+            });
+        }
+        string prefix = plannerCountPrefix(plan, descriptor);
         return new CloudAgentApprovalPreviewDto
         {
             Kind = "media_generation",
-            Title = "确认生成" + descriptor.Label,
-            Description = descriptor.Label + "草稿节点和引用连线已创建，尚未提交生成。确认规格后批准才会提交收费任务；拒绝则保留草稿，结果自动回写画布。",
-            Items =
-            [
-                new CloudAgentApprovalPreviewItemDto
-                {
-                    Operation = "generate_media",
-                    NodeID = args.NodeID,
-                    NodeTitle = nodeTitle,
-                    NodeType = descriptor.Type,
-                    NodeTypeLabel = descriptor.Label,
-                    Details = details,
-                    Summary = "生成" + descriptor.Label + "《" + nodeTitle + "》",
-                },
-            ],
+            Title = "确认生成" + descriptor.Label + (plan.IsBatch ? $" × {plan.Items.Count}" : ""),
+            Description = prefix + descriptor.Label
+                + "草稿节点和引用连线已创建，尚未提交生成。确认规格后批准才会提交收费任务；拒绝则保留草稿，结果自动回写画布。",
+            Items = items,
         };
+
+        static string plannerCountPrefix(CloudAgentMediaPlan plan, CapabilityDescriptor descriptor) =>
+            plan.IsBatch ? $"本次将生成 {plan.Items.Count} 个{descriptor.Label}，" : "";
     }
 
     /// <summary>媒体任务模型目录意图。对应 Go: <c>cloudAgentModelIntent</c>。</summary>

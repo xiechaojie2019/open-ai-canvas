@@ -471,10 +471,45 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>已生效（未被撤销）的画布变更状态集。对应 Go 的字面量 <c>[]string{"applied","not_undoable"}</c>。</summary>
+    private static readonly string[] AppliedMutationStatuses = ["applied", "not_undoable"];
+
+    /// <summary>
+    /// 整个画布上最近一次 Agent 画布变更（不限运行）。
+    /// 用来区分「本轮自己的写」和「之后另一轮 Agent 的写」；用户手工编辑不会留下 mutation 行，
+    /// 因此最终仍会被 afterSnapshotHash 与实时文档不一致挡住。
+    /// 对应 Go: <c>LatestCloudAgentCanvasMutationForCanvas</c>。
+    /// </summary>
+    public async Task<CloudAgentCanvasMutation?> LatestCloudAgentCanvasMutationForCanvasAsync(
+        string userId, string canvasId, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await FirstOrDefaultAsync<CloudAgentCanvasMutation>(
+            connection,
+            SqlBuilder.Select<CloudAgentCanvasMutation>(
+                "\"userId\" = @userId AND \"canvasId\" = @canvasId AND \"status\" IN @statuses",
+                limitOffset: " ORDER BY \"createdAt\" DESC, id DESC LIMIT 1"),
+            new { userId, canvasId, statuses = AppliedMutationStatuses },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>某运行在某画布上的有序画布变更链（只含已生效行）。对应 Go: <c>CloudAgentCanvasMutationChain</c>。</summary>
+    public async Task<List<CloudAgentCanvasMutation>> CloudAgentCanvasMutationChainAsync(
+        string userId, string runId, string canvasId, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        return (await QueryAsync<CloudAgentCanvasMutation>(
+            connection,
+            SqlBuilder.Select<CloudAgentCanvasMutation>(
+                "\"userId\" = @userId AND \"runId\" = @runId AND \"canvasId\" = @canvasId AND \"status\" IN @statuses",
+                limitOffset: " ORDER BY \"createdAt\", id"),
+            new { userId, runId, canvasId, statuses = AppliedMutationStatuses },
+            cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
+    }
+
     internal async Task<CloudAgentCanvasMutation?> LatestCloudAgentCanvasMutationByIdAsync(
         DbConnection connection, DbTransaction? transaction, string userId, string runId,
-        CancellationToken cancellationToken)
-    {
+        CancellationToken cancellationToken)    {
         return await FirstOrDefaultAsync<CloudAgentCanvasMutation>(
             connection,
             SqlBuilder.Select<CloudAgentCanvasMutation>(

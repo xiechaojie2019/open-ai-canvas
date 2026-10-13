@@ -333,7 +333,7 @@ public static class CloudAgentTools
         if (request.PermissionMode != "read_only" && request.ContextScope.Count > 0)
         {
             Add("generate_media",
-                "创建或续用未提交媒体草稿及引用连线，独立审批通过后才提交收费任务，auto也不能跳过审批。用户要求生成且参数齐备时应直接调用本工具进入审批，不能只填提示词就结束。先读取画布与按本次素材筛选的模型目录。可复用当前草稿、无任务的空白媒体占位节点，以及已结束且清理完成运行留下的未提交草稿；重新读取快照并重新审批。仍在其他运行审批中的草稿、已绑定任务或已有成品不能覆盖，不得循环换ID绕过限制。sourceNodeId仅文本/镜头提示词节点；图片/视频/音频只放referenceNodeIds，参考顺序对应提示词编号，不接受URL。校验错误须针对错误修正；已提交任务失败不得再次收费生成。",
+                "创建或续用未提交媒体草稿及引用连线。请求审批模式下独立审批通过后才提交收费任务；自动执行模式下建完草稿直接提交，费用由本轮预算上限（积分/生成次数/视频秒数）兜底。用户要求生成且参数齐备时应直接调用本工具，不能只填提示词就结束。一次要出多张图时用 count 指定张数，服务端会一次建好对应数量的节点并并行提交，绝不要为了多出图而反复逐张调用。先读取画布与按本次素材筛选的模型目录。可复用当前草稿、无任务的空白媒体占位节点，以及已结束且清理完成运行留下的未提交草稿；重新读取快照并重新审批。仍在其他运行审批中的草稿、已绑定任务或已有成品不能覆盖，不得循环换ID绕过限制。sourceNodeId仅文本/镜头提示词节点；图片/视频/音频只放referenceNodeIds，参考顺序对应提示词编号，不接受URL。校验错误须针对错误修正；已提交任务失败不得再次收费生成。",
                 new JsonObject
                 {
                     ["mode"] = new JsonObject
@@ -362,6 +362,13 @@ public static class CloudAgentTools
                         ["type"] = "array",
                         ["maxItems"] = 16,
                         ["items"] = Str("当前画布媒体参考节点ID；参考图只放此处，保持引用顺序"),
+                    },
+                    ["count"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 1,
+                        ["maximum"] = CloudAgentMediaService.MaxBatchCount,
+                        ["description"] = "一次要出几张图；仅 mode=image 可用，默认1。服务端会一次建好对应数量的节点并并行提交，因此需要多张时只调用一次、不要逐张重复调用。",
                     },
                 }, "mode", "prompt", "snapshotHash", "nodeId", "title", "referenceNodeIds");
         }

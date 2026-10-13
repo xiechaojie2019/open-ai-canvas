@@ -167,6 +167,23 @@ public sealed partial class CloudAgentRuntimeService
         {
             throw new InvalidOperationException("Agent runtime media task is not attached to current call");
         }
+        // 批量产物（本 fork 扩展）：任务 ID 挂在批次项上，与单槽 mediaTaskId 互斥。
+        if (state.MediaBatch is { Count: > 0 } batch)
+        {
+            if (state.MediaTaskID.Length > 0 || state.CallIndex >= state.Calls.Count
+                || state.Calls[state.CallIndex].Function.Name != "generate_media")
+            {
+                throw new InvalidOperationException("Agent runtime media batch is not attached to current call");
+            }
+            foreach (CloudAgentMediaBatchItemDto item in batch)
+            {
+                if (item.Args.NodeID.Length == 0
+                    || (item.TaskID.Length > 0 && !state.TaskIDs.Contains(item.TaskID)))
+                {
+                    throw new InvalidOperationException("Agent runtime media batch item is invalid");
+                }
+            }
+        }
         if (state.Decisions is null || state.Events is null)
         {
             throw new InvalidOperationException("Agent runtime maps are missing");
@@ -668,6 +685,8 @@ public sealed partial class CloudAgentRuntimeService
                     state.ActiveTaskID = "";
                     state.Calls = calls;
                     state.CallIndex = 0;
+                    // 本轮（模型一次输出）的读时快照基线：同轮后续写调用靠它判断能不能接续快照。
+                    state.StepSnapshotHash = CaptureStepSnapshotHash(calls);
                     if (calls.Count > 0)
                     {
                         Dictionary<string, JsonElement> assistantMessage = new(StringComparer.Ordinal)

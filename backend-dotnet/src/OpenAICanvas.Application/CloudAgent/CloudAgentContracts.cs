@@ -475,6 +475,19 @@ public sealed class CloudAgentRuntimeDto
     [GoOmitEmpty]
     public string MediaTaskID { get; set; } = "";
 
+    /// <summary>
+    /// 一次 generate_media 出多个产物（count&gt;1）时的批量在途清单：每项是
+    /// 「已固化的参数 + 已提交的任务 ID」。count==1 仍走 <see cref="MediaTaskID"/> 单槽，
+    /// 本字段保持空。
+    /// <para>
+    /// ⚠️ 本 fork 扩展，<b>Go 无对应物</b>——Go 的 generate_media 一次只出一个产物
+    ///（<c>CreationRunService</c> 亦硬拒 count != 1：「每个获批执行项只能生成一个产物」）。
+    /// </para>
+    /// </summary>
+    [JsonPropertyName("mediaBatch")]
+    [GoOmitEmpty]
+    public List<CloudAgentMediaBatchItemDto>? MediaBatch { get; set; }
+
     [JsonPropertyName("taskIds")]
     public List<string> TaskIDs { get; set; } = [];
 
@@ -504,6 +517,15 @@ public sealed class CloudAgentRuntimeDto
     [GoOmitEmpty]
     public Dictionary<string, string>? DecisionSettings { get; set; }
 
+    /// <summary>
+    /// 本步（模型一次输出）里第一个非空 snapshotHash，作为「同轮多写接续快照」的基线。
+    /// 对应 Go: <c>cloudAgentRuntime.StepSnapshotHash</c>（<c>cloud_agent_runtime.go</c> 声明、
+    /// 载入模型输出时由 <c>cloudAgentCaptureStepSnapshotHash</c> 捕获）。
+    /// </summary>
+    [JsonPropertyName("stepSnapshotHash")]
+    [GoOmitEmpty]
+    public string StepSnapshotHash { get; set; } = "";
+
     [JsonPropertyName("events")]
     public List<CloudAgentEventDto> Events { get; set; } = [];
 
@@ -528,9 +550,22 @@ public sealed class CloudAgentRuntimeDto
     public List<CloudAgentImageInspectionDto>? PendingImageInspections { get; set; }
 }
 
-/// <summary>对应 Go: <c>app.providerTextMessage</c>。</summary>
-public sealed class CloudAgentTextMessageDto
+/// <summary>
+/// 批量媒体在途项（本 fork 扩展，Go 无对应物）。
+/// <see cref="Args"/> 是服务端固化过快照/依赖哈希的参数副本；<see cref="TaskID"/> 在提交后写入。
+/// </summary>
+public sealed class CloudAgentMediaBatchItemDto
 {
+    [JsonPropertyName("args")]
+    public CloudAgentMediaArgs Args { get; set; } = new();
+
+    [JsonPropertyName("taskId")]
+    [GoOmitEmpty]
+    public string TaskID { get; set; } = "";
+}
+
+/// <summary>对应 Go: <c>app.providerTextMessage</c>。</summary>
+public sealed class CloudAgentTextMessageDto{
     [JsonPropertyName("role")]
     public string Role { get; set; } = "";
 
