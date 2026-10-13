@@ -821,25 +821,35 @@ public sealed partial class CloudAgentRuntimeService
                         CloudAgentContracts.Save(current, state);
                         return context.SaveRunAsync(current);
                     }
+                    // ⚠️ 批内已有任务成功提交时，这个错误**不属于这一批**：它是模型在提交成功后
+                    // 又多发的一次（多半是重复/续用草稿的）generate_media 重试，而那次调用失败了。
+                    // 若此时把 MediaBatch 清掉，等于把"已经交出去、正在等结果"的一批任务的回写通道
+                    // 一并掐断 —— 任务会成功、成品会落存储，但画布节点永远停在 loading。
+                    // 正确处理：这一批继续留在 state 里等它自然到终态；只把这次失败的调用记成工具失败。
+                    bool batchAlreadySubmitted = state.MediaBatch is { Count: > 0 } submittedBatch
+                        && submittedBatch.Any(entry => entry.TaskID.Length > 0);
                     JsonObject detail = new()
                     {
                         ["phase"] = phase,
-                        ["taskSubmitted"] = submitted,
+                        ["taskSubmitted"] = submitted || batchAlreadySubmitted,
                     };
                     ToolResult(run.ID, state, state.Calls[state.CallIndex], detail, cause);
                     if (submitted)
                     {
                         state.MediaTaskID = "";
                     }
-                    // 批次必须一并清空：ToolResult 已经把 CallIndex 推过这次 generate_media 调用，
-                    // 留下 MediaBatch 会让 ValidateRuntime 的「批次必须在 generate_media 调用上」判成状态损坏。
-                    // 已提交项的结果仍留在任务中心（不自动重试收费生成），未提交项的草稿节点留在画布上可续用。
-                    state.MediaBatch = null;
-                    if (terminal)
+                    if (!batchAlreadySubmitted)
                     {
-                        current.Status = "failed";
-                        CloudAgentContracts.AddEvent(state, run.ID, "run_failed",
-                            CloudAgentContracts.Payload(("text", "媒体任务已提交，但结果处理失败；任务不会自动重试")));
+                        // 批次必须一并清空：ToolResult 已经把 CallIndex 推过这次 generate_media 调用，
+                        // 留下 MediaBatch 会让 ValidateRuntime 的「批次必须在 generate_media 调用上」判成状态损坏。
+                        // 已提交项的结果仍留在任务中心（不自动重试收费生成），未提交项的草稿节点留在画布上可续用。
+                        state.MediaBatch = null;
+                        if (terminal)
+                        {
+                            current.Status = "failed";
+                            CloudAgentContracts.AddEvent(state, run.ID, "run_failed",
+                                CloudAgentContracts.Payload(("text", "媒体任务已提交，但结果处理失败；任务不会自动重试")));
+                        }
                     }
                     CloudAgentContracts.Save(current, state);
                     return context.SaveRunAsync(current);

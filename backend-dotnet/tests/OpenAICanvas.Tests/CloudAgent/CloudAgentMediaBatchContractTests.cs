@@ -224,6 +224,50 @@ public sealed class CloudAgentMediaBatchContractTests
         Assert.Contains("Prompt = prompt,", media);
     }
 
+    // ------------------------------------------------------------------ 在途媒体任务不得被收尾掐断
+
+    /// <summary>
+    /// 批内已有任务成功提交时，一次失败的（多半是重复的）<c>generate_media</c> 调用
+    /// 不得把整批的清掉 —— 否则已交出去、正在等结果的那批任务回写通道被掐断，
+    /// 表现为「任务 succeeded、成品已落存储，画布节点永远 loading」。
+    /// </summary>
+    [Fact]
+    public void 已提交批次不得被失败的重试调用清掉()
+    {
+        string execution = RuntimeExecutionSource();
+
+        // 必须先算出「批内是否已有提交」，再按它决定要不要清空。
+        int guard = execution.IndexOf("bool batchAlreadySubmitted = state.MediaBatch is { Count: > 0 } submittedBatch", StringComparison.Ordinal);
+        Assert.True(guard >= 0, "MediaErrorAsync 必须先判断批内是否已有提交");
+
+        int clear = execution.IndexOf("state.MediaBatch = null;", guard, StringComparison.Ordinal);
+        Assert.True(clear > guard, "清空 MediaBatch 必须晚于（且受制于）已提交判定");
+        // 清空与终态化都必须落在 !batchAlreadySubmitted 分支里。
+        Assert.Contains("if (!batchAlreadySubmitted)", execution);
+        // 工具失败回执的 taskSubmitted 要如实反映"这批已经交出去了"。
+        Assert.Contains("[\"taskSubmitted\"] = submitted || batchAlreadySubmitted,", execution);
+    }
+
+    /// <summary>
+    /// run 收尾时若还有已提交未回写的媒体任务，必须保持 running 且**保留原调用**，
+    /// 否则下一拍调度器直接跳过（completed），或丢掉调用导致 ValidateRuntime 判状态损坏。
+    /// </summary>
+    [Fact]
+    public void 在途媒体任务必须保持运行并保留调用()
+    {
+        string runtime = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeService.cs"));
+
+        Assert.Contains("bool outstandingMedia = calls.Count == 0 && HasOutstandingMediaWork(state);", runtime);
+        Assert.Contains("current.Status = outstandingMedia ? \"running\" : \"completed\";", runtime);
+        // 覆盖 Calls/CallIndex 必须被 outstandingMedia 挡住（否则批次失去挂载点）。
+        Assert.Contains("if (!outstandingMedia)", runtime);
+
+        // 判定式本身：单槽 + 批次里任一已提交，都算在途。
+        Assert.Contains("private static bool HasOutstandingMediaWork(CloudAgentRuntimeDto state)", runtime);
+        Assert.Contains("state.MediaTaskID.Length > 0", runtime);
+    }
+
     // ------------------------------------------------------------------ 预算
 
     [Fact]

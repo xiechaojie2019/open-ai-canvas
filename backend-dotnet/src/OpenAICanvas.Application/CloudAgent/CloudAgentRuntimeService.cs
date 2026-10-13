@@ -331,6 +331,25 @@ public sealed partial class CloudAgentRuntimeService
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 是否还有「已提交、尚未回写画布」的媒体任务。用于 run 收尾判定。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 这是本 fork 对 Go 的一处<b>行为修复</b>。Go 在模型输出无工具调用时直接
+    /// <c>current.Status = "completed"</c>（<c>cloud_agent_runtime.go:816</c>），而调度器见到
+    /// completed 就 <c>return nil</c> 不再推进（同文件 1856 行）—— 于是「任务已提交、仍在生成」
+    /// 的批次失去回写驱动：任务最终 succeeded、成品落在对象存储，但画布节点永久停在 loading。
+    /// Go 原版同样存在，只是它没有 count 批量，触发面小得多。
+    /// </remarks>
+    private static bool HasOutstandingMediaWork(CloudAgentRuntimeDto state)
+    {
+        if (state.MediaTaskID.Length > 0)
+        {
+            return true;
+        }
+        return state.MediaBatch is { Count: > 0 } batch && batch.Any(entry => entry.TaskID.Length > 0);
+    }
+
     /// <summary>检查点失败终止。对应 Go: <c>failCloudAgent</c>。</summary>
     private Task FailAsync(CloudAgentExecution run, CloudAgentRuntimeDto state, string message) =>
         _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision, (current, context) =>
@@ -688,10 +707,19 @@ public sealed partial class CloudAgentRuntimeService
                         }
                     }
                     state.ActiveTaskID = "";
-                    state.Calls = calls;
-                    state.CallIndex = 0;
-                    // 本轮（模型一次输出）的读时快照基线：同轮后续写调用靠它判断能不能接续快照。
-                    state.StepSnapshotHash = CaptureStepSnapshotHash(calls);
+                    // ⚠️ 模型说"我干完了"不等于任务干完了：媒体生成是异步的。若此时把 Calls 覆盖成空表
+                    // 并判 completed，调度器下一拍就 return nil（Go 同款：run.Status=="completed"），
+                    // 回写通道就此断开 —— 任务会 succeeded、成品会落存储，但画布节点永远停在 loading。
+                    // 因此「还有已提交未回写的媒体任务」时必须**保留原调用**，让下一拍继续走
+                    // AdvanceToolAsync → 媒体轮询回写（ValidateRuntime 也要求批次必须挂在 generate_media 调用上）。
+                    bool outstandingMedia = calls.Count == 0 && HasOutstandingMediaWork(state);
+                    if (!outstandingMedia)
+                    {
+                        state.Calls = calls;
+                        state.CallIndex = 0;
+                        // 本轮（模型一次输出）的读时快照基线：同轮后续写调用靠它判断能不能接续快照。
+                        state.StepSnapshotHash = CaptureStepSnapshotHash(calls);
+                    }
                     if (calls.Count > 0)
                     {
                         Dictionary<string, JsonElement> assistantMessage = new(StringComparer.Ordinal)
@@ -704,7 +732,8 @@ public sealed partial class CloudAgentRuntimeService
                     }
                     if (calls.Count == 0)
                     {
-                        current.Status = "completed";
+                        // 有在途媒体任务时保持 running（下一拍继续推进回写）；确实没有才收尾。
+                        current.Status = outstandingMedia ? "running" : "completed";
                     }
                     CloudAgentContracts.Save(current, state);
                     return context.SaveRunAsync(current);
