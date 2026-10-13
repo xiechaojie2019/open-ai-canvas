@@ -115,9 +115,58 @@ export function collapseCompletedImageBatch(root: CanvasNodeData, nodes: CanvasN
     return { ...root, metadata };
 }
 
+/**
+ * 批次全部结束后把结果收口成**单个**节点：成功产出的子图折进 `mediaHistory`，
+ * 子节点连同连线一起从文档里移除；失败子节点保留，方便「重试失败子图」。
+ *
+ * 与 `collapseCompletedImageBatch` 的区别：那个只把 `imageBatchExpanded` 置 false，
+ * 子节点仍留在文档里（渲染时隐藏）——任何一次展开、或外部写入一份旧画布，
+ * 都会让这些多余节点和连线重新冒出来。这个函数是把它们真正删掉：
+ * 「同一个生成来源的多次执行不要新增节点和连线」在文档层面才成立。
+ *
+ * 还不该收口时（仍有子任务的图没落地）返回 `removedIds: []`，由调用方保持原样。
+ */
+export function finalizeCompletedImageBatch(root: CanvasNodeData, nodes: CanvasNodeData[]) {
+    if (root.type !== CanvasNodeType.Image || !root.metadata?.isBatchRoot) {
+        return { nodes, removedIds: [] as string[] };
+    }
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const children = (root.metadata.batchChildIds || [])
+        .map((id) => nodeById.get(id))
+        .filter((node): node is CanvasNodeData => Boolean(node && node.type === CanvasNodeType.Image && node.metadata?.batchRootId === root.id));
+    if (!children.length) return { nodes, removedIds: [] as string[] };
+    // 还有子任务在途：等它出完再收口，否则生成过程看不到进度。
+    if (children.some((node) => !hasImageBatchResult(node) && node.metadata?.status === "loading")) {
+        return { nodes, removedIds: [] as string[] };
+    }
+    const folded = children.filter(hasImageBatchResult);
+    if (!folded.length) return { nodes, removedIds: [] as string[] };
+    const keptIds = children.filter((node) => !hasImageBatchResult(node)).map((node) => node.id);
+    const removedIds = folded.map((node) => node.id);
+    const removed = new Set(removedIds);
+    const extras = folded.filter((node) => node.id !== root.metadata?.primaryImageId);
+
+    const nextNodes = nodes
+        .filter((node) => !removed.has(node.id))
+        .map((node) => {
+            if (node.id !== root.id) return node;
+            const metadata: CanvasNodeMetadata = {
+                ...node.metadata,
+                mediaHistory: mergeBatchMediaHistory(node.metadata, extras),
+                // 子图已经进历史，这个节点重新变回普通图片节点；只有失败子图留下时保留批次身份。
+                isBatchRoot: keptIds.length ? true : undefined,
+                batchChildIds: keptIds.length ? keptIds : undefined,
+                batchFailedCount: keptIds.length ? keptIds.length : undefined,
+                primaryImageId: keptIds.length ? node.metadata?.primaryImageId : undefined,
+                imageBatchExpanded: keptIds.length ? false : undefined,
+            };
+            return { ...node, metadata };
+        });
+    return { nodes: nextNodes, removedIds };
+}
+
 /** 把批次子结果折进历史（最新在前，按 storageKey 去重，重复调用幂等）。 */
-function mergeBatchMediaHistory(metadata: CanvasNodeMetadata | undefined, children: CanvasNodeData[]): CanvasMediaHistoryEntry[] {
-    const existing = Array.isArray(metadata?.mediaHistory) ? metadata.mediaHistory : [];
+function mergeBatchMediaHistory(metadata: CanvasNodeMetadata | undefined, children: CanvasNodeData[]): CanvasMediaHistoryEntry[] {    const existing = Array.isArray(metadata?.mediaHistory) ? metadata.mediaHistory : [];
     const known = new Set(existing.map((entry) => entry.storageKey).filter((key): key is string => Boolean(key)));
     const fresh = children
         .map((node) => batchMediaHistoryEntry(node))

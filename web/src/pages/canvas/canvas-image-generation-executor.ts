@@ -2,13 +2,13 @@ import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
-import { cancelIncompleteImageBatch, collapseCompletedImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
+import { cancelIncompleteImageBatch, collapseCompletedImageBatch, finalizeCompletedImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { canvasImageReferenceLimitError, buildImageGenerationMetadata, getGenerationCount, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
 import { canvasMediaSourceKey, isMediaAggregationTarget, pushCurrentMediaToHistory } from "@/lib/canvas/canvas-media-history";
-import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
+import { canvasGenerationPromptMetadata, imageBatchItemPrompt } from "@/lib/canvas/canvas-generation-submission";
 import { CONTENT_MODERATION_ERROR_CODE, generationFailureMetadata, type GenerationFailureMetadata } from "@/lib/generation-error";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -222,7 +222,7 @@ export async function executeImageGeneration({
     let failureCount = 0;
     let representativeFailure: GenerationFailureMetadata | undefined;
     await Promise.all(
-        targetIds.map(async (targetId) => {
+        targetIds.map(async (targetId, index) => {
             try {
                 await runCanvasGenerationTaskToConsumer(
                     {
@@ -230,7 +230,8 @@ export async function executeImageGeneration({
                         nodeId: targetId,
                         ...retryContext,
                         mode: "image",
-                        prompt: effectivePrompt,
+                        // 多张时每张带自己的位次说明，避免同一段提示词发 N 次换来 N 张一样的拼图。
+                        prompt: imageBatchItemPrompt(effectivePrompt, index, count),
                         config: { ...generationConfig, count: "1" },
                         referenceImages,
                         signal: controller.signal,
@@ -320,7 +321,7 @@ export async function executeImageGeneration({
     }
     if (hasFailure) showError(hasSuccess ? "部分图片生成失败" : "全部图片生成失败");
     setNodes((current) => {
-        const next = current.map((node) => {
+        let next = current.map((node) => {
             if (node.id === nodeId && isConfigNode) {
                 return {
                     ...node,
@@ -345,6 +346,23 @@ export async function executeImageGeneration({
             }
             return node;
         });
+        if (count > 1) {
+            // 全部出完后收口成单个结果节点：子图折进 mediaHistory，子节点与连线从文档移除。
+            // 只想用隐藏来「折叠」是不够的——文档里留着节点和连线，一次展开或一份旧画布写回
+            // 就会让它们重新出现（线上就复现过）。这里直接把成功子图删掉，只留失败子图供重试。
+            const root = next.find((node) => node.id === rootId);
+            const finalized = root ? finalizeCompletedImageBatch(root, next) : undefined;
+            if (finalized?.removedIds.length) {
+                next = finalized.nodes;
+                const removed = new Set(finalized.removedIds);
+                setConnections((connections) => {
+                    const pruned = connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId));
+                    if (projectId) useCanvasStore.getState().updateProject(projectId, { nodes: next, connections: pruned });
+                    return pruned;
+                });
+                return next;
+            }
+        }
         if (projectId) useCanvasStore.getState().updateProject(projectId, { nodes: next });
         return next;
     });

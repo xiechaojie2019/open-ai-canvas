@@ -22,7 +22,7 @@ import { resolveCroppableImageSource } from "@/lib/canvas/canvas-pixel-source";
 import { isValidGridSplit, layoutGridSplitCells } from "@/lib/canvas/canvas-grid-split";
 import { audioMetadata, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
-import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
+import { canvasGenerationPromptMetadata, imageBatchItemPrompt } from "@/lib/canvas/canvas-generation-submission";
 import { cancelIncompleteImageBatch } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildAngleLabel, buildAnglePrompt, createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { validateVideoSegmentBatch } from "@/lib/canvas/canvas-video-regeneration";
@@ -765,13 +765,14 @@ export function useCanvasMediaTools({
         let failureCount = 0;
         let representativeError: string | undefined;
         try {
-            await Promise.all(targetIds.map(async (targetId) => {
+            await Promise.all(targetIds.map(async (targetId, index) => {
                 try {
                     const result = await runBackendCanvasGenerationTask({
                         projectId,
                         nodeId: targetId,
                         mode: "image",
-                        prompt: effectivePrompt,
+                        // 多张时每张带自己的位次说明，避免同一段提示词发 N 次换来 N 张一样的图。
+                        prompt: imageBatchItemPrompt(effectivePrompt, index, requestedCount),
                         config: { ...generationConfig, count: "1" },
                         referenceImages: [source],
                         mask: { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl },

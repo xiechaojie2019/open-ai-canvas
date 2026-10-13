@@ -161,6 +161,19 @@ public static class CloudAgentCanvasState
                 }
                 item["generation"] = generation;
             }
+            // 同一生成来源的多次执行会归并到同一个节点（见 CloudAgentMediaAggregation）：
+            // 顶层是最新一张，旧的在 metadata.mediaHistory，任务账本在 metadata.mediaTaskIds。
+            // 不告诉模型这件事，它会按「一次任务一个节点」去找，得出「付了 N 张只落下一张」的错误结论。
+            if (CloudAgentJsonHelpers.Get(meta, "mediaHistory") is JsonArray mediaHistory && mediaHistory.Count > 0)
+            {
+                item["mediaHistoryCount"] = mediaHistory.Count;
+                item["mediaHistoryNote"] =
+                    "同一生成来源的多次执行结果都归并到本节点：本节点展示最新一张，其余历史产物可切换查看，不要当成缺图";
+            }
+            if (CloudAgentJsonHelpers.Get(meta, "mediaTaskIds") is JsonArray mediaTaskIDs && mediaTaskIDs.Count > 1)
+            {
+                item["mediaTaskCount"] = mediaTaskIDs.Count;
+            }
             string draftRunID = CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, "agentDraftRunId"));
             if (draftRunID.Length > 0
                 && CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(meta, "taskId")).Length == 0)

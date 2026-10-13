@@ -34,6 +34,21 @@ export function canvasGenerationPromptMetadata(composerContent: string, effectiv
     return { composerContent, prompt: effectivePrompt };
 }
 
+/**
+ * 一次提交出多张（节点「生成数量」> 1）时，给第 `index` 张拼上它自己的位次说明。
+ *
+ * 上游一次调用只返回一张图，所以多张是「同一段配置发 N 次」。以前这 N 次用的是**逐字相同**
+ * 的提示词，于是「生成三张不同花色的小猫不要拼图」这种描述会被模型画进同一张图里
+ * （拼图 / 多主体并排），N 张结果几乎一模一样，等于白花 N 倍算力。
+ * 这里补上位次 + 「本次只出一张」的硬约束，让每张都是独立完整的单幅画面。
+ *
+ * `count <= 1` 时原样返回，单张路径行为不变。
+ */
+export function imageBatchItemPrompt(prompt: string, index: number, count: number) {
+    if (count <= 1) return prompt;
+    return `${prompt.trim()}\n\n【本次只生成这一张：第 ${index + 1} 张（共 ${count} 张）。只输出一幅独立完整的单张画面，不要拼图、不要分格、不要多个主体并排。】`;
+}
+
 export function canvasGenerationRequestFingerprint(input: CanvasGenerationRequestFingerprintInput) {
     const serialized = canonicalize({
         version: 1,
