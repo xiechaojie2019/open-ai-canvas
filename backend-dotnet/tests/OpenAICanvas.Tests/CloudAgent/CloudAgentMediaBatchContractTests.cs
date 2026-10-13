@@ -231,6 +231,12 @@ public sealed class CloudAgentMediaBatchContractTests
     /// 不得把整批的清掉 —— 否则已交出去、正在等结果的那批任务回写通道被掐断，
     /// 表现为「任务 succeeded、成品已落存储，画布节点永远 loading」。
     /// </summary>
+    /// <remarks>
+    /// ⚠️ 同时**绝不能**走 <c>ToolResult</c>：它会 <c>CallIndex++</c>，把索引推过表尾，
+    /// 而本批仍挂在当前那条 <c>generate_media</c> 调用上（<c>ValidateRuntime</c> 的硬要求）。
+    /// 索引越界 ⇒ 下一拍 Decode 抛「media batch is not attached to current call」
+    /// ⇒ 409 被调度器静默吞掉 ⇒ 运行永久卡 running（比原缺陷更糟）。
+    /// </remarks>
     [Fact]
     public void 已提交批次不得被失败的重试调用清掉()
     {
@@ -246,6 +252,19 @@ public sealed class CloudAgentMediaBatchContractTests
         Assert.Contains("if (!batchAlreadySubmitted)", execution);
         // 工具失败回执的 taskSubmitted 要如实反映"这批已经交出去了"。
         Assert.Contains("[\"taskSubmitted\"] = submitted || batchAlreadySubmitted,", execution);
+
+        // 关键：已提交批次的这条失败**不得**借用 ToolResult（会推进 CallIndex ⇒ 批次失去挂载点）。
+        // 只能走「追加 tool_failed 事件」这条路；ToolResult 只保留在 else（批次尚未提交的常规失败路径）。
+        int batchBranch = execution.IndexOf("if (batchAlreadySubmitted)", StringComparison.Ordinal);
+        Assert.True(batchBranch > guard, "必须有 batchAlreadySubmitted 分支");
+        int elseBranch = execution.IndexOf("else", batchBranch, StringComparison.Ordinal);
+        Assert.True(elseBranch > batchBranch, "batchAlreadySubmitted 分支必须有对应的 else");
+        string batchBody = execution[batchBranch..elseBranch];
+        Assert.Contains("CloudAgentContracts.AddEvent(state, run.ID, \"tool_failed\"", batchBody);
+        Assert.DoesNotContain("ToolResult(run.ID, state,", batchBody);
+        // 常规失败路径仍然走 ToolResult（否则 CallIndex 永远推不过去）。
+        string elseBody = execution[elseBranch..clear];
+        Assert.Contains("ToolResult(run.ID, state,", elseBody);
     }
 
     /// <summary>
