@@ -292,8 +292,25 @@ public sealed partial class CloudAgentRuntimeService
                 return;
             }
             bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
-                (current, context) => MutatePlanApprovalAsync(
-                    current, context, run, state, call, policy, plan, modelName),
+                async (current, context) =>
+                {
+                    try
+                    {
+                        await MutatePlanApprovalAsync(
+                            current, context, run, state, call, policy, plan, modelName)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception cause) when (
+                        cause is AppError or InvalidOperationException or System.Data.Common.DbException)
+                    {
+                        // 与 auto 路径同理：建草稿失败绝不能穿出事务变成静默 409，
+                        // 必须当场记成工具失败（含批量 count>1 的第二项快照过期）。
+                        state.MediaBatch = null;
+                        ToolResult(run.ID, state, call, null, cause);
+                        CloudAgentContracts.Save(current, state);
+                        await context.SaveRunAsync(current).ConfigureAwait(false);
+                    }
+                },
                 cancellationToken).ConfigureAwait(false);
             if (!claimed)
             {
@@ -384,10 +401,23 @@ public sealed partial class CloudAgentRuntimeService
         bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
             async (current, context) =>
             {
-                await BakeMediaDraftAsync(context, run, state, _runtimePolicy.Current(), plan)
-                    .ConfigureAwait(false);
-                CloudAgentContracts.Save(current, state);
-                await context.SaveRunAsync(current).ConfigureAwait(false);
+                try
+                {
+                    await BakeMediaDraftAsync(context, run, state, _runtimePolicy.Current(), plan)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception cause) when (
+                    cause is AppError or InvalidOperationException or System.Data.Common.DbException)
+                {
+                    // ⚠️ 踩过的坑：建草稿失败原本直接穿出事务 → 抛到 AdvanceAsync 的 409 分支 →
+                    // 被调度器当「并发冲突」静默跳过，每 2 秒原地重跑直到看门狗判 failed。
+                    // 批量 count>1 时第二项快照过期就会稳定触发这条（已在本轮修掉快照接续），
+                    // 但任何残留的建草稿失败都必须**当场记进运行**、让模型能换招，绝不静默空转。
+                    state.MediaBatch = null;
+                    ToolResult(run.ID, state, call, null, cause);
+                    CloudAgentContracts.Save(current, state);
+                    await context.SaveRunAsync(current).ConfigureAwait(false);
+                }
             }, cancellationToken).ConfigureAwait(false);
         if (!claimed)
         {
@@ -425,10 +455,22 @@ public sealed partial class CloudAgentRuntimeService
     /// 建媒体草稿节点，并把每项的快照哈希与依赖哈希固化进参数。
     /// <b>必须此刻计算</b>：草稿节点与引用连线已经落画布，依赖哈希才反映真实投影；
     /// 执行准入时依赖匹配可替代全画布快照，使同画布其他生成的回写不致连坐判「画布已变化」。
-    /// count&gt;1 时逐项建节点（每项的投影互相独立，因此后一项提交时前一项已改画布也不受影响），
-    /// 并把整批参数写进 <see cref="CloudAgentRuntimeDto.MediaBatch"/>。
+    /// count&gt;1 时逐项建节点，并把整批参数写进 <see cref="CloudAgentRuntimeDto.MediaBatch"/>。
     /// 对应 Go: <c>cloudAgentPreparedMedia</c> 的 SnapshotHash / DependencyHash 赋值。
     /// </summary>
+    /// <remarks>
+    /// ⚠️ 批量（count&gt;1，本 fork 扩展）的**接续快照**是这段的核心：
+    /// <see cref="CloudAgentMediaService.CreateMediaNodeAsync"/> 内部会再走一次
+    /// <c>MediaDocumentAsync</c> 校验 <c>args.SnapshotHash</c>。而每建成功一项草稿，
+    /// 画布就被这一项改过（多了一个节点 + 一条引用连线），上一项手里的快照立刻过期。
+    /// 若第二项仍拿模型原始快照去校验，必然抛 409「画布已变化」——
+    /// 且因为它抛在 CAS 回调内部（调用点在 <c>PrepareAutoMediaDraftAsync</c> 的 try 之外），
+    /// 会绕过工具失败落库、被 <c>AdvanceAsync</c> 当成并发冲突静默跳过，
+    /// 每 2 秒原地重跑直到 5 分钟看门狗判 failed —— 线上表现为「生节点卡死」。
+    /// 因此每一项都必须先用**当前**画布的 <c>MediaContentHash</c> 刷新自己的快照再建节点。
+    /// （<c>MediaContentHash</c> 不看节点 position，也不看 viewport/updatedAt，
+    /// 所以前端高频自动保存不会污染这里；只有本批自己加节点才会改它，属于预期接续。）
+    /// </remarks>
     private async Task BakeMediaDraftAsync(
         CloudAgentMutationContext context, CloudAgentExecution run, CloudAgentRuntimeDto state,
         RuntimePolicySetting policy, CloudAgentMediaPlan plan)
@@ -436,8 +478,20 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentCallDto call = state.Calls[state.CallIndex];
         List<CloudAgentMediaBatchItemDto>? batch =
             plan.IsBatch ? new List<CloudAgentMediaBatchItemDto>() : null;
+        bool first = true;
         foreach (CloudAgentMediaArgs item in plan.Items)
         {
+            if (!first)
+            {
+                // 上一项已经把草稿节点写进画布：本项手里的快照（模型原始值，或上一轮刷新值）
+                // 对当前画布必然过期。先用当前画布刷新，再让 CreateMediaNodeAsync 校验。
+                CanvasProject? current = await context.CanvasProjectForUserAsync(
+                    run.UserID, state.Request.CanvasID).ConfigureAwait(false)
+                    ?? throw AppError.NotFound("画布不存在");
+                JsonObject currentDoc = CloudAgentJsonHelpers.Document(current.PayloadJSON);
+                item.SnapshotHash = CloudAgentContracts.MediaContentHash(currentDoc);
+            }
+            first = false;
             await _media.CreateMediaNodeAsync(
                 context, run.UserID, state.Request.CanvasID,
                 new CloudAgentMediaPlan { Items = [item], CallID = plan.CallID },

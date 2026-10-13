@@ -551,6 +551,11 @@ public sealed partial class CloudAgentRuntimeService
         catch (AppError error) when (error.Status == 409)
         {
             // 并发推进：交给调度器跳过本轮，不能判死。
+            // ⚠️ 但「静默」是要命的：如果某个 409 是运行自己稳定撞出来的（不是并发），
+            // 这里不记日志，调度器也只累计 _conflictStreak，整条路径完全不可观测。
+            // 因此这里必须留下堆栈——排查卡死时它是最快的定位手段。
+            Console.Error.WriteLine(
+                $"agent advance conflict: run={run.ID} rev={run.Revision} msg={error.Message}\n{error.StackTrace}");
             throw;
         }
         catch (Exception cause)

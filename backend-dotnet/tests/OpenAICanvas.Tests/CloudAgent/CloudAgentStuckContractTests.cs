@@ -301,6 +301,65 @@ public sealed class CloudAgentStuckContractTests : IDisposable
             body.Replace("\r\n", "\n", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 源码级契约：批量建草稿时，每一项都必须先用**当前**画布刷新自己的快照。
+    ///
+    /// 线上实例（2026-10-13，run <c>ag2e281717c6a9101cea5efc2fce4bd5ea</c>，auto + count=3 + 参考图）：
+    /// <c>BakeMediaDraftAsync</c> 逐项调 <c>CreateMediaNodeAsync</c>，而后者内部会再走一次
+    /// <c>MediaDocumentAsync</c> 校验 <c>args.SnapshotHash</c>。第一项建成功后画布多了一个草稿节点，
+    /// 第二项手里仍是模型原始快照 ⇒ 409「画布已变化」。因为它抛在 CAS 回调内部
+    /// （调用点在 <c>PrepareAutoMediaDraftAsync</c> 的 try 之外），绕过工具失败落库、
+    /// 被 <c>AdvanceAsync</c> 当并发冲突静默跳过 —— 每 2 秒原地重跑，直到 5 分钟看门狗。
+    /// 堆栈（当时实测）：
+    /// <c>MediaDocumentAsync:427 → CreateMediaNodeAsync:1061 → BakeMediaDraftAsync:441</c>。
+    ///
+    /// 修复前 <c>count=1</c> 正常、<c>count>=2</c> 必卡；这就是用户报的「生节点卡死」。
+    /// </summary>
+    [Fact]
+    public void 批量建草稿必须逐项刷新快照而不是沿用原始哈希()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeExecution.cs"));
+
+        int start = source.IndexOf("private async Task BakeMediaDraftAsync(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "必须存在草稿固化方法");
+        int end = source.IndexOf("private async Task MutatePlanApprovalAsync(", start, StringComparison.Ordinal);
+        Assert.True(end > start, "无法界定 BakeMediaDraftAsync 的函数体");
+        string body = source[start..end];
+
+        // ① 循环里必须有一次「建节点之前」的快照刷新：MediaContentHash 的赋值要出现在
+        //    CreateMediaNodeAsync 调用之前（建完之后的赋值是给下一项/记账用的）。
+        int create = body.IndexOf("_media.CreateMediaNodeAsync(", StringComparison.Ordinal);
+        Assert.True(create > 0, "必须调用 CreateMediaNodeAsync");
+        int refreshBefore = body.IndexOf(
+            "item.SnapshotHash = CloudAgentContracts.MediaContentHash(currentDoc);", StringComparison.Ordinal);
+        Assert.True(refreshBefore >= 0 && refreshBefore < create,
+            "建节点之前必须用当前画布刷新该项快照，否则 count>=2 时第二项必然 409");
+        // ② 刷新用的画布必须是本事务里刚读出来的，不能复用外部 scope 的旧对象。
+        Assert.Contains("context.CanvasProjectForUserAsync(", body);
+    }
+
+    /// <summary>
+    /// 源码级契约：CAS 回调里建草稿失败必须当场记成工具失败，不得穿出事务变成静默 409。
+    /// 这是「批量快照」之外的第二道保险：任何残留的建草稿异常都不能再让运行空转。
+    /// </summary>
+    [Fact]
+    public void 建草稿失败必须在事务内记成工具失败不得穿出成静默409()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            RepoRoot(), "src", "OpenAICanvas.Application", "CloudAgent", "CloudAgentRuntimeExecution.cs"));
+
+        // auto 路径与审批路径各一处：CAS 回调体内用 try/catch 包住 BakeMediaDraftAsync /
+        // MutatePlanApprovalAsync，失败时 state.MediaBatch 清空并落 tool 结果。
+        int baked = CountOccurrences(source, "await BakeMediaDraftAsync(context, run, state, _runtimePolicy.Current(), plan)");
+        Assert.True(baked >= 1, "找不到 auto 路径的草稿固化调用");
+        int guarded = CountOccurrences(source, "ToolResult(run.ID, state, call, null, cause);");
+        Assert.True(guarded >= 2,
+            $"auto 与审批两条路径都必须把建草稿失败记成工具失败（当前只找到 {guarded} 处）");
+        // 失败时必须清掉半成品批次，避免下一轮拿残缺 batch 继续跑。
+        Assert.Contains("state.MediaBatch = null;", source);
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         int count = 0;
