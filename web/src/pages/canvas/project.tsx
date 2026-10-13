@@ -15,6 +15,7 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
 import { uploadImage } from "@/services/image-storage";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { selectMediaHistoryVersion } from "@/lib/canvas/canvas-media-history";
 import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
 import { getCachedResourceBlob } from "@/services/resource-blob-cache";
 import copyToClipboard from "copy-to-clipboard";
@@ -77,6 +78,7 @@ import { batchReferenceColumns, promoteLegacyBatchTableSize } from "@/lib/canvas
 import { STORYBOARD_HEADER_HEIGHT, STORYBOARD_ROW_HEIGHT, storyboardMinNodeHeight, storyboardTableHeight } from "@/lib/canvas/canvas-storyboard-layout";
 import { CanvasDirectorNodePanel } from "@/components/canvas/director/canvas-director-node-panel";
 import { CanvasVersionCompareModal } from "@/components/canvas/canvas-version-compare-modal";
+import { CanvasMediaHistoryModal } from "@/components/canvas/canvas-media-history-modal";
 import { useFocusMode } from "@/hooks/use-focus-mode";
 import { connectCanvasTextMention } from "@/lib/canvas/canvas-text-mention";
 import { writeCanvasNodePrompt } from "@/lib/canvas/canvas-node-prompt";
@@ -334,6 +336,8 @@ function InfiniteCanvasPage() {
     const [scriptScrollTopById, setScriptScrollTopById] = useState<Record<string, number>>({});
     const [directorNodeId, setDirectorNodeId] = useState<string | null>(null);
     const [versionCompareRootId, setVersionCompareRootId] = useState<string | null>(null);
+    // 同一来源多次生成的历史结果（metadata.mediaHistory）查看面板对应的节点。
+    const [mediaHistoryNodeId, setMediaHistoryNodeId] = useState<string | null>(null);
     const [libTVImportOpen, setLibTVImportOpen] = useState(false);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
@@ -2467,6 +2471,15 @@ function InfiniteCanvasPage() {
         [openNodeTaskDetails],
     );
     const openCanvasNodeVersions = useCallback((node: CanvasNodeData) => setVersionCompareRootId(node.metadata?.versionOfNodeId || node.id), []);
+    const openCanvasNodeMediaHistory = useCallback((node: CanvasNodeData) => setMediaHistoryNodeId(node.id), []);
+    // 切换历史版本：把选中项与节点顶层的产物字段对调（不重新生成、不影响连线与位置）。
+    const selectCanvasMediaHistoryVersion = useCallback(
+        (nodeId: string, entryId: string) => {
+            const next = nodesRef.current.map((node) => (node.id === nodeId ? { ...node, metadata: selectMediaHistoryVersion(node.metadata, entryId) } : node));
+            setNodes(next);
+        },
+        [nodesRef, setNodes],
+    );
     const viewCanvasNodeImage = useCallback((node: CanvasNodeData) => setPreviewNodeId(node.id), []);
     const editCanvasDirector = useCallback((node: CanvasNodeData) => openDirectorWorkbench(node.id), [openDirectorWorkbench]);
     const locateProjectStyleNode = useCallback(() => {
@@ -2744,6 +2757,7 @@ function InfiniteCanvasPage() {
                                                 onReloadResource={reloadCanvasNodeResource}
                                                 onOpenTaskDetails={openCanvasNodeTaskDetails}
                                                 onOpenVersions={openCanvasNodeVersions}
+                                                onOpenMediaHistory={openCanvasNodeMediaHistory}
                                                 onViewImage={viewCanvasNodeImage}
                                                 onReplaceMedia={replaceCanvasNodeMedia}
                                                 onOpenTextEditor={openTextNodeEditor}
@@ -3285,6 +3299,15 @@ function InfiniteCanvasPage() {
                             onFocus={(nodeId) => {
                                 setVersionCompareRootId(null);
                                 focusCanvasNode(nodeId);
+                            }}
+                        />
+
+                        <CanvasMediaHistoryModal
+                            open={Boolean(mediaHistoryNodeId)}
+                            node={mediaHistoryNodeId ? nodeById.get(mediaHistoryNodeId) : undefined}
+                            onClose={() => setMediaHistoryNodeId(null)}
+                            onSelect={(entryId) => {
+                                if (mediaHistoryNodeId) selectCanvasMediaHistoryVersion(mediaHistoryNodeId, entryId);
                             }}
                         />
 

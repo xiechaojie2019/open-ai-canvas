@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { AlertCircle, BookOpenCheck, CheckCircle2, ChevronRight, Clapperboard, Copy, Download, GripVertical, Image as ImageIcon, Lock, Maximize2, Music2, Pencil, RefreshCw, ScanSearch, Settings2, Star, Trash2, Type, Video, WandSparkles } from "lucide-react";
+import { AlertCircle, BookOpenCheck, CheckCircle2, ChevronRight, Clapperboard, Copy, Download, GripVertical, History, Image as ImageIcon, Lock, Maximize2, Music2, Pencil, RefreshCw, ScanSearch, Settings2, Star, Trash2, Type, Video, WandSparkles } from "lucide-react";
 
 import { useCanvasNodeActions } from "./canvas-node-action-context";
 
@@ -57,6 +57,7 @@ type CanvasNodeProps = {
     onReloadResource?: (node: CanvasNodeData) => void;
     onOpenTaskDetails?: (node: CanvasNodeData) => void;
     onOpenVersions?: (node: CanvasNodeData) => void;
+    onOpenMediaHistory?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData) => void;
     onReplaceMedia?: (node: CanvasNodeData) => void;
     onOpenTextEditor?: (node: CanvasNodeData) => void;
@@ -105,6 +106,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onReloadResource,
     onOpenTaskDetails,
     onOpenVersions,
+    onOpenMediaHistory,
     onViewImage,
     onOpenTextEditor,
     onOpenDirector,
@@ -126,7 +128,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasMediaContent = hasImageContent || hasVideoContent || hasAudioContent;
     const isBatchRoot = data.type === CanvasNodeType.Image && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
-    const showStatusTrack = Boolean(resourceLabel || data.metadata?.locked || isBatchRoot || (isBatchChild && !readOnly) || (hasMediaContent && !readOnly));
+    // 同一来源多次生成时，旧结果留在 metadata.mediaHistory 里，节点只展示最新一张。
+    const mediaHistoryCount = data.metadata?.mediaHistory?.length ?? 0;
+    const showStatusTrack = Boolean(resourceLabel || data.metadata?.locked || isBatchRoot || (isBatchChild && !readOnly) || (hasMediaContent && !readOnly) || mediaHistoryCount > 0);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const nodeState = isFocusRelated ? "focus" : isConnectionTarget ? "target" : isSelected ? "selected" : isRelated && !isBatchChild ? "related" : "idle";
     const showOutputConnection = getNodeDefinition(data.type)?.showOutputConnection !== false;
@@ -430,6 +434,25 @@ export const CanvasNode = React.memo(function CanvasNode({
                         {data.metadata.versionLabel}
                     </button>
                 ) : null}
+                {mediaHistoryCount > 0 ? (
+                    <button
+                        type="button"
+                        className={`absolute top-3 z-[var(--node-z-overlay)] inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-[var(--r-full)] border px-2 text-[var(--node-badge-fs)] font-semibold leading-none backdrop-blur-md transition-[transform,background,border-color,box-shadow] hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:hover:translate-y-0 ${data.metadata?.versionLabel ? "left-12" : "left-3"}`}
+                        style={{
+                            background: theme.toolbar.panel,
+                            borderColor: theme.toolbar.border,
+                            color: theme.node.text,
+                            outlineColor: theme.accent.primary,
+                        }}
+                        title={`共 ${mediaHistoryCount + 1} 个结果，点击切换查看历史记录`}
+                        aria-label={`查看历史记录，共 ${mediaHistoryCount + 1} 个结果`}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => { event.stopPropagation(); onOpenMediaHistory?.(data); }}
+                    >
+                        <History className="size-3.5" />
+                        {`历史 ${mediaHistoryCount}`}
+                    </button>
+                ) : null}
                 {showStatusTrack ? (
                     <div className={`absolute right-3 top-3 z-[var(--node-z-overlay)] flex min-w-0 items-center justify-end gap-1 ${data.metadata?.versionLabel ? "max-w-[calc(100%-104px)]" : "max-w-[calc(100%-24px)]"}`}>
                         {resourceLabel && data.type !== CanvasNodeType.Image ? <ResourceLabelBadge reference={resourceLabel} theme={theme} /> : null}
@@ -530,6 +553,7 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.onReloadResource === next.onReloadResource &&
         previous.onOpenTaskDetails === next.onOpenTaskDetails &&
         previous.onOpenVersions === next.onOpenVersions &&
+        previous.onOpenMediaHistory === next.onOpenMediaHistory &&
         previous.onViewImage === next.onViewImage &&
         previous.onReplaceMedia === next.onReplaceMedia &&
         previous.onOpenTextEditor === next.onOpenTextEditor &&

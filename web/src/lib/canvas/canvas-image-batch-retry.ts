@@ -1,4 +1,5 @@
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasMediaHistoryEntry, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
+import { MEDIA_HISTORY_LIMIT } from "@/lib/canvas/canvas-media-history";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
 
 export function hasImageBatchResult(node: CanvasNodeData) {
@@ -89,6 +90,59 @@ export function cancelIncompleteImageBatch(rootId: string, childIds: string[], n
         nodes: detached,
         connections: connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)),
         removedIds,
+    };
+}
+
+/**
+ * 批次生成结束后默认折叠成一张主图：其余成功结果折进节点历史（可切换查看）。
+ *
+ * 子节点与连线都保留不删，只把 `imageBatchExpanded` 置 false —— 想并排比对时
+ * 仍然可以用批次按钮「展开对比」。因此这里刻意不放进 `reconcileImageBatchRoot`：
+ * 那个函数也会在画布加载/任务同步时被调用，会把手动展开的批次又收起来。
+ */
+export function collapseCompletedImageBatch(root: CanvasNodeData, nodes: CanvasNodeData[]) {
+    if (root.type !== CanvasNodeType.Image || !root.metadata?.isBatchRoot) return root;
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const children = (root.metadata.batchChildIds || [])
+        .map((id) => nodeById.get(id))
+        .filter((node): node is CanvasNodeData => Boolean(node && node.type === CanvasNodeType.Image && node.metadata?.batchRootId === root.id));
+    // 还有在途子任务时不折叠，免得生成过程看不到进度。
+    if (!children.length || children.some((node) => node.metadata?.status === "loading")) return root;
+    const primaryId = root.metadata.primaryImageId;
+    const extras = children.filter((node) => node.id !== primaryId && hasImageBatchResult(node));
+    const metadata: CanvasNodeMetadata = { ...root.metadata, imageBatchExpanded: false };
+    if (extras.length) metadata.mediaHistory = mergeBatchMediaHistory(root.metadata, extras);
+    return { ...root, metadata };
+}
+
+/** 把批次子结果折进历史（最新在前，按 storageKey 去重，重复调用幂等）。 */
+function mergeBatchMediaHistory(metadata: CanvasNodeMetadata | undefined, children: CanvasNodeData[]): CanvasMediaHistoryEntry[] {
+    const existing = Array.isArray(metadata?.mediaHistory) ? metadata.mediaHistory : [];
+    const known = new Set(existing.map((entry) => entry.storageKey).filter((key): key is string => Boolean(key)));
+    const fresh = children
+        .map((node) => batchMediaHistoryEntry(node))
+        .filter((entry) => Boolean(entry.storageKey) && !known.has(entry.storageKey as string));
+    // 同一批里后出的排前面，与「最新在前」约定一致。
+    return [...fresh.reverse(), ...existing].slice(0, MEDIA_HISTORY_LIMIT);
+}
+
+function batchMediaHistoryEntry(node: CanvasNodeData): CanvasMediaHistoryEntry {
+    return {
+        // 用子节点 id 派生，重复调用不会产生重复条目。
+        id: `hist-${node.id}`,
+        content: node.metadata?.content,
+        storageKey: node.metadata?.storageKey,
+        previewContent: node.metadata?.previewContent,
+        videoPreview: node.metadata?.videoPreview,
+        naturalWidth: node.metadata?.naturalWidth,
+        naturalHeight: node.metadata?.naturalHeight,
+        bytes: node.metadata?.bytes,
+        mimeType: node.metadata?.mimeType,
+        durationMs: node.metadata?.durationMs,
+        prompt: node.metadata?.prompt,
+        title: node.title,
+        taskId: node.metadata?.taskId,
+        createdAt: node.metadata?.taskCompletedAt || new Date().toISOString(),
     };
 }
 

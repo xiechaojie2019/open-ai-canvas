@@ -2,11 +2,12 @@ import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
-import { cancelIncompleteImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
+import { cancelIncompleteImageBatch, collapseCompletedImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { canvasImageReferenceLimitError, buildImageGenerationMetadata, getGenerationCount, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
+import { canvasMediaSourceKey, isMediaAggregationTarget, pushCurrentMediaToHistory } from "@/lib/canvas/canvas-media-history";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
 import { CONTENT_MODERATION_ERROR_CODE, generationFailureMetadata, type GenerationFailureMetadata } from "@/lib/generation-error";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -61,6 +62,13 @@ export async function executeImageGeneration({
     const workingConnections = retired.connections;
     // 已有图片生成新结果并保留旧版本；参考图只来自入边，避免把旧结果误当成自身输入。
     const referenceImages = generationContext.referenceImages;
+    // 同一生成来源（来源节点 + 参考图集合）此前已经出过图的节点：本次结果仍然写回它，
+    // 旧结果压进 metadata.mediaHistory 供切换查看，而不是再新建节点加连线。
+    const sourceKey = canvasMediaSourceKey("image", nodeId, referenceImages.map((image) => image.id));
+    const aggregationTarget = reuseSourceNode
+        ? undefined
+        : workingNodes.find((node) => node.type === CanvasNodeType.Image && !node.metadata?.locked && isMediaAggregationTarget(node.metadata, sourceKey));
+    const reuseResultNode = Boolean(aggregationTarget);
     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
     const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
@@ -75,17 +83,36 @@ export async function executeImageGeneration({
     const parentPosition = sourceNode?.position || { x: 0, y: 0 };
     const parentWidth = sourceNode?.width || parentConfig.width;
     const parentHeight = sourceNode?.height || parentConfig.height;
-    const rootId = reuseSourceNode ? nodeId : nanoid();
+    const rootId = reuseSourceNode ? nodeId : aggregationTarget?.id ?? nanoid();
     const childIds = count > 1 ? Array.from({ length: count }, () => nanoid()) : [];
     const targetIds = count > 1 ? childIds : [rootId];
-    registerPendingNodeIds(reuseSourceNode ? childIds : [rootId, ...childIds]);
+    registerPendingNodeIds(reuseSourceNode || reuseResultNode ? childIds : [rootId, ...childIds]);
     const rootWidth = outputNodeSize.width;
     const rootHeight = outputNodeSize.height;
     const preferredPosition = {
         x: parentPosition.x + parentWidth + 96,
         y: parentPosition.y + parentHeight / 2 - rootHeight / 2,
     };
-    const rootPosition = reuseSourceNode ? parentPosition : findAvailableGenerationGroupPosition(workingNodes, preferredPosition, imageGenerationGroupSize({ width: rootWidth, height: rootHeight }, outputNodeSize, childIds.length));
+    const rootPosition = reuseSourceNode
+        ? parentPosition
+        : aggregationTarget?.position ?? findAvailableGenerationGroupPosition(workingNodes, preferredPosition, imageGenerationGroupSize({ width: rootWidth, height: rootHeight }, outputNodeSize, childIds.length));
+    // 复用历史结果节点时保留它原有的批次身份：批次子图要留着给「展开对比」用，
+    // 不能被这次单图生成顺手清掉。
+    const batchMetadata = reuseResultNode
+        ? {
+              isBatchRoot: aggregationTarget?.metadata?.isBatchRoot,
+              batchChildIds: aggregationTarget?.metadata?.batchChildIds,
+              batchFailedCount: aggregationTarget?.metadata?.batchFailedCount,
+              primaryImageId: aggregationTarget?.metadata?.primaryImageId,
+              imageBatchExpanded: aggregationTarget?.metadata?.imageBatchExpanded,
+          }
+        : {
+              isBatchRoot: count > 1,
+              batchChildIds: count > 1 ? childIds : undefined,
+              batchFailedCount: count > 1 ? 0 : undefined,
+              primaryImageId: undefined,
+              imageBatchExpanded: count > 1 ? true : undefined,
+          };
 
     const rootNode: CanvasNodeData = {
         id: rootId,
@@ -95,25 +122,31 @@ export async function executeImageGeneration({
         width: rootWidth,
         height: rootHeight,
         metadata: {
-            ...resetGenerationTaskMetadata(reuseSourceNode ? sourceNode?.metadata : undefined, NODE_STATUS_LOADING),
+            ...resetGenerationTaskMetadata(
+                reuseSourceNode
+                    ? sourceNode?.metadata
+                    : reuseResultNode
+                      ? pushCurrentMediaToHistory(aggregationTarget?.metadata, { id: `hist-${nanoid(10)}` })
+                      : undefined,
+                NODE_STATUS_LOADING,
+            ),
             ...canvasGenerationPromptMetadata(prompt, effectivePrompt),
             status: NODE_STATUS_LOADING,
             size: generationConfig.size,
-            isBatchRoot: count > 1,
-            batchChildIds: count > 1 ? childIds : undefined,
-            batchFailedCount: count > 1 ? 0 : undefined,
+            ...batchMetadata,
             batchUsesReferenceImages: referenceImages.length > 0,
-            primaryImageId: undefined,
+            // 复用结果节点时旧图已经压进 mediaHistory，这里不能再写回 content。
             content: reuseSourceNode ? "" : undefined,
             storageKey: undefined,
             assetId: undefined,
             ...generationMetadata,
             ...styleMetadata,
             ...skillMetadata,
-            imageBatchExpanded: count > 1 ? true : undefined,
             generationErrorCode: undefined,
             resourceReloadAvailable: undefined,
             failedPromptFingerprint: undefined,
+            // 来源标记：同一来源的下一次生成据此找回本节点并原地更新。
+            generationSourceKey: sourceKey,
         },
     };
     const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
@@ -137,14 +170,21 @@ export async function executeImageGeneration({
         },
     }));
     const connectsSelf = !isExistingImageNode || referenceImages.some((img) => img.id === nodeId);
+    // 复用结果节点时来源连线早已存在，不能重复追加：imageGenerationReferenceConnections 自带去重，
+    // 「来源节点自身」那条边要在这里显式判重。
+    const selfEdgeExists = workingConnections.some((connection) => connection.fromNodeId === nodeId && connection.toNodeId === rootId);
     const batchConnections = [
         ...(reuseSourceNode ? [] : imageGenerationReferenceConnections(nodeId, rootId, workingNodes, workingConnections, nanoid)),
-        ...(reuseSourceNode || !connectsSelf ? [] : [{ id: nanoid(), fromNodeId: nodeId, toNodeId: rootId }]),
+        ...(reuseSourceNode || !connectsSelf || selfEdgeExists ? [] : [{ id: nanoid(), fromNodeId: nodeId, toNodeId: rootId }]),
         ...childIds.map((childId) => ({ id: nanoid(), fromNodeId: rootId, toNodeId: childId })),
     ];
 
     const nextNodes: CanvasNodeData[] = [
         ...workingNodes.map((node) => {
+            // 复用既有结果节点：保留原位置与尺寸，只换元数据（旧图已经在 mediaHistory 里）。
+            if (reuseResultNode && node.id === rootId) {
+                return { ...node, title: rootNode.title, metadata: rootNode.metadata };
+            }
             if (node.id !== nodeId) return node;
             if (isConfigNode) return { ...node, metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, effectivePrompt), status: NODE_STATUS_LOADING, errorDetails: undefined } };
             if (reuseSourceNode) return { ...node, position: rootNode.position, width: rootNode.width, height: rootNode.height, title: rootNode.title, metadata: rootNode.metadata };
@@ -158,7 +198,7 @@ export async function executeImageGeneration({
                 metadata: { ...node.metadata, content: prompt, richText: undefined, prompt, composerContent: prompt, status: NODE_STATUS_SUCCESS, fontSize: 14, errorDetails: undefined },
             };
         }),
-        ...(reuseSourceNode ? [] : [rootNode]),
+        ...(reuseSourceNode || reuseResultNode ? [] : [rootNode]),
         ...childNodes,
     ];
 
@@ -292,7 +332,7 @@ export async function executeImageGeneration({
                 };
             }
             if (node.id === rootId) {
-                if (count > 1) return reconcileImageBatchRoot(node, current);
+                if (count > 1) return collapseCompletedImageBatch(reconcileImageBatchRoot(node, current), current);
                 return {
                     ...node,
                     metadata: {

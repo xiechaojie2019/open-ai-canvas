@@ -74,8 +74,12 @@ public sealed class CloudAgentMediaArgs
     /// <summary>
     /// 本次要出的产物数量（只有图片生成支持 &gt;1）。
     /// ⚠️ 本 fork 扩展，<b>Go 的 <c>cloudAgentMediaArgs</c> 没有这个字段</b>：
-    /// Go 一次调用只出一个产物。这里由服务端展开成 N 个节点 + N 个 count=1 的任务，
-    /// 对齐前端「直接图片生成选 N 张」的行为（<c>canvas-image-generation-executor.ts</c>）。
+    /// Go 一次调用只出一个产物。这里由服务端展开成 <b>N 个任务</b>，
+    /// 与前端「直接图片生成选 N 张」的行为对齐（<c>canvas-image-generation-executor.ts</c>）。
+    /// <para>
+    /// ⚠️ 2026-10-13 起这 N 个产物<b>共用同一个结果节点</b>（同源归并，见
+    /// <see cref="CloudAgentMediaAggregation"/>），不再派生 <c>nodeId-1…-N</c>。
+    /// </para>
     /// </summary>
     [JsonPropertyName("count")]
     public int Count { get; set; }
@@ -100,7 +104,8 @@ public sealed class CloudAgentMediaArgs
 /// <summary>媒体计划。对应 Go: <c>app.cloudAgentMediaPlan</c>。</summary>
 /// <remarks>
 /// <see cref="Items"/> 恒有 ≥1 项：count==1 时就是 1 项（与 Go 完全一致），
-/// count&gt;1 时是服务端按派生节点 ID 展开的 N 项（本 fork 扩展）。
+/// count&gt;1 时是服务端展开的 N 项，且各项共享同一个 <c>NodeID</c>
+/// （2026-10-13 起同源归并到一个节点，见 <see cref="CloudAgentMediaAggregation"/>）。
 /// 所有既有调用点用的 <see cref="Args"/> 即首项，因此单产物路径行为不变。
 /// </remarks>
 public sealed class CloudAgentMediaPlan
@@ -444,8 +449,21 @@ public sealed class CloudAgentMediaService
         }
         Dictionary<string, JsonObject> nodes =
             CloudAgentJsonHelpers.Objects(CloudAgentJsonHelpers.Get(doc, "nodes"));
+        // 同一来源归并：在**任何 id 相关校验之前**改写目标，保证快照/依赖哈希、草稿与提交
+        // 全程用同一个节点 ID。模型每次给的 nodeId 都不一样，所以归并目标只能由服务端判定。
+        string aggregationNodeID = CloudAgentMediaAggregation.ResolveTargetNodeID(doc, args);
+        bool aggregationReuse = aggregationNodeID.Length > 0;
+        if (aggregationReuse)
+        {
+            args.NodeID = aggregationNodeID;
+        }
         nodes.TryGetValue(args.NodeID, out JsonObject? existing);
         JsonObject existingMeta = existing?["metadata"] as JsonObject ?? new JsonObject();
+        if (aggregationReuse
+            && (IsTruthy(existingMeta, "locked") || ElementString(existingMeta, "generationTaskId").Length > 0))
+        {
+            throw AppError.BadAuthRequest("目标节点已锁定或已关联任务，不能提交生成");
+        }
         (CapabilityDescriptor targetDescriptor, bool supported) =
             CloudAgentNodes.ForGenerationMode(args.Mode);
         if (!supported)
@@ -453,7 +471,10 @@ public sealed class CloudAgentMediaService
             throw AppError.BadAuthRequest("生成模式当前不受 Agent 支持");
         }
         CloudAgentContracts.ValidateCloudAgentID(args.NodeID, "生成节点 ID", 80);
-        if (existing is not null)
+        // 归并复用时刻意跳过下面这段「目标必须是从未提交过的草稿」准入：复用目标天然是
+        // 已出过图的成品节点（status=success 且带 content/storageKey），这正是原来被拒、
+        // 于是每次都新建节点的原因。它的旧产物会进 mediaHistory，不会被抹掉。
+        if (existing is not null && !aggregationReuse)
         {
             if (IsTruthy(existingMeta, "locked")
                 || ElementString(existingMeta, "generationTaskId").Length > 0)
@@ -760,7 +781,10 @@ public sealed class CloudAgentMediaService
         {
             throw AppError.BadAuthRequest("生成模式尚未实现媒体任务适配器");
         }
-        List<string> nodeIDs = BatchNodeIDs(args);
+        // 同一来源（含一次出多张）的产物全部落在同一个结果节点上：不再派生 "-1/-2/…"，
+        // 也就不会每次执行都新增节点与连线。args.NodeID 到这里已被 MediaDocumentAsync
+        // 改写成归并目标；找不到既有目标时就是模型给的 id（首次仍然新建一个节点）。
+        List<string> nodeIDs = [.. Enumerable.Repeat(args.NodeID, args.Count)];
         List<CloudAgentMediaArgs> items = new(nodeIDs.Count);
         List<CreateTaskRequestDto> requests = new(nodeIDs.Count);
         for (int index = 0; index < nodeIDs.Count; index++)
@@ -789,29 +813,6 @@ public sealed class CloudAgentMediaService
         }
     }
 
-    /// <summary>把一次调用要出的每个产物映射到自己的节点 ID。count==1 时原样返回模型给的 ID。</summary>
-    internal static List<string> BatchNodeIDs(CloudAgentMediaArgs args)
-    {
-        if (args.Count <= 1)
-        {
-            return [args.NodeID];
-        }
-        // 派生而不是服务端自造随机 ID：模型才能在后续轮次里按 ID 指认/复用这些草稿。
-        if (args.NodeID.Length + 3 > 80)
-        {
-            throw AppError.BadAuthRequest(
-                "一次生成多张时 nodeId 不能超过 77 个字符（服务端要追加 -1、-2 …）");
-        }
-        List<string> ids = new(args.Count);
-        for (int index = 1; index <= args.Count; index++)
-        {
-            string id = args.NodeID + "-" + index.ToString(CultureInfo.InvariantCulture);
-            CloudAgentContracts.ValidateCloudAgentID(id, "生成节点 ID", 80);
-            ids.Add(id);
-        }
-        return ids;
-    }
-
     /// <summary>
     /// 派生单个产物的参数副本：换节点 ID/标题/提示词，其余（含读时快照）沿用父参数。
     /// </summary>
@@ -824,12 +825,10 @@ public sealed class CloudAgentMediaService
     internal static CloudAgentMediaArgs CloneMediaArgs(
         CloudAgentMediaArgs source, string nodeID, int index, int total)
     {
-        string title = source.Title.Trim();
-        if (total > 1)
-        {
-            string suffix = " " + (index + 1).ToString(CultureInfo.InvariantCulture);
-            title = CloudAgentContracts.TruncateRunes(title, 240 - suffix.Length) + suffix;
-        }
+        // ⚠️ 标题不再追加「 1/2/3」序号：一次生成的多个产物现在共用同一个节点，
+        // 每建一项草稿都会重写一遍节点标题，序号会让标题末位数字随提交顺序乱跳。
+        // 逐张的区别由各项的提示词（prompts[index]）承担，历史面板按序号/时间展示。
+        string title = CloudAgentContracts.TruncateRunes(source.Title.Trim(), 240);
         string prompt = source.Prompts.Count == total ? source.Prompts[index] : source.Prompt;
         return new CloudAgentMediaArgs
         {
@@ -1219,6 +1218,8 @@ public sealed class CloudAgentMediaService
         {
             throw AppError.BadAuthRequest("生成模式当前不受 Agent 支持");
         }
+        // 打上来源标记：后续同来源的生成据此复用本节点，而不是再建一个。
+        meta["generationSourceKey"] = CloudAgentMediaAggregation.SourceKey(args);
         JsonObject addedNode = CloudAgentMutations.AddedNode(args.NodeID, descriptor.Type, args.Title, x, y, meta);
         if (args.Size == "9:16")
         {
@@ -1230,6 +1231,10 @@ public sealed class CloudAgentMediaService
         {
             if (CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(existing, "id")) == args.NodeID)
             {
+                // 归并复用：整段替换 metadata 会把展示中的图和历史一起抹掉，
+                // 所以先把该留的字段（产物 + mediaHistory + 任务账本）搬过来再覆盖。
+                JsonObject previous = existing["metadata"] as JsonObject ?? new JsonObject();
+                CloudAgentMediaAggregation.PreserveAcrossRewrite(previous, meta, task?.ID ?? "");
                 existing["metadata"] = meta.DeepClone();
                 existing["title"] = args.Title;
                 replaced = true;
@@ -1298,7 +1303,9 @@ public sealed class CloudAgentMediaService
         foreach (JsonObject node in CloudAgentJsonHelpers.Maps(CloudAgentJsonHelpers.Get(doc, "nodes")))
         {
             JsonObject meta = node["metadata"] as JsonObject ?? new JsonObject();
-            if (ElementString(meta, "taskId") != task.ID)
+            // 归并后一个节点会先后承接多个任务，完成回写必须按任务账本匹配，不能只看 taskId
+            // （后者只保留最新一次提交的那一个）。
+            if (!CloudAgentMediaAggregation.OwnsTask(meta, task.ID))
             {
                 continue;
             }
@@ -1321,6 +1328,9 @@ public sealed class CloudAgentMediaService
                     await CloudAgentMutations.SaveDocumentAsync(context, canvas, doc, policy).ConfigureAwait(false);
                     throw AppError.BadAuthRequest("生成结果没有可用的账号资源，未写入媒体地址");
                 }
+                // 先把展示中的旧产物压进历史，再写新结果：节点始终展示最新，历史保留旧图。
+                CloudAgentMediaAggregation.PushCurrentMediaToHistory(
+                    meta, CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "title")));
                 meta["content"] = "/api/resources/" + id + "/file";
                 meta["storageKey"] = "resource:" + id;
                 meta["status"] = "success";

@@ -217,6 +217,31 @@ export type CanvasSkillSnapshot = {
     tags: string[];
 };
 
+/**
+ * 同一生成来源的历次产物快照。
+ *
+ * 产品要求：同一个生成节点多次执行任务时不再新增图片节点和连线，而是原地展示最新产物、
+ * 保留历史、支持切换。因此「当前展示的产物」仍存放在节点顶层字段
+ * （`content`/`storageKey`/`naturalWidth`/…），历次旧产物按**最新在前**压进
+ * `metadata.mediaHistory`；切换即把选中项与顶层字段对调。
+ */
+export type CanvasMediaHistoryEntry = {
+    id: string;
+    content?: string;
+    storageKey?: string;
+    previewContent?: string;
+    videoPreview?: CanvasNodeMetadata["videoPreview"];
+    naturalWidth?: number;
+    naturalHeight?: number;
+    bytes?: number;
+    mimeType?: string;
+    durationMs?: number;
+    prompt?: string;
+    title?: string;
+    taskId?: string;
+    createdAt?: string;
+};
+
 export type CanvasNodeMetadata = {
     /** Credential-free editable generation contract; submitted recipes live with tasks. */
     generationSpec?: GenerationSpec;
@@ -396,6 +421,19 @@ export type CanvasNodeMetadata = {
     versionPrimary?: boolean;
     copiedFromNodeId?: string;
     generationResultPlacement?: "replace-node" | "new-version";
+    /** 历次生成产物（最新在前，不含当前展示项）。见 `CanvasMediaHistoryEntry`。 */
+    mediaHistory?: CanvasMediaHistoryEntry[];
+    /**
+     * 生成来源标记。同一画布内 key 相同的多次生成都归并到同一结果节点上，
+     * 不再每次新增节点与连线。前后端共用同一套 key 规则（见 `canvasMediaSourceKey`）。
+     */
+    generationSourceKey?: string;
+    /**
+     * 本节点名下已提交的媒体任务 ID 列表。
+     * 归并后一个节点会先后承接多个任务（批量/多次执行），完成回写按此列表匹配节点，
+     * 不能只看单个 `taskId`（后者仅保留最新一次）。
+     */
+    mediaTaskIds?: string[];
     directorSceneId?: string;
     directorShotId?: string;
     directorPreviewNodeId?: string;
