@@ -96,26 +96,38 @@ export async function executeImageGeneration({
     const rootPosition = reuseSourceNode
         ? parentPosition
         : aggregationTarget?.position ?? findAvailableGenerationGroupPosition(workingNodes, preferredPosition, imageGenerationGroupSize({ width: rootWidth, height: rootHeight }, outputNodeSize, childIds.length));
-    // 复用历史结果节点时保留它原有的批次身份：批次子图要留着给「展开对比」用，
-    // 不能被这次单图生成顺手清掉。
-    const batchMetadata = reuseResultNode
+    // ⚠️ 一次出多张时必须**重建**批次身份，不能沿用既有结果节点上的旧字段。
+    // 旧 primaryImageId 会让下面的「提升主图」逻辑永远短路（节点自己已有主图 ⇒ 新图写不进去，
+    // 画布上只剩一个空节点）；旧 batchChildIds 又登记不到本次的新子节点 ⇒ 结束时收不了口
+    // （子节点删不掉、又被折叠隐藏）。线上复现：在已收口的聚合节点上再生成 3 张，
+    // 后台三条都「已完成」，画布不出图。
+    // 只有「单图复用既有结果节点」才需要保留原批次身份：旧子图留着给「展开对比」用。
+    const batchMetadata = count > 1
         ? {
-              isBatchRoot: aggregationTarget?.metadata?.isBatchRoot,
-              batchChildIds: aggregationTarget?.metadata?.batchChildIds,
-              batchFailedCount: aggregationTarget?.metadata?.batchFailedCount,
-              primaryImageId: aggregationTarget?.metadata?.primaryImageId,
-              imageBatchExpanded: aggregationTarget?.metadata?.imageBatchExpanded,
-          }
-        : {
-              isBatchRoot: count > 1,
-              batchChildIds: count > 1 ? childIds : undefined,
-              batchFailedCount: count > 1 ? 0 : undefined,
+              isBatchRoot: true,
+              batchChildIds: childIds,
+              batchFailedCount: 0,
               primaryImageId: undefined,
               // 生成过程中不展开子节点：过场只呈现一个结果节点，与收口后的形态一致
               // （影策原有的「一排占位节点」过场不要了）。子节点仍在文档里跑任务，
               // 结束由 finalizeCompletedImageBatch 真正删除；想并排比对仍可点批次按钮展开。
-              imageBatchExpanded: count > 1 ? false : undefined,
-          };
+              imageBatchExpanded: false,
+          }
+        : reuseResultNode
+          ? {
+                isBatchRoot: aggregationTarget?.metadata?.isBatchRoot,
+                batchChildIds: aggregationTarget?.metadata?.batchChildIds,
+                batchFailedCount: aggregationTarget?.metadata?.batchFailedCount,
+                primaryImageId: aggregationTarget?.metadata?.primaryImageId,
+                imageBatchExpanded: aggregationTarget?.metadata?.imageBatchExpanded,
+            }
+          : {
+                isBatchRoot: undefined,
+                batchChildIds: undefined,
+                batchFailedCount: undefined,
+                primaryImageId: undefined,
+                imageBatchExpanded: undefined,
+            };
 
     const rootNode: CanvasNodeData = {
         id: rootId,

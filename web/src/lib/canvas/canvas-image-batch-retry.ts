@@ -131,9 +131,14 @@ export function finalizeCompletedImageBatch(root: CanvasNodeData, nodes: CanvasN
         return { nodes, removedIds: [] as string[] };
     }
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    const children = (root.metadata.batchChildIds || [])
+    // 索引里的子节点，外加仍挂在 batchRootId 上但没登记进 batchChildIds 的「孤儿」：
+    // 孤儿来自上一次收口失败（例如复用既有结果节点时新子节点没写进 batchChildIds）。
+    // 只按索引找会永远漏掉它们 —— 产物既收不进历史、节点也删不掉，白占着画布文档。
+    const indexed = (root.metadata.batchChildIds || [])
         .map((id) => nodeById.get(id))
         .filter((node): node is CanvasNodeData => Boolean(node && node.type === CanvasNodeType.Image && node.metadata?.batchRootId === root.id));
+    const indexedIds = new Set(indexed.map((node) => node.id));
+    const children = [...indexed, ...liveImageBatchChildren(root, nodes).filter((node) => !indexedIds.has(node.id))];
     if (!children.length) return { nodes, removedIds: [] as string[] };
     // 还有子任务在途：等它出完再收口，否则生成过程看不到进度。
     if (children.some((node) => !hasImageBatchResult(node) && node.metadata?.status === "loading")) {
