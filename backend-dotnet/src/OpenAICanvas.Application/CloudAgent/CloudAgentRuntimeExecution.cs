@@ -387,6 +387,27 @@ public sealed partial class CloudAgentRuntimeService
             cause is AppError or CloudAgentArgumentException or InvalidOperationException
             or System.Data.Common.DbException)
         {
+            // ⚠️ 幂等收尾：模型经常把**同一次** generate_media 再发一遍（草稿已建、任务已提交）。
+            // 第二次必然撞「画布已变化」（第一次的提交改过画布 ⇒ 快照过期），但任务其实已经在跑。
+            // 若照常记成 tool_failed，用户会在对话框看到红色「执行失败」并以为整轮失败
+            //（2026-10-14 线上反复发生，见当日排查记录）。此时按幂等处理：本轮已有在途媒体任务
+            // ⇒ 直接把结果记成「已提交，等待完成」，不写失败、也不重复提交。
+            // 只放行「已有在途媒体任务」这一种情况，真正与别处并发冲突（没有在途任务）仍照常报错。
+            if (cause is AppError { Status: 409 } && HasOutstandingMediaWork(state))
+            {
+                string submittedTaskID = state.MediaTaskID.Length > 0
+                    ? state.MediaTaskID
+                    : state.MediaBatch?.FirstOrDefault(item => item.TaskID.Length > 0)?.TaskID ?? "";
+                JsonObject alreadySubmitted = new()
+                {
+                    ["submitted"] = true,
+                    ["duplicate"] = true,
+                    ["taskId"] = submittedTaskID,
+                    ["message"] = "该批生成任务此前已提交，正在执行；结果会自动回写画布，请不要重复提交。",
+                };
+                ToolResult(run.ID, state, call, alreadySubmitted, null);
+                return false;
+            }
             bool recorded = await MediaErrorAsync(
                 run, state, "admission", submitted: false, terminal: false, cause).ConfigureAwait(false);
             if (!recorded)
