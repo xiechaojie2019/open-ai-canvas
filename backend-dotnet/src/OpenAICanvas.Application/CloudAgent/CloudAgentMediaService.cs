@@ -449,21 +449,8 @@ public sealed class CloudAgentMediaService
         }
         Dictionary<string, JsonObject> nodes =
             CloudAgentJsonHelpers.Objects(CloudAgentJsonHelpers.Get(doc, "nodes"));
-        // 同一来源归并：在**任何 id 相关校验之前**改写目标，保证快照/依赖哈希、草稿与提交
-        // 全程用同一个节点 ID。模型每次给的 nodeId 都不一样，所以归并目标只能由服务端判定。
-        string aggregationNodeID = CloudAgentMediaAggregation.ResolveTargetNodeID(doc, args);
-        bool aggregationReuse = aggregationNodeID.Length > 0;
-        if (aggregationReuse)
-        {
-            args.NodeID = aggregationNodeID;
-        }
         nodes.TryGetValue(args.NodeID, out JsonObject? existing);
         JsonObject existingMeta = existing?["metadata"] as JsonObject ?? new JsonObject();
-        if (aggregationReuse
-            && (IsTruthy(existingMeta, "locked") || ElementString(existingMeta, "generationTaskId").Length > 0))
-        {
-            throw AppError.BadAuthRequest("目标节点已锁定或已关联任务，不能提交生成");
-        }
         (CapabilityDescriptor targetDescriptor, bool supported) =
             CloudAgentNodes.ForGenerationMode(args.Mode);
         if (!supported)
@@ -471,10 +458,10 @@ public sealed class CloudAgentMediaService
             throw AppError.BadAuthRequest("生成模式当前不受 Agent 支持");
         }
         CloudAgentContracts.ValidateCloudAgentID(args.NodeID, "生成节点 ID", 80);
-        // 归并复用时刻意跳过下面这段「目标必须是从未提交过的草稿」准入：复用目标天然是
-        // 已出过图的成品节点（status=success 且带 content/storageKey），这正是原来被拒、
-        // 于是每次都新建节点的原因。它的旧产物会进 mediaHistory，不会被抹掉。
-        if (existing is not null && !aggregationReuse)
+        // ⚠️ 2026-10-14：Agent 路径不再做「同源归并」——一次生成多张 = 每张一个独立节点，
+        // 与手动「直接图片生成选 N 张」的行为对齐（用户要求：agent 不要合并）。
+        // 因此这里恢复「目标必须是从未提交过的草稿」的完整准入，不再放行成品节点复用。
+        if (existing is not null)
         {
             if (IsTruthy(existingMeta, "locked")
                 || ElementString(existingMeta, "generationTaskId").Length > 0)
@@ -781,10 +768,9 @@ public sealed class CloudAgentMediaService
         {
             throw AppError.BadAuthRequest("生成模式尚未实现媒体任务适配器");
         }
-        // 同一来源（含一次出多张）的产物全部落在同一个结果节点上：不再派生 "-1/-2/…"，
-        // 也就不会每次执行都新增节点与连线。args.NodeID 到这里已被 MediaDocumentAsync
-        // 改写成归并目标；找不到既有目标时就是模型给的 id（首次仍然新建一个节点）。
-        List<string> nodeIDs = [.. Enumerable.Repeat(args.NodeID, args.Count)];
+        // 一次生成多张时每个产物一个独立节点（派生 "-1/-2/…"）：与手动「直接图片生成选 N 张」
+        // 的行为一致，N 张各自成节点、可分别连线，不再塞进同一个节点的 mediaHistory 里。
+        List<string> nodeIDs = BatchNodeIDs(args);
         List<CloudAgentMediaArgs> items = new(nodeIDs.Count);
         List<CreateTaskRequestDto> requests = new(nodeIDs.Count);
         for (int index = 0; index < nodeIDs.Count; index++)
@@ -794,6 +780,32 @@ public sealed class CloudAgentMediaService
             requests.Add(BuildMediaRequest(state, item, refs, operation));
         }
         return (requests, new CloudAgentMediaPlan { Items = items, CallID = callID });
+    }
+
+    /// <summary>把一次调用要出的每个产物映射到自己的节点 ID。count==1 时原样返回模型给的 ID。</summary>
+    /// <remarks>
+    /// 2026-10-14 恢复：Agent 一次出多张改为「每张一个独立节点」，不再共用同一节点。
+    /// 派生而不是服务端自造随机 ID：模型才能在后续轮次里按 ID 指认/复用这些草稿。
+    /// </remarks>
+    internal static List<string> BatchNodeIDs(CloudAgentMediaArgs args)
+    {
+        if (args.Count <= 1)
+        {
+            return [args.NodeID];
+        }
+        if (args.NodeID.Length + 3 > 80)
+        {
+            throw AppError.BadAuthRequest(
+                "一次生成多张时 nodeId 不能超过 77 个字符（服务端要追加 -1、-2 …）");
+        }
+        List<string> ids = new(args.Count);
+        for (int index = 1; index <= args.Count; index++)
+        {
+            string id = args.NodeID + "-" + index.ToString(CultureInfo.InvariantCulture);
+            CloudAgentContracts.ValidateCloudAgentID(id, "生成节点 ID", 80);
+            ids.Add(id);
+        }
+        return ids;
     }
 
     /// <summary>批量产物数是否超出本轮预算。必须在建草稿前拦，避免建了节点却提交不了。</summary>
@@ -825,10 +837,13 @@ public sealed class CloudAgentMediaService
     internal static CloudAgentMediaArgs CloneMediaArgs(
         CloudAgentMediaArgs source, string nodeID, int index, int total)
     {
-        // ⚠️ 标题不再追加「 1/2/3」序号：一次生成的多个产物现在共用同一个节点，
-        // 每建一项草稿都会重写一遍节点标题，序号会让标题末位数字随提交顺序乱跳。
-        // 逐张的区别由各项的提示词（prompts[index]）承担，历史面板按序号/时间展示。
-        string title = CloudAgentContracts.TruncateRunes(source.Title.Trim(), 240);
+        // 一次出多张时每张各自成节点，标题追加「 1/2/3」序号以区分（2026-10-14 起不再共用节点）。
+        string title = source.Title.Trim();
+        if (total > 1)
+        {
+            string suffix = " " + (index + 1).ToString(CultureInfo.InvariantCulture);
+            title = CloudAgentContracts.TruncateRunes(title, 240 - suffix.Length) + suffix;
+        }
         string prompt = source.Prompts.Count == total ? source.Prompts[index] : source.Prompt;
         return new CloudAgentMediaArgs
         {

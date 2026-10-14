@@ -318,39 +318,33 @@ public sealed class CloudAgentMediaAggregationTests
     /// 归并必须真的接到四个调用点；少任何一处，线上就还是「每次生成新增节点 + 连线」。
     /// </summary>
     [Fact]
-    public void 归并必须接线到建节点与完成回写()
+    public void Agent多张不归并每张独立节点()
     {
         string media = MediaServiceSource();
 
-        // ① 准入阶段：在任何 id 校验之前改写目标，并放行「已出图的成品节点」。
-        int resolve = media.IndexOf(
-            "string aggregationNodeID = CloudAgentMediaAggregation.ResolveTargetNodeID(doc, args);",
-            StringComparison.Ordinal);
-        Assert.True(resolve >= 0, "MediaDocumentAsync 必须解析同源归并目标");
-        int validateId = media.IndexOf("CloudAgentContracts.ValidateCloudAgentID(args.NodeID, \"生成节点 ID\", 80);", StringComparison.Ordinal);
-        Assert.True(validateId > resolve, "归并改写必须早于节点 ID 校验");
-        Assert.Contains("if (existing is not null && !aggregationReuse)", media);
+        // ① 准入阶段不再解析/复用同源节点：Agent 不做归并（归并只保留在手动生成一侧）。
+        Assert.DoesNotContain("ResolveTargetNodeID(doc, args)", media);
+        Assert.Contains("if (existing is not null)", media);
 
-        // ② 展开：不再派生 nodeId-1…-N，N 个产物共用同一个节点。
-        Assert.Contains("List<string> nodeIDs = [.. Enumerable.Repeat(args.NodeID, args.Count)];", media);
+        // ② 展开：一次出多张时每张派生自己的节点 ID。
+        Assert.Contains("List<string> nodeIDs = BatchNodeIDs(args);", media);
 
-        // ③ 建节点：打来源标记 + 整段重写前保留产物/历史/任务账本。
+        // ③ 建节点仍打来源标记（前端手动路径据此跨方式复用），并保留产物/历史/任务账本。
         Assert.Contains("meta[\"generationSourceKey\"] = CloudAgentMediaAggregation.SourceKey(args);", media);
         Assert.Contains("CloudAgentMediaAggregation.PreserveAcrossRewrite(previous, meta, task?.ID ?? \"\");", media);
 
-        // ④ 完成回写：按任务账本匹配，并在写入新产物前把旧产物压进历史。
+        // ④ 完成回写仍按任务账本匹配。
         Assert.Contains("if (!CloudAgentMediaAggregation.OwnsTask(meta, task.ID))", media);
         Assert.Contains("CloudAgentMediaAggregation.PushCurrentMediaToHistory(", media);
     }
 
     /// <summary>
-    /// 标题不得再带「 1/2/3」序号：N 个产物共用同一个节点，每建一项都会重写节点标题，
-    /// 序号会让标题末位数字随提交顺序乱跳。
+    /// 一次出多张时每张各自成节点（2026-10-14 起不再共用节点），标题必须带「 1/2/3」序号以区分。
     /// </summary>
     [Fact]
-    public void 共用节点时标题不带序号()
+    public void 多张时标题带序号()
     {
-        Assert.DoesNotContain("CloudAgentContracts.TruncateRunes(title, 240 - suffix.Length) + suffix", MediaServiceSource());
+        Assert.Contains("CloudAgentContracts.TruncateRunes(title, 240 - suffix.Length) + suffix", MediaServiceSource());
     }
 
     // ------------------------------------------------------------------ 夹具

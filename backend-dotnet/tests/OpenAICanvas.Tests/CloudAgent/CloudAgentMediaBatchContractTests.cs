@@ -60,10 +60,34 @@ public sealed class CloudAgentMediaBatchContractTests
         Assert.Contains("只有图片生成支持一次出多张", error.Message);
     }
 
+    // ------------------------------------------------------------------ 派生节点 ID
+
+    [Fact]
+    public void 单张时节点ID原样返回()
+    {
+        Assert.Equal(new[] { "image-new" }, CloudAgentMediaService.BatchNodeIDs(Image(count: 1)));
+    }
+
+    [Fact]
+    public void 多张时逐张派生节点ID()
+    {
+        Assert.Equal(
+            new[] { "image-new-1", "image-new-2", "image-new-3" },
+            CloudAgentMediaService.BatchNodeIDs(Image(count: 3)));
+    }
+
+    [Fact]
+    public void 多张时节点ID超长被拒()
+    {
+        AppError error = Assert.Throws<AppError>(() =>
+            CloudAgentMediaService.BatchNodeIDs(Image(nodeID: new string('n', 78), count: 2)));
+        Assert.Contains("不能超过 77 个字符", error.Message);
+    }
+
     // ------------------------------------------------------------------ 每项参数副本
 
     [Fact]
-    public void 每项副本把张数归一为一且标题不带序号()
+    public void 每项副本把张数归一为一且标题带序号()
     {
         CloudAgentMediaArgs source = Image(count: 3, title: "分镜图");
 
@@ -71,10 +95,9 @@ public sealed class CloudAgentMediaBatchContractTests
         CloudAgentMediaArgs third = CloudAgentMediaService.CloneMediaArgs(source, "image-new", 2, 3);
 
         Assert.Equal("image-new", first.NodeID);
-        // 多个产物共用同一个节点，标题不能再带「 1/2/3」——每建一项都会重写节点标题，
-        // 序号会让标题末位数字随提交顺序乱跳（2026-10-13 归并改动）。
-        Assert.Equal("分镜图", first.Title);
-        Assert.Equal("分镜图", third.Title);
+        // 一次出多张时每张各自成独立节点（2026-10-14 起不再共用节点），标题带「 1/2/3」区分。
+        Assert.Equal("分镜图 1", first.Title);
+        Assert.Equal("分镜图 3", third.Title);
         // 每项只出一个产物：服务端硬约束「每个获批执行项只能生成一个产物」。
         Assert.Equal(1, first.Count);
         Assert.Equal(1, third.Count);
