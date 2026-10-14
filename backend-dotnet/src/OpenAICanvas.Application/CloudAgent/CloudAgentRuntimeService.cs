@@ -160,12 +160,16 @@ public sealed partial class CloudAgentRuntimeService
         {
             throw new InvalidOperationException("Agent runtime active task is not in task history");
         }
-        if (state.MediaTaskID.Length > 0
-            && (!state.TaskIDs.Contains(state.MediaTaskID)
-                || state.CallIndex >= state.Calls.Count
-                || state.Calls[state.CallIndex].Function.Name != "generate_media"))
+        // ⚠️ 单槽 mediaTaskId 与批次（MediaBatch）处境相同：它是「已经交出去、正在等结果」的
+        // 在途工作，生命周期比那条 generate_media 调用长。模型在提交成功后常会**再发一次**
+        // generate_media（复用草稿），那次调用失败会把 CallIndex 推过表尾；此时任务仍在跑。
+        // 若沿用「必须挂在当前调用上」，这种状态会被判成损坏 ⇒ Decode 抛错 ⇒ 409 被调度器
+        // 静默吞掉 ⇒ 运行永久卡 running（线上表现：任务已完成、已结算，但画布助手一直「运行中」，
+        // 日志每 2 秒刷一条「agent advance conflict … 无法安全恢复」）。
+        // 因此这里只要求：任务 ID 在任务历史里。
+        if (state.MediaTaskID.Length > 0 && !state.TaskIDs.Contains(state.MediaTaskID))
         {
-            throw new InvalidOperationException("Agent runtime media task is not attached to current call");
+            throw new InvalidOperationException("Agent runtime media task is not in task history");
         }
         // 批量产物（本 fork 扩展）：任务 ID 挂在批次项上，与单槽 mediaTaskId 互斥。
         //
@@ -780,6 +784,22 @@ public sealed partial class CloudAgentRuntimeService
                 };
             await AdvanceMediaBatchAsync(run, state, batchCall, outstandingBatch, cancellationToken)
                 .ConfigureAwait(false);
+            return;
+        }
+        // ⚠️ 单槽（count==1）同理：已提交的在途媒体任务不能因为调用槽走完而失去回写驱动。
+        // 场景与批次完全一致（模型提交后又多发一次 generate_media，那次失败把 CallIndex 推过表尾）。
+        // 没有这条路径时会落到下面的「兜底 → 进下一轮模型」，把还没回写的任务抛在后面，
+        // 而 ValidateRuntime 又会因为「media task 不挂在当前调用上」判损坏 ⇒ 409 静默吞 ⇒ 卡 running。
+        if (state.MediaTaskID.Length > 0)
+        {
+            CloudAgentCallDto mediaCall = state.Calls.LastOrDefault(c => c.Function.Name == "generate_media")
+                ?? state.Calls.LastOrDefault()
+                ?? new CloudAgentCallDto
+                {
+                    ID = $"{run.ID}:media-single",
+                    Function = new CloudAgentCallFunctionDto { Name = "generate_media", Arguments = "{}" },
+                };
+            await AdvanceMediaAsync(run, state, mediaCall, cancellationToken).ConfigureAwait(false);
             return;
         }
         // 兜底 flush：本批调用都执行完了，缓冲里的图片必须在这里合并成一条 user 消息
