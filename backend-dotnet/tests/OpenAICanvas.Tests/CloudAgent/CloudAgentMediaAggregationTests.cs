@@ -329,8 +329,9 @@ public sealed class CloudAgentMediaAggregationTests
         // ② 展开：一次出多张时每张派生自己的节点 ID。
         Assert.Contains("List<string> nodeIDs = BatchNodeIDs(args);", media);
 
-        // ③ 建节点仍打来源标记（前端手动路径据此跨方式复用），并保留产物/历史/任务账本。
-        Assert.Contains("meta[\"generationSourceKey\"] = CloudAgentMediaAggregation.SourceKey(args);", media);
+        // ③ 建节点**不再**打来源标记：打上之后手动生成会复用到 Agent 建的节点上
+        //（线上表现：「在手动节点上发任务，结果跑到 Agent 图片上」）。产物/历史/账本照旧保留。
+        Assert.DoesNotContain("meta[\"generationSourceKey\"]", media);
         Assert.Contains("CloudAgentMediaAggregation.PreserveAcrossRewrite(previous, meta, task?.ID ?? \"\");", media);
 
         // ④ 完成回写仍按任务账本匹配。

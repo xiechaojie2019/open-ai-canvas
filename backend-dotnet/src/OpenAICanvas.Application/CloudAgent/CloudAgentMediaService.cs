@@ -1233,8 +1233,10 @@ public sealed class CloudAgentMediaService
         {
             throw AppError.BadAuthRequest("生成模式当前不受 Agent 支持");
         }
-        // 打上来源标记：后续同来源的生成据此复用本节点，而不是再建一个。
-        meta["generationSourceKey"] = CloudAgentMediaAggregation.SourceKey(args);
+        // ⚠️ 2026-10-14：Agent 建的节点**不再**打 generationSourceKey。
+        // 该标记是给前端「直接图片生成」找同源归并目标用的；打上之后，手动生成会把结果
+        // 复用到 Agent 建的节点上（线上表现：「在手动节点上发任务，结果跑到 Agent 图片上」）。
+        // Agent 侧本身已不做同源归并（一次多张 = 每张独立节点），因此这里不再需要这个标记。
         JsonObject addedNode = CloudAgentMutations.AddedNode(args.NodeID, descriptor.Type, args.Title, x, y, meta);
         if (args.Size == "9:16")
         {
