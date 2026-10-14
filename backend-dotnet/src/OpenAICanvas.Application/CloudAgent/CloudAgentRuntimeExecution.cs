@@ -406,6 +406,22 @@ public sealed partial class CloudAgentRuntimeService
                     ["message"] = "该批生成任务此前已提交，正在执行；结果会自动回写画布，请不要重复提交。",
                 };
                 ToolResult(run.ID, state, call, alreadySubmitted, null);
+                // ⚠️ 必须显式落库：这段 catch 在 planningContext（独立作用域）之外，
+                // ToolResult 只改内存里的 state。不保存的话下一拍 Decode 出来的 CallIndex 仍是原值
+                // ⇒ 每 2 秒重跑同一个分支、什么都不写 ⇒ 稳定空转到 5 分钟看门狗
+                //（2026-10-14 线上复现：run agb5bf17…，callIndex 恒为 0、mediaTaskId 已有值）。
+                bool duplicateSaved = await _repository.MutateCloudAgentAsync(
+                    run.UserID, run.ID, run.Revision,
+                    (current, context) =>
+                    {
+                        CloudAgentContracts.Save(current, state);
+                        return context.SaveRunAsync(current);
+                    }, cancellationToken).ConfigureAwait(false);
+                if (!duplicateSaved)
+                {
+                    throw CloudAgentSessionService.CreationConflict();
+                }
+                run.Revision++;
                 return false;
             }
             bool recorded = await MediaErrorAsync(
