@@ -47,8 +47,11 @@ public static class CloudAgentMediaAggregation
     /// 生成来源 key：同一画布内 key 相同的多次生成都归并到同一个结果节点。
     /// </summary>
     /// <remarks>
-    /// 规则必须与前端 <c>canvasMediaSourceKey</c> <b>逐字一致</b>，否则 Agent 生成与
-    /// 手动生成会各自归并到不同的节点上。参考图排序去重后再拼，保证顺序无关。
+    /// 归并只认「基于哪张图」：<b>有参考图就以参考图集合为准</b>——同一张图不管走 Agent
+    /// 生成还是手动生成，都落到同一个结果节点；没有参考图（文生图）才回落到来源节点。
+    /// 生成方式与来源节点本身不再参与 key（此前 Agent 生成与手动生成因为来源节点段不同，
+    /// 被拆成了两个节点）。规则必须与前端 <c>canvasMediaSourceKey</c> <b>逐字一致</b>。
+    /// 参考图排序去重后再拼，保证顺序无关。
     /// </remarks>
     public static string SourceKey(CloudAgentMediaArgs args)
     {
@@ -56,11 +59,33 @@ public static class CloudAgentMediaAggregation
             .Where(id => !string.IsNullOrEmpty(id))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)];
-        return string.Join('|',
-            "v1",
-            args.Mode,
-            args.SourceNodeID.Length > 0 ? args.SourceNodeID : "-",
-            references.Count > 0 ? string.Join(',', references) : "-");
+        string anchor = references.Count > 0
+            ? string.Join(',', references)
+            : args.SourceNodeID.Length > 0 ? args.SourceNodeID : "-";
+        return string.Join('|', "v1", args.Mode, anchor);
+    }
+
+    /// <summary>
+    /// 从 key 里取出「媒体大类 + 归并锚点」，忽略来源节点段（兼容旧四段格式）。
+    /// </summary>
+    /// <remarks>
+    /// 老画布上的节点写的是 <c>v1|mode|sourceNodeId|refs</c> 四段旧 key，只比整串
+    /// 会永远匹配不上，同一张图于是又长出一个新节点。
+    /// </remarks>
+    public static string SourceIdentity(string key)
+    {
+        string[] parts = key.Split('|');
+        if (parts.Length == 4 && parts[0] == "v1")
+        {
+            string references = parts[3];
+            return string.Join('|', parts[1],
+                references.Length > 0 && references != "-" ? references : parts[2].Length > 0 ? parts[2] : "-");
+        }
+        if (parts.Length == 3 && parts[0] == "v1")
+        {
+            return string.Join('|', parts[1], parts[2].Length > 0 ? parts[2] : "-");
+        }
+        return key;
     }
 
     /// <summary>在画布上找同一来源已经建好的结果节点（没有则返回空串）。</summary>
@@ -70,8 +95,9 @@ public static class CloudAgentMediaAggregation
     /// </remarks>
     public static string ResolveTargetNodeID(JsonObject doc, CloudAgentMediaArgs args)
     {
-        string key = SourceKey(args);
-        if (key.Length == 0)
+        // 只比「媒体大类 + 归并锚点」：同一张参考图的不同生成路径（手动/Agent）必须命中同一个节点。
+        string identity = SourceIdentity(SourceKey(args));
+        if (identity.Length == 0)
         {
             return "";
         }
@@ -82,7 +108,7 @@ public static class CloudAgentMediaAggregation
             {
                 continue;
             }
-            if (!string.Equals(Field(metadata, "generationSourceKey"), key, StringComparison.Ordinal))
+            if (!string.Equals(SourceIdentity(Field(metadata, "generationSourceKey")), identity, StringComparison.Ordinal))
             {
                 continue;
             }

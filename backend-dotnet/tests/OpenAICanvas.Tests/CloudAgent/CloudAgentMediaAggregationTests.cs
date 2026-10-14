@@ -28,13 +28,15 @@ public sealed class CloudAgentMediaAggregationTests
     // ------------------------------------------------------------------ 来源 key
 
     [Fact]
-    public void 来源key由版本模式来源节点与参考图拼成()
+    public void 来源key由媒体大类与归并锚点拼成()
     {
-        Assert.Equal("v1|image|-|-", CloudAgentMediaAggregation.SourceKey(Args()));
-        Assert.Equal("v1|image|-|-", CloudAgentMediaAggregation.SourceKey(Args("image")));
-        Assert.Equal("v1|video|-|-", CloudAgentMediaAggregation.SourceKey(Args("video")));
-        Assert.Equal("v1|image|shot-1|-", CloudAgentMediaAggregation.SourceKey(Args("image", "shot-1")));
-        Assert.Equal("v1|image|shot-1|a,b", CloudAgentMediaAggregation.SourceKey(Args("image", "shot-1", "b", "a")));
+        // 没有参考图：锚点回落到来源节点。
+        Assert.Equal("v1|image|-", CloudAgentMediaAggregation.SourceKey(Args()));
+        Assert.Equal("v1|image|shot-1", CloudAgentMediaAggregation.SourceKey(Args("image", "shot-1")));
+        Assert.Equal("v1|video|-", CloudAgentMediaAggregation.SourceKey(Args("video")));
+        // 有参考图：以参考图集合为准，来源节点不再参与（同一张图的任何生成路径都落一起）。
+        Assert.Equal("v1|image|a,b", CloudAgentMediaAggregation.SourceKey(Args("image", "shot-1", "b", "a")));
+        Assert.Equal("v1|image|a,b", CloudAgentMediaAggregation.SourceKey(Args("image", "other", "b", "a")));
     }
 
     /// <summary>参考图顺序不同、或重复传同一个节点，必须归并到同一个目标。</summary>
@@ -61,18 +63,49 @@ public sealed class CloudAgentMediaAggregationTests
         Assert.True(path is not null, "找不到前端 canvas-media-history.ts");
 
         string frontend = File.ReadAllText(path!);
-        // 前端表达式本身：`["v1", mode, sourceNodeId || "-", refs.length ? refs.join(",") : "-"].join("|")`
-        Assert.Contains(
-            "[\"v1\", mode, sourceNodeId || \"-\", refs.length ? refs.join(\",\") : \"-\"].join(\"|\")",
-            frontend);
+        // 前端表达式本身：anchor = 参考图拼接 / 来源节点，`["v1", mode, anchor].join("|")`
+        Assert.Contains("const anchor = refs.length ? refs.join(\",\") : sourceNodeId || \"-\";", frontend);
+        Assert.Contains("[\"v1\", mode, anchor].join(\"|\")", frontend);
         // 参考图必须先按字面量排序再拼，否则顺序不同会算成两个来源。
         Assert.Contains("].sort();", frontend);
 
         // 后端对同一组输入必须给出同一串。注意排序是 Ordinal（≈ JS 默认的 UTF-16 码元序），
         // 所以 "ref-10" 排在 "ref-2" 之前。
         Assert.Equal(
-            "v1|image|shot-1|ref-10,ref-2",
+            "v1|image|ref-10,ref-2",
             CloudAgentMediaAggregation.SourceKey(Args("image", "shot-1", "ref-10", "ref-2")));
+    }
+
+    /// <summary>
+    /// 同一张参考图，不管来自手动生成还是 Agent 生成（来源节点段不同），都必须算同一个来源。
+    /// 线上实测：Agent 写 <c>v1|image|-|cat</c>、手动写 <c>v1|image|img-catbg3g|cat</c>，
+    /// 于是同一张图被拆成两个节点。
+    /// </summary>
+    [Fact]
+    public void 同一张参考图的不同生成路径归并到同一个来源()
+    {
+        string agent = CloudAgentMediaAggregation.SourceKey(Args("image", "", "cat"));
+        string manual = CloudAgentMediaAggregation.SourceKey(Args("image", "img-catbg3g", "cat"));
+        string self = CloudAgentMediaAggregation.SourceKey(Args("image", "image-1791883570602", "cat"));
+
+        Assert.Equal("v1|image|cat", agent);
+        Assert.Equal(agent, manual);
+        Assert.Equal(agent, self);
+    }
+
+    /// <summary>兼容老画布上的四段旧 key：只比「媒体大类 + 锚点」，忽略来源节点段。</summary>
+    [Fact]
+    public void 来源身份忽略来源节点段并兼容旧格式()
+    {
+        Assert.Equal("image|cat", CloudAgentMediaAggregation.SourceIdentity("v1|image|-|cat"));
+        Assert.Equal("image|cat", CloudAgentMediaAggregation.SourceIdentity("v1|image|img-catbg3g|cat"));
+        Assert.Equal("image|cat", CloudAgentMediaAggregation.SourceIdentity("v1|image|cat"));
+        // 无参考图的旧格式回落到来源节点；媒体大类必须仍然区分图片与视频。
+        Assert.Equal("image|shot-1", CloudAgentMediaAggregation.SourceIdentity("v1|image|shot-1|-"));
+        Assert.Equal("video|shot-1", CloudAgentMediaAggregation.SourceIdentity("v1|video|shot-1|-"));
+        Assert.NotEqual(
+            CloudAgentMediaAggregation.SourceIdentity("v1|image|cat"),
+            CloudAgentMediaAggregation.SourceIdentity("v1|video|cat"));
     }
 
     // ------------------------------------------------------------------ 归并目标解析
