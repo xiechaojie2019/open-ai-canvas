@@ -111,7 +111,10 @@ export async function executeImageGeneration({
               batchChildIds: count > 1 ? childIds : undefined,
               batchFailedCount: count > 1 ? 0 : undefined,
               primaryImageId: undefined,
-              imageBatchExpanded: count > 1 ? true : undefined,
+              // 生成过程中不展开子节点：过场只呈现一个结果节点，与收口后的形态一致
+              // （影策原有的「一排占位节点」过场不要了）。子节点仍在文档里跑任务，
+              // 结束由 finalizeCompletedImageBatch 真正删除；想并排比对仍可点批次按钮展开。
+              imageBatchExpanded: count > 1 ? false : undefined,
           };
 
     const rootNode: CanvasNodeData = {

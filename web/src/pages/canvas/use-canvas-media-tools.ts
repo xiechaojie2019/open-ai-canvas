@@ -733,7 +733,8 @@ export function useCanvasMediaTools({
                 isBatchRoot: requestedCount > 1,
                 batchChildIds: requestedCount > 1 ? childIds : undefined,
                 batchFailedCount: requestedCount > 1 ? 0 : undefined,
-                imageBatchExpanded: requestedCount > 1 ? true : undefined,
+                // 与提示词生图一致：生成过程中不展开子节点，过场只留一个结果节点。
+                imageBatchExpanded: requestedCount > 1 ? false : undefined,
                 ...generationMetadata,
                 ...styleMetadata,
             },
