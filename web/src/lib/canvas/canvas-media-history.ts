@@ -12,17 +12,44 @@ const MEDIA_FIELDS = ["content", "storageKey", "previewContent", "videoPreview",
 /**
  * 生成来源 key：同一画布内 key 相同的多次生成都归并到同一个结果节点。
  *
- * 规则必须与后端 `CloudAgentMediaService.MediaSourceKey` **逐字一致**，
+ * 归并只认「基于哪张图」：**有参考图就以参考图集合为准**——同一张图不管走手动生成
+ * 还是 Agent 生成，都会落到同一个节点上；没有参考图（文生图）才回落到来源节点。
+ * 生成方式与来源节点本身不再参与 key（此前手动生成与 Agent 生成因为来源节点段不同，
+ * 被拆成了两个节点）。
+ *
+ * 规则必须与后端 `CloudAgentMediaAggregation.SourceKey` **逐字一致**，
  * 否则前端手动生成与 Agent 生成会各自归并到不同的节点上。
  */
 export function canvasMediaSourceKey(mode: string, sourceNodeId: string, referenceNodeIds: readonly string[]): string {
     const refs = [...new Set(referenceNodeIds.filter((id) => Boolean(id)))].sort();
-    return ["v1", mode, sourceNodeId || "-", refs.length ? refs.join(",") : "-"].join("|");
+    const anchor = refs.length ? refs.join(",") : sourceNodeId || "-";
+    return ["v1", mode, anchor].join("|");
+}
+
+/**
+ * 从 key 里取出「媒体大类 + 归并锚点」，忽略来源节点段。
+ *
+ * 用于兼容旧格式（`v1|mode|sourceNodeId|refs` 四段）与跨路径匹配：老画布上的节点写的
+ * 是旧 key，只比整串会永远匹配不上，同一张图于是又长出一个新节点。
+ */
+function canvasMediaSourceIdentity(key: string): string {
+    const parts = key.split("|");
+    if (parts.length === 4 && parts[0] === "v1") {
+        const refs = parts[3];
+        return [parts[1], refs && refs !== "-" ? refs : parts[2] || "-"].join("|");
+    }
+    if (parts.length === 3 && parts[0] === "v1") {
+        return [parts[1], parts[2] || "-"].join("|");
+    }
+    return key;
 }
 
 /** 节点是否承载了「来源标记」——只有带标记的节点才会被复用为归并目标。 */
 export function isMediaAggregationTarget(metadata: CanvasNodeMetadata | undefined, sourceKey: string): boolean {
-    return Boolean(sourceKey) && metadata?.generationSourceKey === sourceKey;
+    const target = metadata?.generationSourceKey;
+    if (!target || !sourceKey) return false;
+    if (target === sourceKey) return true;
+    return canvasMediaSourceIdentity(target) === canvasMediaSourceIdentity(sourceKey);
 }
 
 export function mediaHistoryEntries(metadata: CanvasNodeMetadata | undefined): CanvasMediaHistoryEntry[] {
