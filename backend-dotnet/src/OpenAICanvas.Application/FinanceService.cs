@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenAICanvas.Domain.Entities;
 using OpenAICanvas.Domain.Kernel;
+using OpenAICanvas.Auth;
 using OpenAICanvas.Domain.Serialization;
 using OpenAICanvas.Persistence.Repositories;
 using OpenAICanvas.Platform;
@@ -203,15 +204,18 @@ public sealed class FinanceService
     private readonly Repository _repository;
     private readonly CreditPolicyService _creditPolicy;
     private readonly FeatureAvailabilityService _features;
+    private readonly ExternalBillingService? _externalBilling;
 
     public FinanceService(
         Repository repository,
         CreditPolicyService creditPolicy,
-        FeatureAvailabilityService features)
+        FeatureAvailabilityService features,
+        ExternalBillingService? externalBilling = null)
     {
         _repository = repository;
         _creditPolicy = creditPolicy;
         _features = features;
+        _externalBilling = externalBilling;
     }
 
     // ------------------------------------------------------------ 钱包
@@ -241,6 +245,31 @@ public sealed class FinanceService
             limit = 30;
         }
 
+        if (_externalBilling is not null
+            && await _externalBilling.IsExternalUserAsync(user.ID, cancellationToken).ConfigureAwait(false))
+        {
+            ExternalBalance balance = await _externalBilling.GetBalanceAsync(user.ID, cancellationToken)
+                .ConfigureAwait(false);
+            PublicCreditPolicy externalPolicy = await _creditPolicy.PublicAsync(user.ID, cancellationToken)
+                .ConfigureAwait(false);
+            return new WalletSummaryDto
+            {
+                Account = new CreditAccount
+                {
+                    UserID = user.ID,
+                    AvailableMicrocredits = balance.AvailableMicrocredits,
+                    ReservedMicrocredits = balance.ReservedMicrocredits,
+                    UpdatedAt = DateTime.UtcNow,
+                },
+                Entries = Array.Empty<CreditLedgerEntry>(),
+                Total = 0,
+                Page = page,
+                PageSize = limit,
+                Policy = externalPolicy,
+                ExternalDebtMicrocredits = balance.DebtMicrocredits,
+            };
+        }
+
         CreditAccount account = await _repository.CreditAccountAsync(user.ID, cancellationToken)
             .ConfigureAwait(false) ?? throw AppError.NotFound("积分账户不存在");
 
@@ -258,6 +287,7 @@ public sealed class FinanceService
             Page = page,
             PageSize = limit,
             Policy = policy,
+            ExternalDebtMicrocredits = 0,
         };
     }
 
@@ -277,6 +307,12 @@ public sealed class FinanceService
 
         await _features.RequireFeatureAsync(FeatureNames.Credits, cancellationToken)
             .ConfigureAwait(false);
+
+        if (_externalBilling is not null
+            && await _externalBilling.IsExternalUserAsync(user.ID, cancellationToken).ConfigureAwait(false))
+        {
+            throw AppError.BadAuthRequest("爱创用户不支持本站兑换码");
+        }
 
         string normalized = code.Trim().ToLowerInvariant();
         if (normalized.Length != RedeemCodeLength)
@@ -314,6 +350,12 @@ public sealed class FinanceService
 
         await _features.RequireFeatureAsync(FeatureNames.Credits, cancellationToken)
             .ConfigureAwait(false);
+
+        if (_externalBilling is not null
+            && await _externalBilling.IsExternalUserAsync(user.ID, cancellationToken).ConfigureAwait(false))
+        {
+            throw AppError.BadAuthRequest("爱创用户不支持本站签到");
+        }
 
         CreditPolicy policy = await _creditPolicy.GetAsync(cancellationToken).ConfigureAwait(false);
         if (policy.CheckinBonusMicrocredits == 0)
@@ -726,12 +768,28 @@ public sealed class FinanceService
 
         if (action == "settle")
         {
-            await _repository.SettleBillingOrderAsync(id, order.ProviderRequestID, cancellationToken)
-                .ConfigureAwait(false);
+            if (_externalBilling is not null
+                && await _externalBilling.IsExternalUserAsync(order.UserID, cancellationToken).ConfigureAwait(false))
+            {
+                await _externalBilling.SettleAsync(id, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _repository.SettleBillingOrderAsync(id, order.ProviderRequestID, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         else
         {
-            await _repository.RefundBillingOrderAsync(id, note, cancellationToken).ConfigureAwait(false);
+            if (_externalBilling is not null
+                && await _externalBilling.IsExternalUserAsync(order.UserID, cancellationToken).ConfigureAwait(false))
+            {
+                await _externalBilling.ReleaseAsync(id, note, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _repository.RefundBillingOrderAsync(id, note, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         await _repository.RecordBillingResolutionAsync(

@@ -60,6 +60,9 @@ public sealed partial class AuthService
     /// <summary>会话 Cookie 名。对应 Go: <c>auth.SessionCookieName</c>。</summary>
     public const string SessionCookieName = "open_ai_canvas_session";
 
+    /// <summary>站点 A 影子用户在 user_identities 中的 provider。</summary>
+    public const string ExternalIdentityProvider = "51aic";
+
     /// <summary>会话有效期 30 天。对应 Go: <c>auth.sessionMaxAge</c>。</summary>
     public static readonly TimeSpan SessionMaxAge = TimeSpan.FromDays(30);
 
@@ -77,14 +80,23 @@ public sealed partial class AuthService
     private readonly Repository _repository;
     private readonly IAuthHost _host;
     private readonly IMailSender _mailSender;
+    private readonly IExternalSiteClient? _externalSiteClient;
+    private readonly IExternalCredentialStore? _externalCredentialStore;
 
     private readonly SemaphoreSlim _registrationLock = new(1, 1);
 
-    public AuthService(Repository repository, IAuthHost? host = null, IMailSender? mailSender = null)
+    public AuthService(
+        Repository repository,
+        IAuthHost? host = null,
+        IMailSender? mailSender = null,
+        IExternalSiteClient? externalSiteClient = null,
+        IExternalCredentialStore? externalCredentialStore = null)
     {
         _repository = repository;
         _host = host ?? new NullAuthHost();
         _mailSender = mailSender ?? new UnconfiguredMailSender();
+        _externalSiteClient = externalSiteClient;
+        _externalCredentialStore = externalCredentialStore;
     }
 
     // ------------------------------------------------------------ 公开设置
@@ -259,6 +271,10 @@ public sealed partial class AuthService
     /// <summary>登出。对应 Go: <c>Service.Logout</c>：Cookie 无效时不报错。</summary>
     public async Task LogoutAsync(string? cookieValue, CancellationToken cancellationToken = default)
     {
+        User? user = null;
+        try { user = await CurrentUserAsync(cookieValue, cancellationToken).ConfigureAwait(false); }
+        catch (AppError) { }
+
         (string sessionId, _) = ParseSessionCookie(cookieValue);
         if (sessionId.Length == 0)
         {
@@ -266,7 +282,137 @@ public sealed partial class AuthService
         }
 
         await _repository.DeleteAuthSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        if (user is not null && _externalCredentialStore is not null)
+        {
+            await _externalCredentialStore.DeleteAsync(LoginCacheKey(user.ID), cancellationToken).ConfigureAwait(false);
+            await _externalCredentialStore.DeleteAsync(PaymentCacheKey(user.ID), cancellationToken).ConfigureAwait(false);
+        }
     }
+
+    /// <summary>用站点 A 短 token 拉取登录信息与支付凭证，并签发本站会话。</summary>
+    public async Task<AuthSessionResultDto> ExternalEnterAsync(
+        ExternalEnterRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        string token = request.Token.Trim();
+        // 空团队码表示个人用户，与团队用户用不同的身份键。
+        string teamCode = request.TeamCode?.Trim() ?? string.Empty;
+        if (token.Length == 0)
+        {
+            throw AppError.BadAuthRequest("爱创身份参数不完整");
+        }
+        if (_externalSiteClient is null || _externalCredentialStore is null)
+        {
+            throw AppError.BadAuthRequest("爱创身份接入未配置");
+        }
+
+        ExternalLoginInfo login = await _externalSiteClient
+            .GetLoginInfoAsync(token, cancellationToken).ConfigureAwait(false);
+        string externalUserId = login.UserId.Trim();
+        string account = login.Account.Trim();
+        if (externalUserId.Length == 0 || account.Length == 0)
+        {
+            throw AppError.BadAuthRequest("爱创身份参数不完整");
+        }
+
+        ExternalPaymentToken payment = await _externalSiteClient
+            .GetPaymentTokenAsync(token, teamCode, cancellationToken).ConfigureAwait(false);
+        const string userIdPrefix = "kuaio_";
+        string paymentUserId = payment.ExternalUserId.StartsWith(userIdPrefix, StringComparison.Ordinal)
+            ? payment.ExternalUserId[userIdPrefix.Length..]
+            : payment.ExternalUserId;
+        if (!string.Equals(paymentUserId, externalUserId, StringComparison.Ordinal)
+            || payment.ExpiresAt <= DateTimeOffset.Now.ToUnixTimeSeconds())
+        {
+            throw AppError.Unauthorized("爱创身份校验失败");
+        }
+
+        string subject = externalUserId + ":" + teamCode;
+        if (subject.Length > 160)
+        {
+            throw AppError.BadAuthRequest("爱创身份标识过长");
+        }
+
+        UserIdentity? identity = await _repository.UserIdentityAsync(ExternalIdentityProvider, subject, cancellationToken).ConfigureAwait(false);
+        User user;
+        if (identity is null)
+        {
+            user = new User
+            {
+                ID = IdGenerator.NewId(),
+                Username = await ExternalUsernameAsync(cancellationToken).ConfigureAwait(false),
+                DisplayName = NormalizeDisplayName(account, externalUserId),
+                Role = UserRole.UserRoleUser,
+                Status = UserStatus.UserStatusActive,
+                PasswordHash = string.Empty,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            identity = new UserIdentity
+            {
+                ID = IdGenerator.NewId(), UserID = user.ID, Provider = ExternalIdentityProvider,
+                Subject = subject, ProviderUsername = account,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            };
+            await _repository.CreateOAuthUserAsync(user, identity, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            user = await _repository.UserAsync(identity.UserID, cancellationToken).ConfigureAwait(false)
+                ?? throw AppError.Unauthorized("爱创绑定用户不存在");
+            identity.ProviderUsername = account;
+            identity.UpdatedAt = DateTime.UtcNow;
+            await _repository.SaveAsync(identity, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (user.Status != UserStatus.UserStatusActive)
+        {
+            throw AppError.Forbidden("该账号已被禁用");
+        }
+
+        await _externalCredentialStore.SetAsync(
+            LoginCacheKey(user.ID),
+            JsonSerializer.Serialize(new { token, externalUserId, teamCode }),
+            SessionMaxAge, cancellationToken).ConfigureAwait(false);
+        TimeSpan paymentTtl = TimeSpan.FromSeconds(payment.ExpiresAt - DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 60);
+        if (paymentTtl <= TimeSpan.Zero) throw AppError.Unauthorized("爱创支付凭证已过期");
+        await _externalCredentialStore.SetAsync(
+            PaymentCacheKey(user.ID),
+            JsonSerializer.Serialize(new { accessToken = payment.AccessToken, externalUserId, teamCode, expiresAt = payment.ExpiresAt }),
+            paymentTtl, cancellationToken).ConfigureAwait(false);
+
+        user.LastLoginAt = DateTime.UtcNow;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _repository.SaveUserAsync(user, cancellationToken).ConfigureAwait(false);
+        _host.RecordActivity(user.ID, "login", 1);
+        return await CreateAuthSessionAsync(user, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 影子用户名只在首次创建时生成。外部 userId 跨团队重复，不能当作用户名。
+    /// </summary>
+    private async Task<string> ExternalUsernameAsync(CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            string entropy = IdGenerator.NewId();
+            if (entropy.Length < 16)
+            {
+                entropy += IdGenerator.NewId();
+            }
+
+            string username = "aic_" + entropy[..16];
+            if (await _repository.UserByUsernameAsync(username, cancellationToken).ConfigureAwait(false) is null)
+            {
+                return username;
+            }
+        }
+
+        throw AppError.BadAuthRequest("无法分配用户名");
+    }
+
+    public static string LoginCacheKey(string userId) => ExternalIdentityProvider + ":login:" + userId;
+    public static string PaymentCacheKey(string userId) => ExternalIdentityProvider + ":pay-jwt:" + userId;
 
     /// <summary>读取当前登录用户。对应 Go: <c>Service.CurrentUser</c>。</summary>
     public async Task<User> CurrentUserAsync(string? cookieValue, CancellationToken cancellationToken = default)
@@ -312,7 +458,8 @@ public sealed partial class AuthService
     public async Task<AuthUserDto> PublicAuthUserAsync(User user, CancellationToken cancellationToken = default)
     {
         UserIdentity? identity = await _repository.UserIdentityForUserAsync(
-            user.ID, "linuxdo", cancellationToken).ConfigureAwait(false);
+            user.ID, "linuxdo", cancellationToken).ConfigureAwait(false)
+            ?? await _repository.UserIdentityForUserAsync(user.ID, ExternalIdentityProvider, cancellationToken).ConfigureAwait(false);
 
         return AuthUserDto.From(user, identity);
     }

@@ -36,6 +36,86 @@ public sealed class LoginRequest
     public string Password { get; set; } = string.Empty;
 }
 
+/// <summary>站点 A 服务端换取本站会话所需的身份信息。</summary>
+public sealed class ExternalEnterRequest
+{
+    [JsonPropertyName("token")]
+    public string Token { get; set; } = string.Empty;
+
+    [JsonPropertyName("teamcode")]
+    public string TeamCode { get; set; } = string.Empty;
+}
+
+public sealed record ExternalLoginInfo(string UserId, string Account);
+
+public sealed record ExternalPaymentToken(string AccessToken, string ExternalUserId, long ExpiresAt);
+
+public interface IExternalSiteClient
+{
+    Task<ExternalLoginInfo> GetLoginInfoAsync(string token, CancellationToken cancellationToken = default);
+
+    Task<ExternalPaymentToken> GetPaymentTokenAsync(string token, string teamCode, CancellationToken cancellationToken = default);
+}
+
+public interface IExternalCredentialStore
+{
+    Task<string?> GetAsync(string key, CancellationToken cancellationToken = default);
+    Task SetAsync(string key, string value, TimeSpan ttl, CancellationToken cancellationToken = default);
+    Task DeleteAsync(string key, CancellationToken cancellationToken = default);
+}
+
+/// <summary>爱创余额响应。</summary>
+public sealed record ExternalBalance(
+    long AvailableMicrocredits,
+    long ReservedMicrocredits,
+    long DebtMicrocredits);
+
+/// <summary>爱创冻结结果。</summary>
+public sealed record ExternalHold(
+    string HoldId,
+    string OrderId,
+    string Status,
+    long AmountMicrocredits,
+    DateTimeOffset? ExpiresAt);
+
+/// <summary>爱创确认或解冻结果。</summary>
+public sealed record ExternalBillingResult(
+    string HoldId,
+    string OrderId,
+    string Status,
+    long AmountMicrocredits,
+    long ReleasedAmountMicrocredits,
+    long ExtraChargedAmountMicrocredits,
+    long DebtMicrocredits);
+
+/// <summary>爱创积分冻结计费客户端。</summary>
+public interface IExternalBillingClient
+{
+    Task<ExternalBalance> GetBalanceAsync(string userId, CancellationToken cancellationToken = default);
+
+    Task<ExternalHold> HoldAsync(
+        string userId,
+        string orderId,
+        long amountMicrocredits,
+        string taskId,
+        string remarks,
+        CancellationToken cancellationToken = default);
+
+    Task<ExternalBillingResult> ConfirmAsync(
+        string userId,
+        string orderId,
+        string holdId,
+        long amountMicrocredits,
+        CancellationToken cancellationToken = default);
+
+    Task<ExternalBillingResult> ReleaseAsync(
+        string userId,
+        string orderId,
+        string holdId,
+        string reason,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// 公开认证设置。对应 Go: <c>auth.PublicAuthSettings</c>（struct，字段顺序即输出顺序）。
 /// </summary>

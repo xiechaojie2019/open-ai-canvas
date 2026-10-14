@@ -220,6 +220,20 @@ public static class AuthEndpoints
             }
         });
 
+        api.MapPost("/auth/external/enter", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            ExternalEnterRequest? request = await ReadJsonAsync<ExternalEnterRequest>(context, CredentialBodyLimit, cancellationToken).ConfigureAwait(false);
+            if (request is null) return ApiResults.Fail(StatusCodes.Status400BadRequest, null);
+            if (!await EnforceRateLimitAsync(context, limiter, "external-enter:" + ClientIp(context), policyProvider.Current().Request.LoginIpPerTenMinutes, TimeSpan.FromMinutes(10)).ConfigureAwait(false)) return Results.Empty;
+            try
+            {
+                AuthSessionResultDto result = await service.Auth.ExternalEnterAsync(request, cancellationToken).ConfigureAwait(false);
+                SessionCookie.Set(context, result.Session, result.MaxAgeSecs);
+                return ApiResults.Ok(new { user = result.User, token = result.Session });
+            }
+            catch (Exception error) { return ApiResults.FailService(error, context); }
+        });
+
         api.MapGet("/auth/session", async (HttpContext context, CancellationToken cancellationToken) =>
         {
             try

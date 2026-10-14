@@ -79,15 +79,26 @@ public sealed partial class Repository
         CancellationToken cancellationToken = default)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
-        const string sql = """
-            SELECT id, "userId", provider, subject, "providerUsername", "avatarUrl", "createdAt", "updatedAt"
-            FROM "userIdentities"
-            WHERE provider = @Provider AND subject = @Subject
-            LIMIT 1
-            """;
-        return await connection.QueryFirstOrDefaultAsync<UserIdentity>(
-            new CommandDefinition(sql, new { Provider = provider, Subject = subject },
-                cancellationToken: cancellationToken));
+        return await FirstOrDefaultAsync<UserIdentity>(
+            connection,
+            SqlBuilder.Select<UserIdentity>(
+                "provider = @provider AND subject = @subject",
+                limitOffset: " LIMIT 1"),
+            new { provider, subject },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>判断用户是否绑定指定外部身份提供方。</summary>
+    public async Task<bool> UserHasIdentityAsync(
+        string userId, string provider, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        long count = await ScalarAsync<long>(
+            connection,
+            "SELECT COUNT(*) FROM \"userIdentities\" WHERE \"userId\" = @userId AND provider = @provider",
+            new { userId, provider },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return count > 0;
     }
 
     /// <summary>

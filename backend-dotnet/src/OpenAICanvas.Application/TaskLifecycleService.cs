@@ -42,15 +42,18 @@ public sealed class TaskLifecycleService
     private readonly Repository _repository;
     private readonly TaskCreationService _creations;
     private readonly IRuntimePolicyProvider _runtimePolicy;
+    private readonly ExternalBillingService? _externalBilling;
 
     public TaskLifecycleService(
         Repository repository,
         TaskCreationService creations,
-        IRuntimePolicyProvider? runtimePolicy = null)
+        IRuntimePolicyProvider? runtimePolicy = null,
+        ExternalBillingService? externalBilling = null)
     {
         _repository = repository;
         _creations = creations;
         _runtimePolicy = runtimePolicy ?? new DefaultRuntimePolicyProvider();
+        _externalBilling = externalBilling;
     }
 
     /// <summary>重试失败/取消任务。对应 Go: <c>retryTask</c>。</summary>
@@ -94,8 +97,35 @@ public sealed class TaskLifecycleService
         await _creations.EnsureTaskProjectActiveAsync(userId, task.ProjectID, cancellationToken).ConfigureAwait(false);
         try
         {
-            task = await _repository.RetryTaskWithBillingAsync(
-                userId, task, billingOrder, policy.Task.ActiveTaskLimit, cancellationToken).ConfigureAwait(false);
+            bool external = billingOrder is not null && _externalBilling is not null
+                && await _externalBilling.IsExternalUserAsync(userId, cancellationToken).ConfigureAwait(false);
+            if (external)
+            {
+                await _externalBilling!.HoldAsync(billingOrder!, task, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    task = await _repository.RetryTaskWithExternalBillingAsync(
+                        userId, task, billingOrder!, policy.Task.ActiveTaskLimit, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    string? holdId = await _externalBilling.ReadHoldIdAsync(
+                        billingOrder!.ID, cancellationToken).ConfigureAwait(false);
+                    if (holdId is not null)
+                    {
+                        await _externalBilling.ReleaseHeldAsync(
+                            userId, billingOrder.ID, holdId, "本站任务重试创建失败", cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    throw;
+                }
+            }
+            else
+            {
+                task = await _repository.RetryTaskWithBillingAsync(
+                    userId, task, billingOrder, policy.Task.ActiveTaskLimit, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (InvalidOperationException error) when (error.Message == "insufficient_credits")
         {
@@ -180,9 +210,23 @@ public sealed class TaskLifecycleService
             {
                 if (originalStatus == TaskStatus.TaskStatusQueued)
                 {
-                    await _repository.RefundBillingOrderAsync(
-                        task.BillingOrderID, "用户主动取消，且任务尚未开始执行", cancellationToken)
-                        .ConfigureAwait(false);
+                    BillingOrder? order = await _repository.BillingOrderAsync(
+                        task.BillingOrderID, cancellationToken).ConfigureAwait(false);
+                    bool external = order is not null && _externalBilling is not null
+                        && await _externalBilling.IsExternalUserAsync(order.UserID, cancellationToken)
+                            .ConfigureAwait(false);
+                    if (external)
+                    {
+                        await _externalBilling!.ReleaseAsync(
+                            task.BillingOrderID, "用户主动取消，且任务尚未开始执行", cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _repository.RefundBillingOrderAsync(
+                            task.BillingOrderID, "用户主动取消，且任务尚未开始执行", cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
                 else
                 {

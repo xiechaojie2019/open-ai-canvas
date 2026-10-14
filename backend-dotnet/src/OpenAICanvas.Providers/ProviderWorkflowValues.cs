@@ -451,7 +451,7 @@ public static class ProviderWorkflowValues
         {
             return false;
         }
-        string[] parts = normalized.Split(['x', ' ', ','], StringSplitOptions.RemoveEmptyEntries);
+        string[] parts = normalized.Split(new char[] { 'x', ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 2)
         {
             return false;

@@ -372,7 +372,9 @@ public static class CloudAgentLessons
         {
             Push(step.Tool);
         }
-        foreach (string chunk in lesson.Topic.Split(['.', '-', '_', ' '], StringSplitOptions.RemoveEmptyEntries))
+        foreach (string chunk in lesson.Topic.Split(
+            new[] { '.', '-', '_', ' ' },
+            StringSplitOptions.RemoveEmptyEntries))
         {
             Push(chunk);
         }

@@ -46,6 +46,10 @@ builder.WebHost.ConfigureKestrel(options =>
 // CORS 策略非法时直接让进程启动失败，与 Go 的 cors() 返回 error 一致。
 CorsPolicy corsPolicy = CorsPolicy.Parse(env.CorsOrigins);
 
+// Swagger 仅用于 .NET 开发调试；/api/openapi.yaml 继续保留为迁移兼容基线。
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 // 数据库：Dapper + 静态建表脚本。迁移与版本校验的语义与 Go 完全一致。
 CanvasDatabase database = new(new CanvasDatabaseOptions
 {
@@ -101,6 +105,15 @@ if (coordinatorError is not null)
     Console.Error.WriteLine($"协调器初始化警告：{coordinatorError}");
 }
 builder.Services.AddSingleton(platformCoordinator);
+builder.Services.AddSingleton<OpenAICanvas.Auth.IExternalSiteClient>(new OpenAICanvas.Web.FjdazeClient(env.ExternalSiteBaseUrl));
+builder.Services.AddSingleton<OpenAICanvas.Auth.IExternalCredentialStore>(new OpenAICanvas.Web.FjdazeCredentialStore(platformCoordinator));
+builder.Services.AddSingleton<OpenAICanvas.Auth.IExternalBillingClient>(serviceProvider =>
+    new OpenAICanvas.Web.FjdazeBillingClient(
+        env.ExternalBillingBaseUrl,
+        env.ExternalBillingVasModuleId,
+        env.ExternalBillingVasAppKey,
+        serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalSiteClient>(),
+        serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalCredentialStore>()));
 
 // 业务组合根与平台能力。后续模块继续往 CanvasService 上挂。
 builder.Services.AddSingleton(new OpenAICanvas.Persistence.Repositories.Repository(database));
@@ -112,7 +125,10 @@ builder.Services.AddSingleton<OpenAICanvas.Application.CanvasService>(servicePro
         runtimePolicy: serviceProvider.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>(),
         authHost: serviceProvider.GetRequiredService<OpenAICanvas.Application.CanvasAuthHost>(),
         mailSender: new SmtpMailSender(),
-        dataDir: env.DataDir));
+        dataDir: env.DataDir,
+        externalSiteClient: serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalSiteClient>(),
+        externalCredentialStore: serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalCredentialStore>(),
+        externalBillingClient: serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalBillingClient>()));
 builder.Services.AddSingleton<OpenAICanvas.Web.Security.IRateLimiter, OpenAICanvas.Web.Security.InMemoryRateLimiter>();
 builder.Services.AddSingleton<OpenAICanvas.Platform.IRuntimePolicyProvider,
     OpenAICanvas.Platform.DefaultRuntimePolicyProvider>();
@@ -158,7 +174,8 @@ builder.Services.AddSingleton(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
             serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>(),
             serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
-            canvas.Features))
+            canvas.Features),
+        canvas.ExternalBilling)
     {
         CanvasService = canvas,
         GeneratedMediaUpload =
@@ -272,6 +289,12 @@ builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.St
     serviceProvider.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(), env.DataDir));
 
 WebApplication app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 // 启动种子：系统渠道缺渠道模型占位时按 ModelsJSON 补齐（Go main.go 的 EnsureSystemChannelModels）。
 await app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>()

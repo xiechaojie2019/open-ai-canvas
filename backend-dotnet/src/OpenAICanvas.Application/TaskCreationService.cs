@@ -55,6 +55,7 @@ public sealed partial class TaskCreationService
     private readonly IRuntimePolicyProvider _runtimePolicy;
     private readonly Platform.FeatureAvailabilityService? _features;
     private readonly string _dataDir;
+    private readonly ExternalBillingService? _externalBilling;
     private WorkflowPluginGate? _workflowPlugins;
 
     /// <summary>工作流插件门控；惰性初始化，与 CanvasService 共用同一仓储单例。</summary>
@@ -64,12 +65,14 @@ public sealed partial class TaskCreationService
         Repository repository,
         IRuntimePolicyProvider? runtimePolicy = null,
         string? dataDir = null,
-        Platform.FeatureAvailabilityService? features = null)
+        Platform.FeatureAvailabilityService? features = null,
+        ExternalBillingService? externalBilling = null)
     {
         _repository = repository;
         _runtimePolicy = runtimePolicy ?? new DefaultRuntimePolicyProvider();
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
         _features = features;
+        _externalBilling = externalBilling;
         LogicalModels = new LogicalModelService(repository);
     }
 
@@ -366,8 +369,55 @@ public sealed partial class TaskCreationService
         {
             if (billingOrder is not null)
             {
-                await _repository.CreateTaskWithCreditReservationAsync(
-                    task, billingOrder, policy.Task.ActiveTaskLimit, cancellationToken).ConfigureAwait(false);
+                bool external = _externalBilling is not null
+                    && await _externalBilling.IsExternalUserAsync(task.UserID, cancellationToken).ConfigureAwait(false);
+                if (external)
+                {
+                    try
+                    {
+                        await _externalBilling!.HoldAsync(billingOrder, task, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await _repository.PersistExternalBillingOrderUncertainAsync(
+                            billingOrder, "爱创积分已冻结但本站未能保存冻结单号", cancellationToken)
+                            .ConfigureAwait(false);
+                        throw;
+                    }
+                    try
+                    {
+                        await _repository.CreateTaskWithExternalBillingAsync(
+                            task, billingOrder, policy.Task.ActiveTaskLimit, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            string? holdId = await _externalBilling.ReadHoldIdAsync(
+                                billingOrder.ID, cancellationToken).ConfigureAwait(false);
+                            if (holdId is null)
+                            {
+                                throw new InvalidOperationException("爱创冻结单号不存在");
+                            }
+                            await _externalBilling.ReleaseHeldAsync(
+                                task.UserID, billingOrder.ID, holdId, "本站任务创建失败", cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            await _repository.PersistExternalBillingOrderUncertainAsync(
+                                billingOrder, "任务创建失败且爱创积分释放结果不明确", cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        throw;
+                    }
+                }
+                else
+                {
+                    await _repository.CreateTaskWithCreditReservationAsync(
+                        task, billingOrder, policy.Task.ActiveTaskLimit, cancellationToken).ConfigureAwait(false);
+                }
             }
             else
             {

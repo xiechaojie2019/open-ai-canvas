@@ -205,6 +205,10 @@ public sealed class WalletSummaryDto
 
     [JsonPropertyName("policy")]
     public required PublicCreditPolicy Policy { get; init; }
+
+    /// <summary>爱创用户欠账微积分；本站用户固定为 0。</summary>
+    [JsonPropertyName("debtMicrocredits")]
+    public long ExternalDebtMicrocredits { get; init; }
 }
 
 /// <summary>用户任务分页。对应 Go: <c>app.AdminTaskPage</c>。</summary>

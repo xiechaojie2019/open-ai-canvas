@@ -115,6 +115,78 @@ public sealed partial class Repository
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>完成外部积分订单，只更新本站账单，不触碰本站账户和账本。</summary>
+    public async Task CompleteExternalBillingOrderAsync(
+        string id, string status, long actualAmount, long debtMicrocredits,
+        CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        string? settledAt = status == BillingStatus.BillingStatusSettled ? "@now" : "NULL";
+        string? refundedAt = status == BillingStatus.BillingStatusRefunded ? "@now" : "NULL";
+        await ExecuteAsync(
+            connection,
+            $"""
+            UPDATE billing_orders SET status = @status, actual_amount_microcredits = @actual,
+              refunded_amount_microcredits = @refunded, error = @error, resolution_note = @note,
+              settled_at = {settledAt}, refunded_at = {refundedAt}, updated_at = @now
+            WHERE id = @id AND status IN @openStatuses
+            """,
+            new
+            {
+                id,
+                status,
+                actual = actualAmount,
+                refunded = status == BillingStatus.BillingStatusRefunded
+                    ? (await ScalarAsync<long>(connection,
+                        "SELECT amount_microcredits FROM billing_orders WHERE id = @id LIMIT 1",
+                        new { id }, cancellationToken: cancellationToken).ConfigureAwait(false)) : 0,
+                error = debtMicrocredits > 0 ? $"爱创欠账 microcredits={debtMicrocredits}" : "",
+                note = debtMicrocredits > 0 ? $"external_debt_microcredits={debtMicrocredits}" : "",
+                now = DateTime.UtcNow,
+                openStatuses = new[]
+                {
+                    BillingStatus.BillingStatusReserved,
+                    BillingStatus.BillingStatusRunning,
+                    BillingStatus.BillingStatusUncertain,
+                },
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>外部冻结已发生但本地任务事务失败时，保留一条待核对账单。</summary>
+    public async Task PersistExternalBillingOrderUncertainAsync(
+        BillingOrder order, string errorText, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        order.Status = BillingStatus.BillingStatusUncertain;
+        order.Error = errorText;
+        order.UpdatedAt = DateTime.UtcNow;
+        await ExecuteAsync(
+            connection,
+            SqlBuilder.Insert<BillingOrder>() + " ON CONFLICT (id) DO NOTHING",
+            order,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>计算外部积分确认所需的实际金额，不修改本站积分。</summary>
+    public async Task<long> ExternalBillingAmountAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        BillingOrder order = await FirstOrDefaultAsync<BillingOrder>(
+            connection, SqlBuilder.Select<BillingOrder>("id = @id", limitOffset: " LIMIT 1"), new { id },
+            cancellationToken: cancellationToken).ConfigureAwait(false)
+            ?? throw AppError.NotFound("计费订单不存在");
+        if (order.BillingMode != "token" || ZeroPricedTokenOrder(order))
+        {
+            return order.AmountMicrocredits;
+        }
+        BillingUsage usage = await ReadBillingUsageAsync(connection, null, id, cancellationToken).ConfigureAwait(false);
+        long actual = TokenUsageAmount(order, usage);
+        return order.ChargeLimitMicrocredits > 0
+            ? Math.Min(actual, order.ChargeLimitMicrocredits)
+            : actual;
+    }
+
     // ---------------------------------------------------------------- 结算
 
     /// <summary>

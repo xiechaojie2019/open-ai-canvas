@@ -47,11 +47,14 @@ public sealed class CanvasService
         Auth.IMailSender? mailSender = null,
         string? dataDir = null,
         Payment.PaymentRegistry? paymentRegistry = null,
-        IPluginAvailability? pluginAvailability = null)
+        IPluginAvailability? pluginAvailability = null,
+        Auth.IExternalSiteClient? externalSiteClient = null,
+        Auth.IExternalCredentialStore? externalCredentialStore = null,
+        Auth.IExternalBillingClient? externalBillingClient = null)
     {
         Repository = repository;
         RuntimePolicy = runtimePolicy ?? new DefaultRuntimePolicyProvider();
-        Auth = new Auth.AuthService(repository, authHost, mailSender);
+        Auth = new Auth.AuthService(repository, authHost, mailSender, externalSiteClient, externalCredentialStore);
         // 打破 AuthService ←→ CanvasService 的构造循环：构造完成后补上引用。
         (authHost as CanvasAuthHost)?.Attach(this);
         Features = new FeatureAvailabilityService(repository);
@@ -86,17 +89,20 @@ public sealed class CanvasService
         Tasks = new TaskService(repository);
         ProjectWorkflows = new ProjectWorkflowService(repository, ProjectAssets, ProjectAssetFolders, Tasks, dataDir);
         Projects = new ProjectService(repository, ProjectWorkflows);
-        Finance = new FinanceService(repository, CreditPolicy, Features);
+        ExternalBilling = externalBillingClient is not null && externalCredentialStore is not null
+            ? new ExternalBillingService(repository, externalBillingClient, externalCredentialStore)
+            : null;
+        Finance = new FinanceService(repository, CreditPolicy, Features, ExternalBilling);
         Skills = new SkillsService(repository, dataDir);
         PromptTemplates = new Prompts.PromptTemplateService(repository);
         ModelCatalog = new ModelCatalogService(repository, Features, LogicalModels);
-        TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features);
+        TaskCreations = new TaskCreationService(repository, RuntimePolicy, dataDir, Features, ExternalBilling);
         WorkflowPlugins = new WorkflowPluginGate(repository);
         // 插件运行时（10.1/10.2）：注册表 + 管理服务。Bootstrap 在启动处异步执行。
         Plugins = new PluginRuntime(repository, dataDir);
         PluginManagement = new PluginManagementService(repository, Plugins, Features);
         RunningHub = new RunningHubManagementService();
-        TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy).WithFeatures(Features);
+        TaskLifecycle = new TaskLifecycleService(repository, TaskCreations, RuntimePolicy, ExternalBilling).WithFeatures(Features);
         MediaRecovery = new TaskMediaRecoveryService(repository, dataDir ?? "data");
         AdminLogMedia = new AdminLogMediaService(repository,
             new ResourceDomainService(repository, RuntimePolicy, dataDir));
@@ -657,6 +663,9 @@ public sealed class CanvasService
     public ProjectWorkflowService ProjectWorkflows { get; }
 
     public FinanceService Finance { get; }
+
+    /// <summary>爱创外部积分协调器；未配置计费接口时为空。</summary>
+    public ExternalBillingService? ExternalBilling { get; }
 
     public SkillsService Skills { get; }
 

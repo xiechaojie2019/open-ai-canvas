@@ -12,8 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 等价于 handler/openapi_embed.go：openapi.yaml 原样内嵌输出。 -->
-    <EmbeddedResource Include="..\..\..\backend\internal\handler\openapi.yaml" LogicalName="openapi.yaml" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
   </ItemGroup>
 
 </Project>

@@ -57,6 +57,17 @@ public sealed class CanvasEnvironment
     /// <summary>对应 <c>REDIS_URL</c>。</summary>
     public string? RedisUrl { get; private init; }
 
+    public string ExternalSiteBaseUrl { get; private init; } = "https://test-aicraft.fjdaze.cn";
+
+    /// <summary>爱创积分计费接口 Base URL，空值表示未配置外部计费。</summary>
+    public string? ExternalBillingBaseUrl { get; private init; } = "http://api.fjdaze.com/payment";
+
+    /// <summary>爱创计费功能模块编号，可选。</summary>
+    public int? ExternalBillingVasModuleId { get; private init; }
+
+    /// <summary>爱创计费功能应用标识，可选。</summary>
+    public string? ExternalBillingVasAppKey { get; private init; }
+
     /// <summary>Kestrel 监听地址（由 <see cref="Address"/> 转换而来）。</summary>
     public string ListenUrl { get; private init; } = "http://0.0.0.0:8080";
 
@@ -87,6 +98,10 @@ public sealed class CanvasEnvironment
             WhisperBaseUrl = Read(configuration, "CANVAS_WHISPER_BASE_URL"),
             FfmpegPath = Read(configuration, "CANVAS_FFMPEG_PATH"),
             RedisUrl = Read(configuration, "REDIS_URL"),
+            ExternalSiteBaseUrl = Read(configuration, "CANVAS_FJDAZE_BASE_URL") ?? "https://test-aicraft.fjdaze.cn",
+            ExternalBillingBaseUrl = Read(configuration, "CANVAS_FJDAZE_BILLING_BASE_URL") ?? "http://test-api.fjdaze.com/payment",
+            ExternalBillingVasModuleId = ReadNullableInt(configuration, "CANVAS_FJDAZE_VAS_MODULE_ID"),
+            ExternalBillingVasAppKey = Read(configuration, "CANVAS_FJDAZE_VAS_APP_KEY"),
         };
     }
 
@@ -98,6 +113,20 @@ public sealed class CanvasEnvironment
     {
         string value = configuration[key] ?? string.Empty;
         return value.Length == 0 ? null : value;
+    }
+
+    private static int? ReadNullableInt(IConfiguration configuration, string key)
+    {
+        string? value = Read(configuration, key);
+        if (value is null)
+        {
+            return null;
+        }
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+        {
+            throw new InvalidOperationException($"{key} 不是有效整数");
+        }
+        return parsed;
     }
 
     private static bool ReadBool(IConfiguration configuration, string key, bool fallback)

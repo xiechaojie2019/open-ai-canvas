@@ -47,7 +47,8 @@ public sealed class TaskWorkerService
         Repository repository,
         IRuntimePolicyProvider policy,
         Coordinator? coordinator = null,
-        TimelineTaskExecutor? timeline = null)
+        TimelineTaskExecutor? timeline = null,
+        ExternalBillingService? externalBilling = null)
     {
         _repository = repository;
         _policy = policy;
@@ -56,7 +57,10 @@ public sealed class TaskWorkerService
         _apiCallAudit = new ApiCallAuditWriter(repository, policy);
         // CanvasService 只为文本回放收尾服务；未注入时退化为基础任务服务（回放跳过）。
         _terminal = new TaskTerminalService(
-            repository, CanvasService?.Tasks ?? new TaskService(repository), _apiCallAudit);
+            repository,
+            CanvasService?.Tasks ?? new TaskService(repository),
+            externalBilling,
+            _apiCallAudit);
         _compact = new CloudAgent.AgentMemoryCompactService(repository);
     }
 

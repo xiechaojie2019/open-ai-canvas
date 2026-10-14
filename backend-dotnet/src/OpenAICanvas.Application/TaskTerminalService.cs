@@ -25,11 +25,14 @@ public sealed class TaskTerminalService
     private readonly ApiCallAuditWriter? _audit;
 
     public TaskTerminalService(
-        Repository repository, TaskService tasks, ApiCallAuditWriter? audit = null)
+        Repository repository,
+        TaskService tasks,
+        ExternalBillingService? externalBilling = null,
+        ApiCallAuditWriter? audit = null)
     {
         _repository = repository;
         _tasks = tasks;
-        _billing = new TaskBillingLifecycle(repository);
+        _billing = new TaskBillingLifecycle(repository, externalBilling);
         _audit = audit;
     }
 
@@ -37,8 +40,13 @@ public sealed class TaskTerminalService
     private sealed class TaskBillingLifecycle
     {
         private readonly Repository _repository;
+        private readonly ExternalBillingService? _externalBilling;
 
-        public TaskBillingLifecycle(Repository repository) => _repository = repository;
+        public TaskBillingLifecycle(Repository repository, ExternalBillingService? externalBilling)
+        {
+            _repository = repository;
+            _externalBilling = externalBilling;
+        }
 
         public async Task MarkBillingUncertainAsync(string orderID, string errorText, CancellationToken ct)
         {
@@ -52,7 +60,14 @@ public sealed class TaskTerminalService
         {
             if (orderID.Length > 0)
             {
-                await _repository.RefundBillingOrderAsync(orderID, TruncateRunes(errorText, 1000), ct).ConfigureAwait(false);
+                if (await IsExternalAsync(orderID, ct).ConfigureAwait(false))
+                {
+                    await _externalBilling!.ReleaseAsync(orderID, errorText, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _repository.RefundBillingOrderAsync(orderID, TruncateRunes(errorText, 1000), ct).ConfigureAwait(false);
+                }
             }
         }
 
@@ -60,8 +75,22 @@ public sealed class TaskTerminalService
         {
             if (orderID.Length > 0)
             {
-                await _repository.SettleBillingOrderAsync(orderID, providerRequestID, ct).ConfigureAwait(false);
+                if (await IsExternalAsync(orderID, ct).ConfigureAwait(false))
+                {
+                    await _externalBilling!.SettleAsync(orderID, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _repository.SettleBillingOrderAsync(orderID, providerRequestID, ct).ConfigureAwait(false);
+                }
             }
+        }
+
+        private async Task<bool> IsExternalAsync(string orderID, CancellationToken ct)
+        {
+            BillingOrder? order = await _repository.BillingOrderAsync(orderID, ct).ConfigureAwait(false);
+            return order is not null && _externalBilling is not null
+                && await _externalBilling.IsExternalUserAsync(order.UserID, ct).ConfigureAwait(false);
         }
 
         /// <summary>对应 Go: <c>taskBillingCoordinator.BillingFailureRequiresReview</c>。</summary>

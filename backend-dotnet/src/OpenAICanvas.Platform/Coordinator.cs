@@ -64,6 +64,7 @@ public sealed class Coordinator
     private readonly Dictionary<string, LocalRateEntry> _localRate = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, DateTimeOffset>> _localSlots =
         new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (string Value, DateTimeOffset ExpiresAt)> _localCache = new(StringComparer.Ordinal);
 
     private Coordinator(IConnectionMultiplexer? redis, string instanceId)
     {
@@ -172,6 +173,43 @@ public sealed class Coordinator
     public bool HasRedis() => RedisConnection is not null;
 
     public IDatabase? Redis() => RedisConnection?.GetDatabase();
+
+    public async Task<string?> GetCacheAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (RedisConnection is not null)
+        {
+            RedisValue value = await RedisConnection.GetDatabase().StringGetAsync(key).ConfigureAwait(false);
+            return value.IsNullOrEmpty ? null : value.ToString();
+        }
+        if (!_localCache.TryGetValue(key, out (string Value, DateTimeOffset ExpiresAt) entry)) return null;
+        if (entry.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            _localCache.TryRemove(key, out _);
+            return null;
+        }
+        return entry.Value;
+    }
+
+    public async Task SetCacheAsync(string key, string value, TimeSpan ttl, CancellationToken cancellationToken = default)
+    {
+        if (ttl <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(ttl));
+        if (RedisConnection is not null)
+        {
+            await RedisConnection.GetDatabase().StringSetAsync(key, value, ttl).ConfigureAwait(false);
+            return;
+        }
+        _localCache[key] = (value, DateTimeOffset.UtcNow.Add(ttl));
+    }
+
+    public async Task DeleteCacheAsync(string key, CancellationToken cancellationToken = default)
+    {
+        if (RedisConnection is not null)
+        {
+            await RedisConnection.GetDatabase().KeyDeleteAsync(key).ConfigureAwait(false);
+            return;
+        }
+        _localCache.TryRemove(key, out _);
+    }
 
     /// <summary>
     /// 固定窗口限流。<c>true</c> 表示放行。

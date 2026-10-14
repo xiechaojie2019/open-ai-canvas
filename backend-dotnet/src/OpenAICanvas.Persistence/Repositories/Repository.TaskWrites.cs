@@ -32,8 +32,20 @@ public sealed partial class Repository
         TaskEntity task, BillingOrder order, int activeTaskLimit, CancellationToken cancellationToken = default) =>
         CreateTaskInTransactionAsync(task, order, activeTaskLimit, cancellationToken);
 
+    /// <summary>创建外部积分任务，只写任务和本站计费订单，不操作本站积分账户。</summary>
+    public Task CreateTaskWithExternalBillingAsync(
+        TaskEntity task, BillingOrder order, int activeTaskLimit, CancellationToken cancellationToken = default) =>
+        CreateTaskInTransactionAsync(task, order, activeTaskLimit, cancellationToken, skipLocalReservation: true);
+
+    /// <summary>重试外部积分任务，只写新账单，不操作本站积分账户。</summary>
+    public Task<TaskEntity> RetryTaskWithExternalBillingAsync(
+        string userId, TaskEntity prepared, BillingOrder order, int activeTaskLimit,
+        CancellationToken cancellationToken = default) =>
+        RetryTaskWithBillingInternalAsync(userId, prepared, order, activeTaskLimit, cancellationToken, skipLocalReservation: true);
+
     private async Task CreateTaskInTransactionAsync(
-        TaskEntity task, BillingOrder? billingOrder, int activeTaskLimit, CancellationToken cancellationToken)
+        TaskEntity task, BillingOrder? billingOrder, int activeTaskLimit, CancellationToken cancellationToken,
+        bool skipLocalReservation = false)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -68,8 +80,18 @@ public sealed partial class Repository
 
         if (billingOrder is not null)
         {
-            await ReserveBillingOrderInTransactionAsync(
-                connection, transaction, billingOrder, cancellationToken).ConfigureAwait(false);
+            if (skipLocalReservation)
+            {
+                billingOrder.ReservedAmountMicrocredits = billingOrder.AmountMicrocredits;
+                await ExecuteAsync(
+                    connection, SqlBuilder.Insert<BillingOrder>(), billingOrder, transaction, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await ReserveBillingOrderInTransactionAsync(
+                    connection, transaction, billingOrder, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         await ExecuteAsync(
@@ -167,7 +189,18 @@ public sealed partial class Repository
         TaskEntity prepared,
         BillingOrder? order,
         int activeTaskLimit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await RetryTaskWithBillingInternalAsync(
+            userId, prepared, order, activeTaskLimit, cancellationToken, skipLocalReservation: false)
+            .ConfigureAwait(false);
+
+    private async Task<TaskEntity> RetryTaskWithBillingInternalAsync(
+        string userId,
+        TaskEntity prepared,
+        BillingOrder? order,
+        int activeTaskLimit,
+        CancellationToken cancellationToken,
+        bool skipLocalReservation)
     {
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         await using DbTransaction transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -185,8 +218,18 @@ public sealed partial class Repository
         }
         if (order is not null)
         {
-            await ReserveBillingOrderInTransactionAsync(
-                connection, transaction, order, cancellationToken).ConfigureAwait(false);
+            if (skipLocalReservation)
+            {
+                order.ReservedAmountMicrocredits = order.AmountMicrocredits;
+                await ExecuteAsync(
+                    connection, SqlBuilder.Insert<BillingOrder>(), order, transaction, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await ReserveBillingOrderInTransactionAsync(
+                    connection, transaction, order, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         DateTime now = DateTime.UtcNow;
