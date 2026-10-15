@@ -30,6 +30,9 @@ ENV CANVAS_BACKEND_DATA_DIR=/data
 
 COPY --from=build /out/web/ /app/web/
 COPY --from=build /out/tools/ /app/tools/
+# 官方协议插件包打进镜像（ProtocolPluginPackageDir.Find 的 /app/plugin-packages 候选），
+# 新环境无需再手工往数据卷放 plugin-packages/plugin_registry.json。
+COPY --chown=app:app plugin-packages/*.yingce-plugin /app/plugin-packages/
 RUN chmod +x /app/web/OpenAICanvas.Web /app/tools/OpenAICanvas.Tools
 
 USER app
