@@ -263,6 +263,18 @@ public sealed class ResourceDomainService
         return results;
     }
 
+    /// <summary>
+    /// 分享画布（匿名访客）的资源访问解析：只允许 display/original，5 分钟签名。
+    /// 供分享资源投递端点的云 provider 分支使用（302 到签名直链）。
+    /// </summary>
+    public Task<ResourceAccess> ResolveShareAccessAsync(
+        Resource resource, CancellationToken cancellationToken = default)
+        => ResolveAccessAsync(
+            resource,
+            new ResourceAccessOptions(PurposeDisplay, VariantOriginal),
+            DateTime.UtcNow,
+            cancellationToken);
+
     private async Task<ResourceAccessResult> ResolveAccessItemAsync(
         string userId, ResourceAccessRequest request, CancellationToken cancellationToken)
     {

@@ -73,7 +73,7 @@ public sealed class CanvasService
         ResourceDomain = new ResourceDomainService(repository, RuntimePolicy, dataDir, storageSettings: StorageSettings);
         ResourceDelete = new ResourceDeleteService(repository, dataDir, StorageSettings);
         UserData = new UserDataService(repository, RuntimePolicy, ResourceDelete);
-        CanvasShares = new CanvasShareService(repository);
+        CanvasShares = new CanvasShareService(repository, ResourceDomain);
         ProjectUnits = new ProjectUnitService(repository);
         ProjectAssetFolders = new ProjectAssetFolderService(repository);
         ProjectAssets = new ProjectAssetService(repository);
@@ -190,8 +190,8 @@ public sealed class CanvasService
         string token, CancellationToken cancellationToken = default) =>
         CanvasShares.PublicAsync(token, cancellationToken);
 
-    /// <summary>对应 Go: <c>Service.PrepareSharedCanvasResourceDelivery</c>。</summary>
-    public Task<(Domain.Entities.Resource Resource, string LocalPath)> PrepareSharedCanvasResourceDeliveryAsync(
+    /// <summary>对应 Go: <c>Service.PrepareSharedCanvasResourceDelivery</c>。本地返回文件路径，云 provider 返回签名直链。</summary>
+    public Task<(Domain.Entities.Resource Resource, string? LocalPath, string? RedirectUrl)> PrepareSharedCanvasResourceDeliveryAsync(
         string token, string resourceId, string dataDir, CancellationToken cancellationToken = default) =>
         CanvasShares.PrepareSharedResourceDeliveryAsync(token, resourceId, dataDir, cancellationToken);
 
