@@ -632,7 +632,8 @@ function createInlineMentionChip(reference: CanvasResourceReference, token: stri
 
     const label = document.createElement("span");
     label.className = "canvas-resource-inline-label";
-    label.textContent = reference.label;
+    // 显示优先节点真名（title），插入的 token 仍是 label（图片N）——改名后 chip 立即跟随。
+    label.textContent = reference.title || reference.label;
     chip.appendChild(label);
 
     return chip;
@@ -706,7 +707,8 @@ function syncInlineMentionPreviews(editor: HTMLElement, references: CanvasResour
             preview.replaceWith(createInlinePreview(reference));
         }
         const label = chip.querySelector(".canvas-resource-inline-label");
-        if (label && label.textContent !== reference.label) label.textContent = reference.label;
+        const displayLabel = reference.title || reference.label;
+        if (label && label.textContent !== displayLabel) label.textContent = displayLabel;
     });
 }
 
@@ -877,7 +879,7 @@ function MentionReferenceList({ references, activeReferenceId, onSelect }: { ref
         >
             <ReferencePreview reference={reference} />
             <span className="canvas-resource-mention-copy">
-                <span className="canvas-resource-mention-title-row"><strong title={reference.label}>{reference.label}</strong>{reference.kind === "skill" ? <em>技能</em> : null}</span>
+                <span className="canvas-resource-mention-title-row"><strong title={reference.title || reference.label}>{reference.title || reference.label}</strong>{reference.kind === "skill" ? <em>技能</em> : null}</span>
                 {reference.kind === "skill" ? (
                     <span className="canvas-resource-mention-meta"><span>{reference.skill?.description || reference.text || "工作流技能"}</span><small>{reference.skill?.version ? `v${reference.skill.version}` : ""}{reference.skill?.fileCount ? ` · ${reference.skill.fileCount} 文件` : ""}</small></span>
                 ) : reference.text && reference.text !== reference.title ? <span className="canvas-resource-mention-meta"><span>{reference.text}</span></span> : null}

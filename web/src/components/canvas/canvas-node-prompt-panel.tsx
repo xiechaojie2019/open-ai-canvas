@@ -892,7 +892,8 @@ function ConnectedReferenceShelf({
                                 </button>
                                 <button type="button" className="canvas-node-reference-label" title={`插入 @${reference.label}`} onClick={() => onInsert(reference)}>
                                     <span className="opacity-55">@</span>
-                                    <span className="truncate">{reference.label}</span>
+                                    {/* 显示优先节点真名（title），插入的 token 仍是 label（图片N）——改名后 chip 立即跟随。 */}
+                                    <span className="truncate">{reference.title || reference.label}</span>
                                 </button>
                                 {onRemove ? (
                                     <button
