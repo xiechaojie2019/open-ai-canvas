@@ -263,21 +263,31 @@ function pendingGenerationAttempt(scope: string, projectId: string, effectKeys?:
     return undefined;
 }
 
-function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, durableProject: CanvasProject | undefined) {
+/**
+ * 只有当一次在途生成副作用「之前没有这个节点、之后才有」时，才认定它是本次生成新建的乐观节点。
+ * 缺了这条判据，durable 快照一旦落后于真实已提交内容，就会被误判成乐观结果而丢弃。
+ */
+function generationAttemptCreatedNode(scope: string, projectId: string, effectKeys: string[] | undefined, nodeId: string) {
+    const attempt = pendingGenerationAttempt(scope, projectId, effectKeys);
+    if (!attempt) return false;
+    const existedBefore = attempt.previousNodes?.some((candidate) => candidate.id === nodeId) ?? false;
+    const existsAfter = attempt.nodes?.some((candidate) => candidate.id === nodeId) ?? false;
+    return !existedBefore && existsAfter;
+}
+
+export function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, durableProject: CanvasProject | undefined) {
     if (!hasGenerationEffectKeys(project) && !hasGenerationEffectKeys(durableProject)) return project;
     const durableNodes = new Map((durableProject?.nodes || []).map((node) => [node.id, node]));
     const durableSessions = new Map((durableProject?.chatSessions || []).map((session) => [session.id, session]));
     let changed = false;
-    let hasUnconfirmedGeneration = false;
     const nodes: CanvasNodeData[] = [];
     for (const node of project.nodes) {
         const durableNode = durableNodes.get(node.id);
         const durableKeys = durableNode?.metadata?.generationEffectKeys;
         const localKeys = node.metadata?.generationEffectKeys;
         if (durableProject && hasUnconfirmedGenerationKey(localKeys, durableKeys)) {
-            hasUnconfirmedGeneration = true;
-            changed = true;
             if (durableNode) {
+                changed = true;
                 const attempt = pendingGenerationAttempt(scope, project.id, localKeys);
                 const previousNode = attempt?.previousNodes?.find((candidate) => candidate.id === node.id);
                 const attemptedNode = attempt?.nodes?.find((candidate) => candidate.id === node.id);
@@ -290,8 +300,15 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
                 if (durableKeys?.length) metadata.generationEffectKeys = [...durableKeys];
                 else delete metadata.generationEffectKeys;
                 nodes.push({ ...rolledBack, metadata });
+                continue;
             }
-            continue;
+            // durable 快照里没有这个节点。仅当它能证明由本次在途生成新建时才按乐观结果扣下；
+            // 否则说明 durable 落后于真实已提交内容，扣下节点就是不可恢复的数据丢失
+            // （线上曾一次删掉 4 个图片节点 + 7 条历史图）。
+            if (generationAttemptCreatedNode(scope, project.id, localKeys, node.id)) {
+                changed = true;
+                continue;
+            }
         }
         if (sameGenerationEffectKeys(localKeys, durableKeys)) {
             nodes.push(node);
@@ -308,9 +325,8 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
         const durableSession = durableSessions.get(session.id);
         const durableKeys = durableSession?.generationEffectKeys;
         if (durableProject && hasUnconfirmedGenerationKey(session.generationEffectKeys, durableKeys)) {
-            hasUnconfirmedGeneration = true;
-            changed = true;
             if (durableSession) {
+                changed = true;
                 const attempt = pendingGenerationAttempt(scope, project.id, session.generationEffectKeys);
                 const previousSession = attempt?.previousChatSessions?.find((candidate) => candidate.id === session.id);
                 const attemptedSession = attempt?.chatSessions?.find((candidate) => candidate.id === session.id);
@@ -320,8 +336,9 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
                 if (durableKeys?.length) rolledBack.generationEffectKeys = [...durableKeys];
                 else delete rolledBack.generationEffectKeys;
                 chatSessions.push(rolledBack);
+                continue;
             }
-            continue;
+            // 与节点同理：durable 缺失的会话默认保留，不能凭一份过期快照删掉整段对话。
         }
         if (sameGenerationEffectKeys(session.generationEffectKeys, durableKeys)) {
             chatSessions.push(session);
@@ -333,17 +350,21 @@ function ordinaryCanvasProjectSnapshot(scope: string, project: CanvasProject, du
         else delete nextSession.generationEffectKeys;
         chatSessions.push(nextSession);
     }
-    if (durableProject && hasUnconfirmedGeneration) {
-        return {
-            ...project,
-            nodes,
-            // Connection/active-chat records carry no effect stamp provenance, so keep them fail-closed while any generation entity is unconfirmed.
-            connections: durableProject.connections,
-            chatSessions,
-            activeChatId: durableProject.activeChatId,
-        };
-    }
-    return changed ? { ...project, nodes, chatSessions } : project;
+    if (!changed) return project;
+    // 连线和活动会话不带 effect 戳 provenance，不能用 durable 快照整份替换——那会把快照落后期间
+    // 新建的连线全部删掉（线上曾一次删掉 11 条，只剩最老那条手拉的）。改为保留实时内容，
+    // 只清理端点已随本次投影消失的悬空连线。
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const sessionIds = new Set(chatSessions.map((session) => session.id));
+    const connections = project.connections.filter(
+        (connection) => nodeIds.has(connection.fromNodeId) && nodeIds.has(connection.toNodeId),
+    );
+    const activeChatId = project.activeChatId && sessionIds.has(project.activeChatId)
+        ? project.activeChatId
+        : durableProject?.activeChatId && sessionIds.has(durableProject.activeChatId)
+            ? durableProject.activeChatId
+            : null;
+    return { ...project, nodes, connections, chatSessions, activeChatId };
 }
 
 function hasGenerationEffectKeys(value: CanvasProject | undefined) {
