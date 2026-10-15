@@ -82,10 +82,12 @@ public sealed class CanvasShareService
     };
 
     private readonly Repository _repository;
+    private readonly ResourceDomainService? _resources;
 
-    public CanvasShareService(Repository repository)
+    public CanvasShareService(Repository repository, ResourceDomainService? resources = null)
     {
         _repository = repository;
+        _resources = resources;
     }
 
     /// <summary>分享状态。对应 Go: <c>CanvasShareStatus</c>。</summary>
@@ -170,11 +172,11 @@ public sealed class CanvasShareService
     }
 
     /// <summary>
-    /// 公开分享资源投递：校验令牌与节点放行清单，返回资源与本地文件流。
-    /// 对应 Go: <c>PrepareSharedCanvasResourceDelivery</c>（本地 provider；
-    /// 云 provider 重定向/流式转发属云存储节点，见待确认 #25）。
+    /// 公开分享资源投递：校验令牌与节点放行清单。
+    /// 本地 provider 返回本地文件流路径；云 provider（aliyun 等）签发 5 分钟直链，
+    /// 由端点 302 重定向（对应 Go: <c>PrepareSharedCanvasResourceDelivery</c> 的云存储节点）。
     /// </summary>
-    public async Task<(Resource Resource, string LocalPath)> PrepareSharedResourceDeliveryAsync(
+    public async Task<(Resource Resource, string? LocalPath, string? RedirectUrl)> PrepareSharedResourceDeliveryAsync(
         string token, string resourceId, string dataDir, CancellationToken cancellationToken = default)
     {
         (CanvasShare share, CanvasProject project) = await SharedProjectAsync(token, cancellationToken)
@@ -196,8 +198,14 @@ public sealed class CanvasShareService
         }
         if (resource.Provider.Trim() is not ("" or "local"))
         {
-            // 云 provider 资源需签名重定向；当前仅支持本地投递。
-            throw new InvalidOperationException("cloud delivery unsupported");
+            // 云 provider 资源：签发短时效直链，端点 302 重定向到对象存储。
+            if (_resources is null)
+            {
+                throw new InvalidOperationException("cloud delivery unsupported");
+            }
+            ResourceAccess access = await _resources.ResolveShareAccessAsync(resource, cancellationToken)
+                .ConfigureAwait(false);
+            return (resource, null, access.Url);
         }
         string objectKey = resource.ObjectKey.TrimStart('/', '\\');
         string root = Path.GetFullPath(Path.Combine(dataDir, "resources"));
@@ -206,7 +214,7 @@ public sealed class CanvasShareService
         {
             throw new InvalidOperationException("record not found");
         }
-        return (resource, path);
+        return (resource, path, null);
     }
 
     // ------------------------------------------------------------ 内部

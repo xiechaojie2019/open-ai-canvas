@@ -806,11 +806,16 @@ public static class UserDataEndpoints
             }
             try
             {
-                (Domain.Entities.Resource resource, string path) = await service
+                (Domain.Entities.Resource resource, string? localPath, string? redirectUrl) = await service
                     .PrepareSharedCanvasResourceDeliveryAsync(token, resourceId, dataDir, cancellationToken)
                     .ConfigureAwait(false);
 
                 context.Response.Headers["Cache-Control"] = "no-store";
+                if (!string.IsNullOrEmpty(redirectUrl))
+                {
+                    // 云 provider 资源：302 到对象存储签名直链（5 分钟时效），浏览器 <img>/<video> 自动跟随。
+                    return Results.Redirect(redirectUrl, permanent: false);
+                }
                 context.Response.Headers["Content-Security-Policy"] = "sandbox";
                 context.Response.Headers["Referrer-Policy"] = "no-referrer";
                 context.Response.Headers["X-Content-Type-Options"] = "nosniff";
@@ -819,7 +824,7 @@ public static class UserDataEndpoints
                 context.Response.ContentType = string.IsNullOrEmpty(resource.MimeType)
                     ? "application/octet-stream"
                     : resource.MimeType;
-                await context.Response.SendFileAsync(path, cancellationToken).ConfigureAwait(false);
+                await context.Response.SendFileAsync(localPath!, cancellationToken).ConfigureAwait(false);
                 return Results.Empty;
             }
             catch
