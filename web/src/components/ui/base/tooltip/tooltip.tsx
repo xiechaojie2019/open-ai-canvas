@@ -1,4 +1,4 @@
-import { Fragment, isValidElement, type ComponentProps, type ReactNode } from "react";
+import { isValidElement, type ComponentProps, type ReactNode } from "react";
 import { Focusable, Tooltip as RACTooltip, TooltipTrigger, type Placement } from "react-aria-components";
 
 import { cn } from "@/lib/utils";
@@ -16,6 +16,9 @@ import { cn } from "@/lib/utils";
  */
 
 export type TooltipPlacement = "top" | "topLeft" | "topRight" | "bottom" | "bottomLeft" | "bottomRight" | "left" | "right";
+
+/** ref 必然落在 DOM 元素上的原生可交互标签，可安全走 direct 分支。 */
+const HOST_INTERACTIVE_TAGS = ["button", "a", "input", "select", "textarea", "summary"];
 
 const PLACEMENT_MAP: Record<TooltipPlacement, Placement> = {
     top: "top",
@@ -41,8 +44,13 @@ export function Tooltip({ title, placement = "top", delay = 350, className, chil
     if (!title) return <>{children}</>;
 
     const child = isValidElement<{ disabled?: boolean; loading?: boolean; tabIndex?: number }>(children) ? children : null;
+    // direct 分支会让 Focusable 把 RAC 的 triggerRef 原样透传给 child——Focusable 自身不渲染任何
+    // DOM，ref 落不落在元素上完全取决于 child。antd v6 起部分复合组件（如 InputNumber）把 ref 指向
+    // proxyObject 而非 DOM 元素，RAC 定位浮层时 ResizeObserver.observe(proxy) 会抛
+    // "parameter 1 is not of type 'Element'" 并触发错误边界整页崩溃。
+    // 因此只有 ref 必然是 DOM 元素的原生标签才走 direct 分支，其余组件一律经外壳 span 承接悬停。
     const directTrigger =
-        child && child.type !== Fragment && !child.props.disabled && !child.props.loading && (typeof child.type !== "string" || ["button", "a", "input", "select", "textarea", "summary"].includes(child.type) || child.props.tabIndex !== undefined);
+        child && typeof child.type === "string" && !child.props.disabled && !child.props.loading && (HOST_INTERACTIVE_TAGS.includes(child.type) || child.props.tabIndex !== undefined);
 
     return (
         <TooltipTrigger delay={delay}>
