@@ -1,6 +1,7 @@
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { markdownPlainText } from "@/lib/markdown-plain-text";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { http } from "@/services/api/request";
 import type { AgentPermissionMode, AgentRun } from "@/services/api/agent";
 
 export type CloudAgentConversationMessage = {
@@ -25,7 +26,7 @@ export type CloudAgentConversation = {
     updatedAt: string;
 };
 
-type CloudAgentConversationDocument = {
+export type CloudAgentConversationDocument = {
     version: 1;
     activeId: string | null;
     conversations: CloudAgentConversation[];
@@ -108,6 +109,81 @@ function storageKey(canvasId: string) {
 
 function pendingStorageKey(canvasId: string, conversationId: string) {
     return `${CLOUD_AGENT_CONVERSATIONS_KEY}:pending:${encodeURIComponent(canvasId)}:${encodeURIComponent(conversationId)}`;
+}
+
+// ---------------------------------------------------------------------------
+// 服务端镜像（跨设备恢复）。复用 /agent/conversations 端点（agentProfiles 表，
+// scope=agent-conv）。任何失败都静默降级为纯本地模式：同步是增强，不是依赖。
+// ---------------------------------------------------------------------------
+
+export type CloudAgentConversationsRemote = {
+    content: string | null;
+    revision: number;
+};
+
+/** 拉取服务端快照。远端没有快照时 content 为 null、revision 为 0。 */
+export async function pullCloudAgentConversationsRemote(canvasId: string): Promise<CloudAgentConversationsRemote | null> {
+    if (!canvasId) return null;
+    try {
+        return await http.get<CloudAgentConversationsRemote>("/agent/conversations", { params: { canvasId }, timeout: 15_000 });
+    } catch (error) {
+        console.warn("拉取 Agent 会话快照失败，仅使用本地历史", error);
+        return null;
+    }
+}
+
+/**
+ * 推送快照到服务端，返回服务端 revision。409（乐观锁冲突）返回 null，由调用方
+ * 决定是否重新拉取合并重试；其余失败同样返回 null（保持本地模式）。
+ */
+export async function pushCloudAgentConversationsRemote(canvasId: string, document: CloudAgentConversationDocument, expectedRevision: number): Promise<number | null> {
+    if (!canvasId) return null;
+    try {
+        const result = await http.put<CloudAgentConversationsRemote>("/agent/conversations", {
+            canvasId,
+            content: JSON.stringify(document),
+            revision: expectedRevision,
+        }, { timeout: 20_000 });
+        return typeof result.revision === "number" ? result.revision : null;
+    } catch (error) {
+        // 冲突不算故障：返回 null 让调用方走「拉取→合并→重推」。
+        if (isConflictError(error)) return null;
+        console.warn("推送 Agent 会话快照失败，本地历史不受影响", error);
+        return null;
+    }
+}
+
+function isConflictError(error: unknown) {
+    const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+    return message.includes("会话快照已变化") || message.includes("409");
+}
+
+/** 合并本地与服务端会话文档：按会话 id 去重，updatedAt 新者胜，单边存在的直接并入。 */
+export function mergeCloudAgentConversations(local: CloudAgentConversationDocument, remote: CloudAgentConversationDocument): CloudAgentConversationDocument {
+    const byId = new Map<string, CloudAgentConversation>();
+    for (const conversation of remote.conversations) byId.set(conversation.id, conversation);
+    for (const conversation of local.conversations) {
+        const existing = byId.get(conversation.id);
+        if (!existing || (conversation.updatedAt || "") >= (existing.updatedAt || "")) byId.set(conversation.id, conversation);
+    }
+    const conversations = [...byId.values()].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    const activeId = local.activeId && byId.has(local.activeId)
+        ? local.activeId
+        : remote.activeId && byId.has(remote.activeId)
+            ? remote.activeId
+            : conversations[0]?.id ?? null;
+    return { version: 1, activeId, conversations };
+}
+
+/** 解析服务端快照内容；格式无效时返回 null（服务端数据不可信，回落本地）。 */
+export function parseCloudAgentConversationsRemote(content: string | null | undefined): CloudAgentConversationDocument | null {
+    if (!content) return null;
+    try {
+        const parsed: unknown = JSON.parse(content);
+        return isConversationDocument(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
 }
 
 function emptyDocument(): CloudAgentConversationDocument {

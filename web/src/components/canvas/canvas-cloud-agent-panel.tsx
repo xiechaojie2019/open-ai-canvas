@@ -23,7 +23,7 @@ import { agentApprovalMatchesSettings, agentImageApproval } from "@/lib/canvas/a
 import type { AgentMediaSettings } from "@/services/api/agent";
 import { CanvasAgentImageApprovalSettings } from "./canvas-agent-image-approval-settings";
 import { addSkill, listAddedSkills, listSkills, listSkillPresets, type Skill, type SkillCategory, type SkillPreset } from "@/services/api/skills";
-import { clearCloudAgentPendingSubmission, cloudAgentConversationTitle, loadCloudAgentConversations, loadCloudAgentPendingSubmission, saveCloudAgentConversations, saveCloudAgentPendingSubmission, type CloudAgentConversation, type CloudAgentPendingSubmission } from "@/services/cloud-agent-conversations";
+import { clearCloudAgentPendingSubmission, cloudAgentConversationTitle, loadCloudAgentConversations, loadCloudAgentPendingSubmission, mergeCloudAgentConversations, parseCloudAgentConversationsRemote, pullCloudAgentConversationsRemote, pushCloudAgentConversationsRemote, saveCloudAgentConversations, saveCloudAgentPendingSubmission, type CloudAgentConversation, type CloudAgentConversationDocument, type CloudAgentPendingSubmission } from "@/services/cloud-agent-conversations";
 import { logicalModelIDForConfig, modelOptionName, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
@@ -89,6 +89,8 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
     const [maxGenerationTasks, setMaxGenerationTasks] = useState("0");
     const [maxVideoSeconds, setMaxVideoSeconds] = useState("0");
     const [conversations, setConversations] = useState<CloudAgentConversation[]>([]);
+    // 服务端快照的乐观锁 revision；拉取/推送成功后更新，push 冲突时用于拉取合并重推。
+    const remoteRevisionRef = useRef(0);
     const [activeConversationId, setActiveConversationId] = useState(() => nanoid());
     const [historyHydrated, setHistoryHydrated] = useState(false);
     const [pendingHydrated, setPendingHydrated] = useState(false);
@@ -387,9 +389,20 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
         setApprovalSubmitting(false);
         approvalRequestRef.current = null;
         setPrompt("");
-        void loadCloudAgentConversations(canvasId)
-            .then(async (document) => {
+        void (async () => {
+            try {
                 if (!active) return;
+                // 跨设备恢复：拉取服务端快照并与本地合并（updatedAt 新者胜）。
+                // 拉取失败时 pullCloudAgentConversationsRemote 返回 null，纯本地模式照常工作。
+                let document = await loadCloudAgentConversations(canvasId);
+                const remote = await pullCloudAgentConversationsRemote(canvasId);
+                if (!active) return;
+                remoteRevisionRef.current = remote?.revision ?? 0;
+                const remoteDocument = parseCloudAgentConversationsRemote(remote?.content);
+                if (remoteDocument && (remoteDocument.conversations.length || document.conversations.length)) {
+                    document = mergeCloudAgentConversations(document, remoteDocument);
+                    void saveCloudAgentConversations(canvasId, document.activeId, document.conversations);
+                }
                 const current = document.conversations.find((conversation) => conversation.id === document.activeId) || document.conversations[0];
                 setConversations(document.conversations);
                 if (current) {
@@ -408,14 +421,13 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                     pendingSubmission.current = null;
                 }
                 setPendingHydrated(true);
-            })
-            .catch((cause) => {
+            } catch (cause) {
                 if (!active) return;
                 setMessages((current) => appendAgentError(current, "history-error", cause, "对话恢复失败，已暂停发送；请重新打开对话核对"));
-            })
-            .finally(() => {
+            } finally {
                 if (active) setHistoryHydrated(true);
-            });
+            }
+        })();
         return () => {
             active = false;
         };
@@ -446,6 +458,40 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
         const timer = window.setTimeout(() => {
             void saveCloudAgentConversations(canvasId, activeConversationId, conversations);
         }, 180);
+        return () => window.clearTimeout(timer);
+    }, [activeConversationId, canvasId, conversations, historyHydrated]);
+
+    // 服务端快照推送：本地写入后防抖 4s 上行。冲突（409）时拉取合并重推一次；
+    // 失败静默降级为本地模式，不影响对话功能。内容与远端一致时跳过，避免空转 revision。
+    useEffect(() => {
+        if (!historyHydrated || !canvasId || !conversations.length) return;
+        const timer = window.setTimeout(() => {
+            void (async () => {
+                const payload: CloudAgentConversationDocument = { version: 1, activeId: activeConversationId, conversations };
+                let revision = await pushCloudAgentConversationsRemote(canvasId, payload, remoteRevisionRef.current);
+                if (revision !== null) {
+                    remoteRevisionRef.current = revision;
+                    return;
+                }
+                // 冲突或失败：冲突场景拉取远端，合并后按新 revision 重推一次。
+                const remote = await pullCloudAgentConversationsRemote(canvasId);
+                if (remote === null) return;
+                remoteRevisionRef.current = remote.revision;
+                const remoteDocument = parseCloudAgentConversationsRemote(remote.content);
+                if (!remoteDocument) return;
+                const merged = mergeCloudAgentConversations(
+                    { version: 1, activeId: activeConversationId, conversations },
+                    remoteDocument,
+                );
+                if (JSON.stringify(merged) === remote.content) {
+                    // 远端已是超集，无需重推。
+                    void saveCloudAgentConversations(canvasId, merged.activeId, merged.conversations);
+                    return;
+                }
+                const retryRevision = await pushCloudAgentConversationsRemote(canvasId, merged, remote.revision);
+                if (retryRevision !== null) remoteRevisionRef.current = retryRevision;
+            })();
+        }, 4000);
         return () => window.clearTimeout(timer);
     }, [activeConversationId, canvasId, conversations, historyHydrated]);
 

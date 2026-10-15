@@ -9,6 +9,33 @@ using OpenAICanvas.Persistence.Repositories;
 
 namespace OpenAICanvas.Application;
 
+/// <summary>Agent 会话快照读取/保存响应。content 为前端 conversations 文档 JSON。</summary>
+public sealed class AgentConversationsViewDto
+{
+    [JsonPropertyName("content")]
+    public string? Content { get; set; }
+
+    [JsonPropertyName("revision")]
+    public long Revision { get; set; }
+
+    [JsonPropertyName("hash")]
+    [GoOmitEmpty]
+    public string? Hash { get; set; }
+}
+
+/// <summary>Agent 会话快照保存请求体。revision 为期望的乐观锁版本（首次为 0）。</summary>
+public sealed class AgentConversationsRequest
+{
+    [JsonPropertyName("canvasId")]
+    public string CanvasID { get; set; } = "";
+
+    [JsonPropertyName("content")]
+    public string Content { get; set; } = "";
+
+    [JsonPropertyName("revision")]
+    public long Revision { get; set; }
+}
+
 /// <summary>Agent 偏好档案请求体。对应 Go: <c>app.AgentProfileRequest</c>。</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class AgentProfileRequest
@@ -291,4 +318,86 @@ public sealed class AgentProfileService
             throw AppError.BadAuthRequest(label + "不能包含首尾空白、控制字符，且不超过 80 个字符");
         }
     }
+
+    /// <summary>
+    /// 读取画布的 Agent 会话快照。复用 agentProfiles 表（scope 隔离），供前端跨设备恢复对话历史。
+    /// 返回的 revision 用于下一次保存的乐观锁。
+    /// </summary>
+    public async Task<AgentConversationsViewDto> ConversationsForCanvasAsync(
+        string userID,
+        string canvasID,
+        CancellationToken cancellationToken)
+    {
+        if (userID.Length == 0)
+        {
+            throw AppError.Unauthorized("请先登录");
+        }
+        ValidateCloudAgentID(canvasID, "画布 ID");
+        if (await _repository.CanvasProjectForUserAsync(userID, canvasID, cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw AppError.NotFound("画布不存在");
+        }
+        AgentProfile? profile = await _repository.AgentProfileForScopeAsync(
+            userID, AgentConversationsScope.Value, "", canvasID, cancellationToken).ConfigureAwait(false);
+        return profile is null
+            ? new AgentConversationsViewDto { Content = null, Revision = 0 }
+            : new AgentConversationsViewDto { Content = profile.Content, Revision = profile.Revision, Hash = profile.Hash };
+    }
+
+    /// <summary>
+    /// 保存画布的 Agent 会话快照（revision 乐观锁）。前端在本地写入后异步推送；
+    /// 冲突时返回 409，由前端拉取合并后重试。
+    /// </summary>
+    public async Task<AgentConversationsViewDto> SaveConversationsAsync(
+        string userID,
+        string canvasID,
+        string content,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
+        if (userID.Length == 0)
+        {
+            throw AppError.Unauthorized("请先登录");
+        }
+        ValidateCloudAgentID(canvasID, "画布 ID");
+        if (content.Length == 0)
+        {
+            throw AppError.BadAuthRequest("会话快照内容不能为空");
+        }
+        if (content.Length > AgentConversationsScope.MaxContentLength)
+        {
+            throw AppError.BadAuthRequest("会话快照超过大小上限（2MB）");
+        }
+        if (await _repository.CanvasProjectForUserAsync(userID, canvasID, cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw AppError.NotFound("画布不存在");
+        }
+        AgentProfile profile = new()
+        {
+            ID = IdGenerator.NewId(),
+            UserID = userID,
+            Scope = AgentConversationsScope.Value,
+            ProjectID = "",
+            CanvasID = canvasID,
+            Content = content,
+            Revision = 1,
+            Hash = ProfileHash(content),
+            UpdatedAt = DateTime.UtcNow,
+        };
+        AgentProfile? saved = await _repository.SaveAgentProfileAsync(profile, expectedRevision, cancellationToken).ConfigureAwait(false);
+        if (saved is null)
+        {
+            throw AppError.New(409, "会话快照已变化，请重新读取后保存");
+        }
+        return new AgentConversationsViewDto { Content = saved.Content, Revision = saved.Revision, Hash = saved.Hash };
+    }
+}
+
+/// <summary>Agent 会话快照的存储作用域。scope 列 varchar(16)，故用缩写。</summary>
+public static class AgentConversationsScope
+{
+    public const string Value = "agent-conv";
+
+    /// <summary>快照内容大小上限：2MB。对话历史含全文消息，远大于偏好档案。</summary>
+    public const int MaxContentLength = 2 << 20;
 }

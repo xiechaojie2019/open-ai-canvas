@@ -132,6 +132,55 @@ public static class AgentEndpoints
             }
         });
 
+        // Agent 会话快照同步（跨设备恢复对话历史）。复用 agentProfiles 表，scope=agent-conv 与偏好档案隔离。
+        api.MapGet("/agent/conversations", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                string canvasId = context.Request.Query["canvasId"].ToString().Trim();
+                if (canvasId.Length == 0)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("需要 canvasId"));
+                }
+                AgentConversationsViewDto view = await profiles.ConversationsForCanvasAsync(
+                    user.ID, canvasId, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        api.MapPut("/agent/conversations", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                // 对话历史含全文消息，上限放宽到 2MB（与服务端 AgentConversationsScope.MaxContentLength 一致）。
+                AgentConversationsRequest? request = await ReadSingleObjectAsync<AgentConversationsRequest>(
+                    context, 2 << 20, cancellationToken).ConfigureAwait(false);
+                if (request is null || request.CanvasID.Length == 0)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求必须包含 canvasId"));
+                }
+                AgentConversationsViewDto view = await profiles.SaveConversationsAsync(
+                    user.ID, request.CanvasID, request.Content, request.Revision, cancellationToken).ConfigureAwait(false);
+                return ApiResults.Ok(view);
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
         // 每条追加消息开启一个不可变轮次并返回其 ID。
         api.MapPost("/agent/runs", async (HttpContext context) =>
         {
