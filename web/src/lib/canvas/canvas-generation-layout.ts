@@ -12,8 +12,8 @@ const BATCH_CHILD_GAP = 48;
 /** 与既有节点保持的安全间距：横向 ≥120px、纵向 ≥48px。 */
 const COLLISION_GAP_X = 120;
 const COLLISION_GAP_Y = 48;
-/** 整体右移时的最大尝试列数，避免极端布局下无限搜索。 */
-const MAX_PLACEMENT_COLUMNS = 12;
+/** 就近空位的最大搜索圈数（曼哈顿步数），避免极端布局下无限搜索。 */
+const MAX_PLACEMENT_STEPS = 12;
 
 export function canGenerateImageInPlace(sourceNode: CanvasNodeData | undefined) {
     return canGenerateMediaInPlace(sourceNode, CanvasNodeType.Image);
@@ -76,8 +76,11 @@ export function resolveGenerationGroupPlacement(
         if (!overlapsAny(nodes, preferred, size)) return { position: preferred, columns: layout };
     }
 
-    for (let row = 1; row <= MAX_PLACEMENT_COLUMNS; row += 1) {
-        for (let column = 1; column <= MAX_PLACEMENT_COLUMNS; column += 1) {
+    for (let step = 0; step <= MAX_PLACEMENT_STEPS; step += 1) {
+        // 按曼哈顿距离逐圈找最近空位：row + column = step。
+        // 右侧被占时下移会回到起点正下方（x 不累积），不会一路向右漂走。
+        for (let row = 0; row <= step; row += 1) {
+            const column = step - row;
             for (const layout of layouts) {
                 const size = imageGenerationGroupSize(rootSize, imageSize, childCount, layout);
                 const candidate: Position = {

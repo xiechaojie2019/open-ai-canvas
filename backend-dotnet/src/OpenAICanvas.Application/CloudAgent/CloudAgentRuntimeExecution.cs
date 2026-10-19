@@ -367,13 +367,13 @@ public sealed partial class CloudAgentRuntimeService
                 await _repository.OpenCloudAgentContextAsync(cancellationToken).ConfigureAwait(false);
             (List<CreateTaskRequestDto> requests, CloudAgentMediaPlan prepared) = await _media.PrepareAsync(
                 planningContext, run, state, call, cancellationToken).ConfigureAwait(false);
-            // 批量产物会同时占用多个「排队或运行」额度：不足时必须在建草稿之前就拒绝。
-            if (prepared.IsBatch)
-            {
-                await EnsureBatchConcurrencyAsync(
-                    run.UserID, planningContext.Repository, prepared.Items.Count,
-                    cancellationToken).ConfigureAwait(false);
-            }
+            // 并发额度预判：单张也必须预检。
+            // ⚠️ 2026-10-19：原先只在 IsBatch 时预检，单张直接落到库层限额
+            // → InvalidOperationException("active_task_limit") 冒泡到 AdvanceCoreAsync
+            // → 被当成「运行状态损坏」整轮判失败，而已提交的任务其实正常跑完并回写。
+            await EnsureBatchConcurrencyAsync(
+                run.UserID, planningContext.Repository, prepared.Items.Count,
+                cancellationToken).ConfigureAwait(false);
             // 干跑准入：与审批路径一致，不落库、不计费，仅校验模型与规格。批量时逐项都验一遍。
             foreach (CreateTaskRequestDto request in requests)
             {
