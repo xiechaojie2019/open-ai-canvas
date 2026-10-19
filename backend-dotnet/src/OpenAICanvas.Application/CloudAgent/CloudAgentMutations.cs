@@ -314,6 +314,102 @@ public static class CloudAgentMutations
         public string ToNodeID { get; set; } = "";
     }
 
+    /// <summary>
+    /// add_node 的落点起点：优先以 <see cref="CanvasOp.FromNodeID"/> / <c>ToNodeID</c>
+    /// 指向的既有节点为锚（右侧 +120px、纵向对齐中心）；没有锚点时用模型给的坐标。
+    /// </summary>
+    private static (double X, double Y) AddNodeStart(
+        IReadOnlyList<JsonObject> nodes, CanvasOp op, double width, double height)
+    {
+        const double gapX = 120;
+        foreach (string candidateID in new[] { op.FromNodeID, op.ToNodeID })
+        {
+            if (candidateID.Length == 0)
+            {
+                continue;
+            }
+            foreach (JsonObject node in nodes)
+            {
+                if (CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id")) != candidateID)
+                {
+                    continue;
+                }
+                JsonObject? position = node["position"] as JsonObject;
+                double nodeX = NumberField(position, "x");
+                double nodeY = NumberField(position, "y");
+                double nodeWidth = NumberField(node, "width") <= 0 ? width : NumberField(node, "width");
+                double nodeHeight = NumberField(node, "height") <= 0 ? height : NumberField(node, "height");
+                return (nodeX + nodeWidth + gapX, nodeY + nodeHeight / 2 - height / 2);
+            }
+        }
+        return (op.X, op.Y);
+    }
+
+    /// <summary>
+    /// 就近空位落点（与前端 <c>canvas-generation-layout.ts</c> 同一套规则）：
+    /// 以起点向右逐列、再逐行找第一个不与既有节点重叠的位置，间距横向 ≥120px、纵向 ≥48px。
+    /// 只决定新节点位置，绝不移动既有节点。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 2026-10-19：Agent 的 <c>canvas_apply_ops/add_node</c> 原先**直接采用模型给的
+    /// x/y**，既不避让也不就近 —— 模型估坐标飘了，新节点就会飘到离来源很远的地方
+    /// （用户反馈「生成位置偏得很远」）。现把模型坐标降级为「起点候选」，统一避让。
+    /// </remarks>
+    public static (double X, double Y) NearestFreeSlot(
+        IReadOnlyList<JsonObject> nodes, double startX, double startY, double width, double height)
+    {
+        const double gapX = 120;
+        const double gapY = 48;
+        const int maxColumns = 12;
+        const int maxRows = 6;
+        for (int row = 0; row <= maxRows; row += 1)
+        {
+            for (int column = 0; column <= maxColumns; column += 1)
+            {
+                double candidateX = startX + column * (width + gapX);
+                double candidateY = startY + row * (height + gapY);
+                if (!OverlapsAny(nodes, candidateX, candidateY, width, height, gapX, gapY))
+                {
+                    return (candidateX, candidateY);
+                }
+            }
+        }
+        return (startX, startY);
+    }
+
+    private static bool OverlapsAny(
+        IReadOnlyList<JsonObject> nodes, double x, double y, double width, double height, double gapX, double gapY)
+    {
+        foreach (JsonObject node in nodes)
+        {
+            JsonObject? position = node["position"] as JsonObject;
+            double nodeX = NumberField(position, "x");
+            double nodeY = NumberField(position, "y");
+            double nodeWidth = NumberField(node, "width");
+            double nodeHeight = NumberField(node, "height");
+            if (x + width + gapX <= nodeX
+                || x >= nodeX + nodeWidth + gapX
+                || y + height + gapY <= nodeY
+                || y >= nodeY + nodeHeight + gapY)
+            {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>读 JSON 数字字段，缺省或非数字按 0 处理。</summary>
+    internal static double NumberField(JsonObject? owner, string key)
+    {
+        if (owner is null)
+        {
+            return 0;
+        }
+        JsonNode? value = owner[key];
+        return value is not null && value.GetValueKind() == JsonValueKind.Number ? value.GetValue<double>() : 0;
+    }
+
     /// <summary>新增节点形态。对应 Go: <c>creationAddedNode</c>。</summary>
     public static JsonObject AddedNode(string id, string nodeType, string title, double x, double y, JsonObject? metadata)
     {
@@ -535,8 +631,12 @@ public static class CloudAgentMutations
                     {
                         throw AppError.BadAuthRequest("不支持的节点类型");
                     }
+                    // 模型给的坐标只当「起点候选」：优先以它声明的来源节点为锚（右侧 +120、
+                    // 纵向对齐中心），没有来源时退回模型坐标，最后统一做就近空位避让。
+                    (double startX, double startY) = AddNodeStart(nodes, op, capability.DefaultWidth, capability.DefaultHeight);
+                    (double placeX, double placeY) = NearestFreeSlot(nodes, startX, startY, capability.DefaultWidth, capability.DefaultHeight);
                     JsonObject node = AddedNode(
-                        op.ID, op.NodeType, title, op.X, op.Y, capability.Metadata(content));
+                        op.ID, op.NodeType, title, placeX, placeY, capability.Metadata(content));
                     nodes.Add(node);
                     string nodeTitle = ApprovalNodeTitle(node, capability.Label);
                     items.Add(new CloudAgentApprovalPreviewItemDto

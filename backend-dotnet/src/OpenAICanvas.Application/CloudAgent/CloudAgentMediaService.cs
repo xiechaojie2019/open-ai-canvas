@@ -1135,9 +1135,6 @@ public sealed class CloudAgentMediaService
         IReadOnlyList<JsonObject> nodes, string sourceNodeID, string mode, string size)
     {
         const double gapX = 120;
-        const double gapY = 48;
-        const int maxColumns = 12;
-        const int maxRows = 6;
         (CapabilityDescriptor descriptor, bool known) = CloudAgentNodes.ForGenerationMode(mode);
         double width = known ? descriptor.DefaultWidth : 340;
         double height = known ? descriptor.DefaultHeight : 240;
@@ -1155,59 +1152,21 @@ public sealed class CloudAgentMediaService
                 && CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id")) == sourceNodeID)
             {
                 JsonObject? sourcePosition = node["position"] as JsonObject;
-                sourceX = NumberOf(sourcePosition, "x");
-                sourceY = NumberOf(sourcePosition, "y");
-                sourceWidth = NumberOf(node, "width") <= 0 ? sourceWidth : NumberOf(node, "width");
-                sourceHeight = NumberOf(node, "height") <= 0 ? sourceHeight : NumberOf(node, "height");
+                sourceX = CloudAgentMutations.NumberField(sourcePosition, "x");
+                sourceY = CloudAgentMutations.NumberField(sourcePosition, "y");
+                sourceWidth = CloudAgentMutations.NumberField(node, "width") <= 0
+                    ? sourceWidth
+                    : CloudAgentMutations.NumberField(node, "width");
+                sourceHeight = CloudAgentMutations.NumberField(node, "height") <= 0
+                    ? sourceHeight
+                    : CloudAgentMutations.NumberField(node, "height");
                 sourceFound = true;
             }
         }
 
         double baseX = sourceFound ? sourceX + sourceWidth + gapX : 80;
         double baseY = sourceFound ? sourceY + sourceHeight / 2 - height / 2 : 80;
-
-        for (int row = 0; row <= maxRows; row += 1)
-        {
-            for (int column = 0; column <= maxColumns; column += 1)
-            {
-                double candidateX = baseX + column * (width + gapX);
-                double candidateY = baseY + row * (height + gapY);
-                bool overlaps = false;
-                foreach (JsonObject node in nodes)
-                {
-                    JsonObject? position = node["position"] as JsonObject;
-                    double nodeX = NumberOf(position, "x");
-                    double nodeY = NumberOf(position, "y");
-                    double nodeWidth = NumberOf(node, "width");
-                    double nodeHeight = NumberOf(node, "height");
-                    if (candidateX + width + gapX <= nodeX
-                        || candidateX >= nodeX + nodeWidth + gapX
-                        || candidateY + height + gapY <= nodeY
-                        || candidateY >= nodeY + nodeHeight + gapY)
-                    {
-                        continue;
-                    }
-                    overlaps = true;
-                    break;
-                }
-                if (!overlaps)
-                {
-                    return (candidateX, candidateY);
-                }
-            }
-        }
-        // 极端拥挤：退回起点（不静默丢弃生成结果）。
-        return (baseX, baseY);
-    }
-
-    private static double NumberOf(JsonObject? owner, string key)
-    {
-        if (owner is null)
-        {
-            return 0;
-        }
-        JsonNode? value = owner[key];
-        return value is not null && value.GetValueKind() == JsonValueKind.Number ? value.GetValue<double>() : 0;
+        return CloudAgentMutations.NearestFreeSlot(nodes, baseX, baseY, width, height);
     }
 
     /// <summary>草稿/提交节点写入。对应 Go: <c>createCloudAgentMediaNode</c>。</summary>
