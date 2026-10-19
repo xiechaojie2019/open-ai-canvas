@@ -1120,6 +1120,96 @@ public sealed class CloudAgentMediaService
         };
     }
 
+    /// <summary>
+    /// Agent 新建媒体节点的落点：与前端图片生成同一套规则。
+    /// 起点是「来源节点右侧 + 120px、纵向对齐中心」；与既有节点冲突时（横向 ≥120px、
+    /// 纵向 ≥48px 安全间距）先向右逐列平移，一行扫完再整体下移一行。
+    /// 只决定新节点位置，绝不移动既有节点。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 2026-10-19：原实现取「全画布所有节点的最右边缘 + 80」，画布上只要有靠右的节点
+    /// （哪怕很远），Agent 生成的图就会飞到那一带，用户反馈「生成位置偏得很远」。现改为
+    /// 以来源节点为锚的就近空位，行为对齐 <c>canvas-generation-layout.ts</c>。
+    /// </remarks>
+    private static (double X, double Y) ResolveMediaNodePlacement(
+        IReadOnlyList<JsonObject> nodes, string sourceNodeID, string mode, string size)
+    {
+        const double gapX = 120;
+        const double gapY = 48;
+        const int maxColumns = 12;
+        const int maxRows = 6;
+        (CapabilityDescriptor descriptor, bool known) = CloudAgentNodes.ForGenerationMode(mode);
+        double width = known ? descriptor.DefaultWidth : 340;
+        double height = known ? descriptor.DefaultHeight : 240;
+        if (size == "9:16")
+        {
+            width = 360;
+            height = 640;
+        }
+
+        double sourceX = 0, sourceY = 0, sourceWidth = width, sourceHeight = height;
+        bool sourceFound = false;
+        foreach (JsonObject node in nodes)
+        {
+            if (!sourceFound
+                && CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id")) == sourceNodeID)
+            {
+                JsonObject? sourcePosition = node["position"] as JsonObject;
+                sourceX = NumberOf(sourcePosition, "x");
+                sourceY = NumberOf(sourcePosition, "y");
+                sourceWidth = NumberOf(node, "width") <= 0 ? sourceWidth : NumberOf(node, "width");
+                sourceHeight = NumberOf(node, "height") <= 0 ? sourceHeight : NumberOf(node, "height");
+                sourceFound = true;
+            }
+        }
+
+        double baseX = sourceFound ? sourceX + sourceWidth + gapX : 80;
+        double baseY = sourceFound ? sourceY + sourceHeight / 2 - height / 2 : 80;
+
+        for (int row = 0; row <= maxRows; row += 1)
+        {
+            for (int column = 0; column <= maxColumns; column += 1)
+            {
+                double candidateX = baseX + column * (width + gapX);
+                double candidateY = baseY + row * (height + gapY);
+                bool overlaps = false;
+                foreach (JsonObject node in nodes)
+                {
+                    JsonObject? position = node["position"] as JsonObject;
+                    double nodeX = NumberOf(position, "x");
+                    double nodeY = NumberOf(position, "y");
+                    double nodeWidth = NumberOf(node, "width");
+                    double nodeHeight = NumberOf(node, "height");
+                    if (candidateX + width + gapX <= nodeX
+                        || candidateX >= nodeX + nodeWidth + gapX
+                        || candidateY + height + gapY <= nodeY
+                        || candidateY >= nodeY + nodeHeight + gapY)
+                    {
+                        continue;
+                    }
+                    overlaps = true;
+                    break;
+                }
+                if (!overlaps)
+                {
+                    return (candidateX, candidateY);
+                }
+            }
+        }
+        // 极端拥挤：退回起点（不静默丢弃生成结果）。
+        return (baseX, baseY);
+    }
+
+    private static double NumberOf(JsonObject? owner, string key)
+    {
+        if (owner is null)
+        {
+            return 0;
+        }
+        JsonNode? value = owner[key];
+        return value is not null && value.GetValueKind() == JsonValueKind.Number ? value.GetValue<double>() : 0;
+    }
+
     /// <summary>草稿/提交节点写入。对应 Go: <c>createCloudAgentMediaNode</c>。</summary>
     public async Task CreateMediaNodeAsync(
         CloudAgentMutationContext context, string userID, string canvasID,
@@ -1133,24 +1223,7 @@ public sealed class CloudAgentMediaService
         string beforeJSON = canvas.PayloadJSON;
         string beforeHash = CloudAgentContracts.CanvasHash(doc);
         List<JsonObject> nodes = CloudAgentJsonHelpers.Maps(CloudAgentJsonHelpers.Get(doc, "nodes"));
-        double x = 80, y = 80;
-        foreach (JsonObject node in nodes)
-        {
-            JsonObject? position = node["position"] as JsonObject;
-            double nx = position?["x"]?.GetValueKind() == JsonValueKind.Number
-                ? position!["x"]!.GetValue<double>() : 0;
-            double width = node["width"]?.GetValueKind() == JsonValueKind.Number
-                ? node["width"]!.GetValue<double>() : 0;
-            if (nx + width + 80 > x)
-            {
-                x = nx + width + 80;
-            }
-            if (CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id")) == args.SourceNodeID)
-            {
-                y = position?["y"]?.GetValueKind() == JsonValueKind.Number
-                    ? position!["y"]!.GetValue<double>() : 0;
-            }
-        }
+        (double x, double y) = ResolveMediaNodePlacement(nodes, args.SourceNodeID, args.Mode, args.Size);
         JsonObject meta = new()
         {
             ["status"] = "idle",

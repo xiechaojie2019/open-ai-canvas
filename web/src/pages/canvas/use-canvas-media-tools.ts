@@ -21,7 +21,7 @@ import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-i
 import { resolveCroppableImageSource } from "@/lib/canvas/canvas-pixel-source";
 import { isValidGridSplit, layoutGridSplitCells } from "@/lib/canvas/canvas-grid-split";
 import { audioMetadata, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
-import { findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
+import { imageGenerationChildPosition, resolveGenerationGroupPlacement } from "@/lib/canvas/canvas-generation-layout";
 import { canvasGenerationPromptMetadata, imageBatchItemPrompt } from "@/lib/canvas/canvas-generation-submission";
 import { cancelIncompleteImageBatch } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildAngleLabel, buildAnglePrompt, createCanvasNode } from "@/lib/canvas/canvas-project-domain";
@@ -718,8 +718,9 @@ export function useCanvasMediaTools({
         const childIds = requestedCount > 1 ? Array.from({ length: requestedCount }, () => nanoid()) : [];
         const targetIds = requestedCount > 1 ? childIds : [rootId];
         const imageSize = { width: node.width, height: node.height };
-        const preferredPosition = { x: node.position.x + node.width + 96, y: node.position.y };
-        const rootPosition = findAvailableGenerationGroupPosition(nodesRef.current, preferredPosition, imageGenerationGroupSize(imageSize, imageSize, childIds.length));
+        const preferredPosition = { x: node.position.x + node.width + 120, y: node.position.y + node.height / 2 - imageSize.height / 2 };
+        const placement = resolveGenerationGroupPlacement(nodesRef.current, preferredPosition, imageSize, imageSize, childIds.length);
+        const rootPosition = placement.position;
         const rootNode: CanvasNodeData = {
             id: rootId,
             type: CanvasNodeType.Image,
@@ -743,7 +744,7 @@ export function useCanvasMediaTools({
             id,
             type: CanvasNodeType.Image,
             title: `${userPrompt.slice(0, 28) || "局部编辑结果"} · ${index + 1}`,
-            position: imageGenerationChildPosition(rootNode.position, rootNode.width, imageSize, index),
+            position: imageGenerationChildPosition(rootNode.position, rootNode.width, imageSize, index, placement.columns),
             width: node.width,
             height: node.height,
             metadata: {
