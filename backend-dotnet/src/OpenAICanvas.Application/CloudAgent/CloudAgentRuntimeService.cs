@@ -566,6 +566,19 @@ public sealed partial class CloudAgentRuntimeService
     }
 
     /// <summary>
+    /// 仓储层业务限额的友好文案。非业务错误返回 <c>null</c>，由调用方按「状态损坏」处理。
+    /// </summary>
+    private static string? BusinessLimitMessage(InvalidOperationException cause) =>
+        cause.Message switch
+        {
+            "active_task_limit" =>
+                "平台同时排队或运行的任务已达上限，本轮已停止；已提交的任务会继续执行并把结果回写到画布，请稍后再发起新一轮",
+            "insufficient_credits" => "积分不足，本轮已停止；请先充值或使用兑换码后再发起生成",
+            "logical_model_unavailable" => "所选模型已停用或配置已更新，本轮已停止；请重新选择模型后再发起",
+            _ => null,
+        };
+
+    /// <summary>
     /// 推进一次。检查点失败必须终态化，而不是像瞬时 DB 错误那样无限重试。
     /// 对应 Go: <c>advanceCloudAgent</c>。
     /// </summary>
@@ -584,7 +597,10 @@ public sealed partial class CloudAgentRuntimeService
         }
         catch (InvalidOperationException cause)
         {
-            await TerminateAsync(run, "Agent 运行状态损坏，本轮已停止: " + cause.Message)
+            // ⚠️ 2026-10-19：业务限额（并发任务数、积分、模型可用性）不是「状态损坏」。
+            // 原实现一律写成「运行状态损坏」，用户看到的是「生成结果未能安全回写画布」，
+            // 但已提交的任务其实正常跑完并回写了 —— 纯误报，且会把模型逼进死路。
+            await TerminateAsync(run, BusinessLimitMessage(cause) ?? ("Agent 运行状态损坏，本轮已停止: " + cause.Message))
                 .ConfigureAwait(false);
         }
         catch (AppError error) when (error.Status == 409)

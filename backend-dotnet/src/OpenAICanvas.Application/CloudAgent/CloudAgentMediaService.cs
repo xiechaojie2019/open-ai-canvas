@@ -1132,7 +1132,7 @@ public sealed class CloudAgentMediaService
     /// 以来源节点为锚的就近空位，行为对齐 <c>canvas-generation-layout.ts</c>。
     /// </remarks>
     private static (double X, double Y) ResolveMediaNodePlacement(
-        IReadOnlyList<JsonObject> nodes, string sourceNodeID, string mode, string size)
+        IReadOnlyList<JsonObject> nodes, string sourceNodeID, IReadOnlyList<string> referenceNodeIDs, string mode, string size)
     {
         const double gapX = 120;
         (CapabilityDescriptor descriptor, bool known) = CloudAgentNodes.ForGenerationMode(mode);
@@ -1146,11 +1146,19 @@ public sealed class CloudAgentMediaService
 
         double sourceX = 0, sourceY = 0, sourceWidth = width, sourceHeight = height;
         bool sourceFound = false;
-        foreach (JsonObject node in nodes)
+        // ⚠️ 2026-10-19：锚点必须覆盖「只有参考图、没有来源节点」的场景。
+        // 图生图（image_to_image）时模型只传 referenceNodeIds、sourceNodeId 为空，
+        // 原实现找不到锚点就退回 (80,80)，于是结果节点被放到画布右上角，
+        // 与真正的参考图节点相距上万像素（线上实测：源在 x=-10330，结果落在 x=920）。
+        // 优先级：来源节点 → 第一个参考图节点（参考图通常就是用户盯着的那张）。
+        foreach (string anchorID in AnchorCandidates(sourceNodeID, referenceNodeIDs))
         {
-            if (!sourceFound
-                && CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id")) == sourceNodeID)
+            foreach (JsonObject node in nodes)
             {
+                if (CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "id")) != anchorID)
+                {
+                    continue;
+                }
                 JsonObject? sourcePosition = node["position"] as JsonObject;
                 sourceX = CloudAgentMutations.NumberField(sourcePosition, "x");
                 sourceY = CloudAgentMutations.NumberField(sourcePosition, "y");
@@ -1161,12 +1169,33 @@ public sealed class CloudAgentMediaService
                     ? sourceHeight
                     : CloudAgentMutations.NumberField(node, "height");
                 sourceFound = true;
+                break;
+            }
+            if (sourceFound)
+            {
+                break;
             }
         }
 
         double baseX = sourceFound ? sourceX + sourceWidth + gapX : 80;
         double baseY = sourceFound ? sourceY + sourceHeight / 2 - height / 2 : 80;
         return CloudAgentMutations.NearestFreeSlot(nodes, baseX, baseY, width, height);
+    }
+
+    /// <summary>落点锚点候选：来源节点优先，其次第一个参考图节点。</summary>
+    private static IEnumerable<string> AnchorCandidates(string sourceNodeID, IReadOnlyList<string> referenceNodeIDs)
+    {
+        if (sourceNodeID.Length > 0)
+        {
+            yield return sourceNodeID;
+        }
+        foreach (string referenceID in referenceNodeIDs)
+        {
+            if (referenceID.Length > 0 && referenceID != sourceNodeID)
+            {
+                yield return referenceID;
+            }
+        }
     }
 
     /// <summary>草稿/提交节点写入。对应 Go: <c>createCloudAgentMediaNode</c>。</summary>
@@ -1182,7 +1211,7 @@ public sealed class CloudAgentMediaService
         string beforeJSON = canvas.PayloadJSON;
         string beforeHash = CloudAgentContracts.CanvasHash(doc);
         List<JsonObject> nodes = CloudAgentJsonHelpers.Maps(CloudAgentJsonHelpers.Get(doc, "nodes"));
-        (double x, double y) = ResolveMediaNodePlacement(nodes, args.SourceNodeID, args.Mode, args.Size);
+        (double x, double y) = ResolveMediaNodePlacement(nodes, args.SourceNodeID, args.ReferenceNodeIDs, args.Mode, args.Size);
         JsonObject meta = new()
         {
             ["status"] = "idle",

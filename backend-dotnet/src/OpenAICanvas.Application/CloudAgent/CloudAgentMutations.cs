@@ -360,12 +360,17 @@ public static class CloudAgentMutations
     {
         const double gapX = 120;
         const double gapY = 48;
-        const int maxColumns = 12;
-        const int maxRows = 6;
-        for (int row = 0; row <= maxRows; row += 1)
+        const int maxSteps = 12;
+        // ⚠️ 2026-10-19：按**曼哈顿距离**逐圈找最近空位（d = 右移格数 + 下移格数）。
+        // 原实现是「行 × 列」双重循环，右移量会跨行累积：起点右侧被占时，候选点
+        // 一路向右（甚至右+下同时累加），实测把结果推到上万像素外。
+        // 现在每圈枚举所有 (下移 row, 右移 col) 且 row+col=d，天然就近；
+        // 下移时 x 回到起点正下方，符合「右侧不通就往下排」的直觉。
+        for (int step = 0; step <= maxSteps; step += 1)
         {
-            for (int column = 0; column <= maxColumns; column += 1)
+            for (int row = 0; row <= step; row += 1)
             {
+                int column = step - row;
                 double candidateX = startX + column * (width + gapX);
                 double candidateY = startY + row * (height + gapY);
                 if (!OverlapsAny(nodes, candidateX, candidateY, width, height, gapX, gapY))
