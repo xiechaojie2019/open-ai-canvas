@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
-import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
+import { canGenerateImageInPlace, imageGenerationChildPosition, resolveGenerationGroupPlacement } from "@/lib/canvas/canvas-generation-layout";
 import { cancelIncompleteImageBatch, collapseCompletedImageBatch, finalizeCompletedImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
@@ -89,13 +89,18 @@ export async function executeImageGeneration({
     registerPendingNodeIds(reuseSourceNode || reuseResultNode ? childIds : [rootId, ...childIds]);
     const rootWidth = outputNodeSize.width;
     const rootHeight = outputNodeSize.height;
+    // 摆放规则：优先「来源右侧 + 120px、纵向对齐中心」；放不下先降级双列，再整组就近右移。
     const preferredPosition = {
-        x: parentPosition.x + parentWidth + 96,
+        x: parentPosition.x + parentWidth + 120,
         y: parentPosition.y + parentHeight / 2 - rootHeight / 2,
     };
-    const rootPosition = reuseSourceNode
-        ? parentPosition
-        : aggregationTarget?.position ?? findAvailableGenerationGroupPosition(workingNodes, preferredPosition, imageGenerationGroupSize({ width: rootWidth, height: rootHeight }, outputNodeSize, childIds.length));
+    const placement = reuseSourceNode
+        ? { position: parentPosition, columns: 1 as const }
+        : aggregationTarget
+          ? { position: aggregationTarget.position, columns: 1 as const }
+          : resolveGenerationGroupPlacement(workingNodes, preferredPosition, { width: rootWidth, height: rootHeight }, outputNodeSize, childIds.length);
+    const rootPosition = placement.position;
+    const childColumns = placement.columns;
     // ⚠️ 一次出多张时必须**重建**批次身份，不能沿用既有结果节点上的旧字段。
     // 旧 primaryImageId 会让下面的「提升主图」逻辑永远短路（节点自己已有主图 ⇒ 新图写不进去，
     // 画布上只剩一个空节点）；旧 batchChildIds 又登记不到本次的新子节点 ⇒ 结束时收不了口
@@ -168,7 +173,7 @@ export async function executeImageGeneration({
         id,
         type: CanvasNodeType.Image,
         title: buildImageGenerationNodeTitle(effectivePrompt, sourceNode, index, count),
-        position: imageGenerationChildPosition(rootNode.position, rootNode.width, outputNodeSize, index),
+        position: imageGenerationChildPosition(rootNode.position, rootNode.width, outputNodeSize, index, childColumns),
         width: outputNodeSize.width,
         height: outputNodeSize.height,
         metadata: {

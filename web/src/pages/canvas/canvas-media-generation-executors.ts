@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
-import { canGenerateMediaInPlace } from "@/lib/canvas/canvas-generation-layout";
+import { canGenerateMediaInPlace, resolveGenerationGroupPlacement } from "@/lib/canvas/canvas-generation-layout";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { nextCanvasVersionLabel } from "@/lib/canvas/canvas-layout";
 import { buildAudioGenerationMetadata, buildVideoGenerationMetadata, generationReferenceUrls, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
@@ -16,6 +16,7 @@ const NODE_STATUS_SUCCESS = "success" as const;
 export async function executeVideoGeneration({
     nodeId,
     sourceNode,
+    canvasNodes,
     prompt,
     effectivePrompt,
     generationConfig,
@@ -41,12 +42,21 @@ export async function executeVideoGeneration({
     const videoId = reuseSourceNode ? nodeId : nanoid();
     const versionRootId = isExistingVideoNode && sourceNode ? sourceNode.metadata?.versionOfNodeId || sourceNode.id : undefined;
     const parent = sourceNode?.position || { x: 0, y: 0 };
+    // 与图片生成同一套摆放规则：来源右侧 + 120px、纵向对齐中心，放不下就近右移/下移。
+    const placement = reuseSourceNode || !sourceNode
+        ? parent
+        : resolveGenerationGroupPlacement(
+            canvasNodes,
+            { x: parent.x + (sourceNode.width || spec.width) + 120, y: parent.y + (sourceNode.height || spec.height) / 2 - spec.height / 2 },
+            spec,
+            spec,
+            0).position;
     const videoGenerationMetadata = buildVideoGenerationMetadata(sourceNode, generationContext, generationConfig);
     const videoNode: CanvasNodeData = {
         id: videoId,
         type: CanvasNodeType.Video,
         title: effectivePrompt.slice(0, 32) || "Generated Video",
-        position: reuseSourceNode ? sourceNode!.position : { x: parent.x + (sourceNode?.width || spec.width) + 96, y: parent.y },
+        position: reuseSourceNode ? sourceNode!.position : placement,
         width: reuseSourceNode ? sourceNode!.width : spec.width,
         height: reuseSourceNode ? sourceNode!.height : spec.height,
         metadata: {

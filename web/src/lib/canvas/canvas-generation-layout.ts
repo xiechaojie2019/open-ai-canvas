@@ -5,9 +5,15 @@ type Size = {
     height: number;
 };
 
+/** 生成组与来源节点之间的横向偏移。 */
 const BATCH_CHILD_OFFSET_X = 120;
-const BATCH_CHILD_GAP = 36;
-const NODE_CLEARANCE = 36;
+/** 同组内相邻子图的间距（多张排布时纵向为主）。 */
+const BATCH_CHILD_GAP = 48;
+/** 与既有节点保持的安全间距：横向 ≥120px、纵向 ≥48px。 */
+const COLLISION_GAP_X = 120;
+const COLLISION_GAP_Y = 48;
+/** 整体右移时的最大尝试列数，避免极端布局下无限搜索。 */
+const MAX_PLACEMENT_COLUMNS = 12;
 
 export function canGenerateImageInPlace(sourceNode: CanvasNodeData | undefined) {
     return canGenerateMediaInPlace(sourceNode, CanvasNodeType.Image);
@@ -21,48 +27,81 @@ export function canGenerateMediaInPlace(sourceNode: CanvasNodeData | undefined, 
     return Boolean(sourceNode.metadata?.copiedFromNodeId || sourceNode.metadata?.versionOfNodeId);
 }
 
-export function imageGenerationGroupSize(rootSize: Size, imageSize: Size, childCount: number): Size {
+/** 生成组排布：1 = 单列纵向（默认），2 = 双列网格（空间不足时降级）。 */
+export type GenerationLayoutColumns = 1 | 2;
+
+export type GenerationGroupPlacement = {
+    position: Position;
+    columns: GenerationLayoutColumns;
+};
+
+/**
+ * 生成组包围盒。单列纵向优先（规格情况 A），空间不足时才用双列（情况 B）。
+ */
+export function imageGenerationGroupSize(rootSize: Size, imageSize: Size, childCount: number, columns: GenerationLayoutColumns = 2): Size {
     if (childCount <= 0) return rootSize;
-    const columns = Math.min(childCount, 2);
-    const rows = Math.ceil(childCount / 2);
+    const perRow = columns;
+    const rows = Math.ceil(childCount / perRow);
     return {
-        width: rootSize.width + BATCH_CHILD_OFFSET_X + columns * imageSize.width + (columns - 1) * BATCH_CHILD_GAP,
+        width: rootSize.width + BATCH_CHILD_OFFSET_X + perRow * imageSize.width + (perRow - 1) * BATCH_CHILD_GAP,
         height: Math.max(rootSize.height, rows * imageSize.height + (rows - 1) * BATCH_CHILD_GAP),
     };
 }
 
-export function imageGenerationChildPosition(rootPosition: Position, rootWidth: number, imageSize: Size, index: number): Position {
+export function imageGenerationChildPosition(rootPosition: Position, rootWidth: number, imageSize: Size, index: number, columns: GenerationLayoutColumns = 2): Position {
     return {
-        x: rootPosition.x + rootWidth + BATCH_CHILD_OFFSET_X + (index % 2) * (imageSize.width + BATCH_CHILD_GAP),
-        y: rootPosition.y + Math.floor(index / 2) * (imageSize.height + BATCH_CHILD_GAP),
+        x: rootPosition.x + rootWidth + BATCH_CHILD_OFFSET_X + (index % columns) * (imageSize.width + BATCH_CHILD_GAP),
+        y: rootPosition.y + Math.floor(index / columns) * (imageSize.height + BATCH_CHILD_GAP),
     };
 }
 
-export function findAvailableGenerationGroupPosition(nodes: CanvasNodeData[], preferred: Position, groupSize: Size): Position {
-    const down = resolveCollisions(nodes, preferred, groupSize, "down");
-    const right = resolveCollisions(nodes, preferred, groupSize, "right");
-    const downDistance = down.y - preferred.y;
-    const rightDistance = right.x - preferred.x;
-    return downDistance <= rightDistance ? down : right;
+/**
+ * 就近空位落点（规格情况 A/B/C）：
+ * A. 偏好位置（来源右侧 + 横向偏移、纵向对齐中心）放得下 → 直接用；
+ * B. 放不下 → 同一位置降级为双列网格再试；
+ * C. 还放不下 → 整组向右逐列平移找最近的空位，一行扫完再整体下移一行。
+ * 只移动本次新增节点，既有节点一律不动。
+ */
+export function resolveGenerationGroupPlacement(
+    nodes: CanvasNodeData[],
+    preferred: Position,
+    rootSize: Size,
+    imageSize: Size,
+    childCount: number,
+): GenerationGroupPlacement {
+    const layouts: GenerationLayoutColumns[] = childCount > 1 ? [1, 2] : [1];
+
+    for (const layout of layouts) {
+        const size = imageGenerationGroupSize(rootSize, imageSize, childCount, layout);
+        if (!overlapsAny(nodes, preferred, size)) return { position: preferred, columns: layout };
+    }
+
+    for (let row = 1; row <= MAX_PLACEMENT_COLUMNS; row += 1) {
+        for (let column = 1; column <= MAX_PLACEMENT_COLUMNS; column += 1) {
+            for (const layout of layouts) {
+                const size = imageGenerationGroupSize(rootSize, imageSize, childCount, layout);
+                const candidate: Position = {
+                    x: preferred.x + column * (size.width + COLLISION_GAP_X),
+                    y: preferred.y + row * (size.height + COLLISION_GAP_Y),
+                };
+                if (!overlapsAny(nodes, candidate, size)) return { position: candidate, columns: layout };
+            }
+        }
+    }
+
+    // 极端拥挤：行列都占满时退回偏好位置，交由上层照常渲染（不静默丢弃生成结果）。
+    return { position: preferred, columns: layouts[0] };
 }
 
-// 分别沿下方和右侧求出最近空位，再选择移动距离更短的方向，避免生成组覆盖已有节点。
-function resolveCollisions(nodes: CanvasNodeData[], preferred: Position, groupSize: Size, direction: "down" | "right"): Position {
-    const candidate = { ...preferred };
-    for (let attempt = 0; attempt <= nodes.length; attempt += 1) {
-        const collisions = nodes.filter((node) => rectanglesOverlap(candidate, groupSize, node.position, node));
-        if (!collisions.length) return candidate;
-        if (direction === "down") candidate.y = Math.max(...collisions.map((node) => node.position.y + node.height + NODE_CLEARANCE));
-        else candidate.x = Math.max(...collisions.map((node) => node.position.x + node.width + NODE_CLEARANCE));
-    }
-    return candidate;
+function overlapsAny(nodes: CanvasNodeData[], candidate: Position, size: Size) {
+    return nodes.some((node) => rectanglesOverlap(candidate, size, node.position, node));
 }
 
 function rectanglesOverlap(firstPosition: Position, firstSize: Size, secondPosition: Position, secondSize: Size) {
     return !(
-        firstPosition.x + firstSize.width + NODE_CLEARANCE <= secondPosition.x ||
-        firstPosition.x >= secondPosition.x + secondSize.width + NODE_CLEARANCE ||
-        firstPosition.y + firstSize.height + NODE_CLEARANCE <= secondPosition.y ||
-        firstPosition.y >= secondPosition.y + secondSize.height + NODE_CLEARANCE
+        firstPosition.x + firstSize.width + COLLISION_GAP_X <= secondPosition.x ||
+        firstPosition.x >= secondPosition.x + secondSize.width + COLLISION_GAP_X ||
+        firstPosition.y + firstSize.height + COLLISION_GAP_Y <= secondPosition.y ||
+        firstPosition.y >= secondPosition.y + secondSize.height + COLLISION_GAP_Y
     );
 }
