@@ -142,6 +142,25 @@ export function selectMediaHistoryVersion(metadata: CanvasNodeMetadata | undefin
     return next;
 }
 
+/**
+ * 原地/复用写回失败或取消时的回滚：把刚刚压进历史的旧产物取回顶层。
+ *
+ * 与 `rollbackTextInPlaceGeneration` 同理，只是媒体节点没有富文本层要还。
+ * 场景：复用既有结果节点生成时先把旧图压进 `mediaHistory`、顶层字段被清空，
+ * 一旦这次生成失败，节点就会变成「没有图、状态还停在 loading/error」的空壳。
+ */
+export function rollbackMediaInPlaceGeneration(metadata: CanvasNodeMetadata | undefined, historyId: string, status: "error" | "idle"): CanvasNodeMetadata {
+    const history = mediaHistoryEntries(metadata);
+    // 历史里已经没有这一条（本来就没有旧产物，或已被别的写入方处理）→ 只改状态。
+    if (!history.some((entry) => entry.id === historyId)) {
+        return { ...metadata, status };
+    }
+    const restored = selectMediaHistoryVersion(metadata, historyId);
+    const next: CanvasNodeMetadata = { ...restored, status };
+    if (Array.isArray(next.mediaHistory) && next.mediaHistory.length === 0) delete next.mediaHistory;
+    return next;
+}
+
 /** 顶层当前展示的产物，字段形状与历史条目一致。 */
 function currentMediaEntry(metadata: CanvasNodeMetadata | undefined): CanvasMediaHistoryEntry {
     return {

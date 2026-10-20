@@ -6,8 +6,9 @@ import { cancelIncompleteImageBatch, collapseCompletedImageBatch, finalizeComple
 import { buildImageGenerationNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { canvasImageReferenceLimitError, buildImageGenerationMetadata, getGenerationCount, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import { isOwnResultAggregationTarget, resolveImageAggregationTarget } from "@/lib/canvas/canvas-image-aggregation-target";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
-import { canvasMediaSourceKey, isMediaAggregationTarget, pushCurrentMediaToHistory } from "@/lib/canvas/canvas-media-history";
+import { canvasMediaSourceKey, pushCurrentMediaToHistory, rollbackMediaInPlaceGeneration } from "@/lib/canvas/canvas-media-history";
 import { canvasGenerationPromptMetadata, imageBatchItemPrompt } from "@/lib/canvas/canvas-generation-submission";
 import { CONTENT_MODERATION_ERROR_CODE, generationFailureMetadata, type GenerationFailureMetadata } from "@/lib/generation-error";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -64,10 +65,10 @@ export async function executeImageGeneration({
     const referenceImages = generationContext.referenceImages;
     // 同一生成来源（来源节点 + 参考图集合）此前已经出过图的节点：本次结果仍然写回它，
     // 旧结果压进 metadata.mediaHistory 供切换查看，而不是再新建节点加连线。
+    // ⚠️ 归并 key 只认参考图集合 ⇒ 同参考图的兄弟节点 key 相同，解析规则见
+    // resolveImageAggregationTarget：在来源节点上改就必须写回来源节点自己。
     const sourceKey = canvasMediaSourceKey("image", nodeId, referenceImages.map((image) => image.id));
-    const aggregationTarget = reuseSourceNode
-        ? undefined
-        : workingNodes.find((node) => node.type === CanvasNodeType.Image && !node.metadata?.locked && isMediaAggregationTarget(node.metadata, sourceKey));
+    const aggregationTarget = resolveImageAggregationTarget(sourceNode, workingNodes, sourceKey, reuseSourceNode);
     const reuseResultNode = Boolean(aggregationTarget);
     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
     const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
@@ -84,6 +85,11 @@ export async function executeImageGeneration({
     const parentWidth = sourceNode?.width || parentConfig.width;
     const parentHeight = sourceNode?.height || parentConfig.height;
     const rootId = reuseSourceNode ? nodeId : aggregationTarget?.id ?? nanoid();
+    // 归并目标就是来源节点自己（旧图刚被压进它的 mediaHistory）：
+    // 失败/取消时顶层已被清空，必须把旧图取回来，否则留下一个没有图的空壳节点。
+    const reuseOwnResult = isOwnResultAggregationTarget(aggregationTarget, nodeId);
+    // 旧图入历史用的固定条目 id：失败/取消回滚要靠它把旧图取回顶层。
+    const reuseHistoryId = `hist-${nanoid(10)}`;
     const childIds = count > 1 ? Array.from({ length: count }, () => nanoid()) : [];
     const targetIds = count > 1 ? childIds : [rootId];
     registerPendingNodeIds(reuseSourceNode || reuseResultNode ? childIds : [rootId, ...childIds]);
@@ -146,7 +152,7 @@ export async function executeImageGeneration({
                 reuseSourceNode
                     ? sourceNode?.metadata
                     : reuseResultNode
-                      ? pushCurrentMediaToHistory(aggregationTarget?.metadata, { id: `hist-${nanoid(10)}` })
+                      ? pushCurrentMediaToHistory(aggregationTarget?.metadata, { id: reuseHistoryId })
                       : undefined,
                 NODE_STATUS_LOADING,
             ),
@@ -335,7 +341,12 @@ export async function executeImageGeneration({
                 const removed = new Set(cancelled.removedIds);
                 setConnections((connections) => connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)));
             }
-            return cancelled.nodes.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node));
+            return cancelled.nodes.map((node) => {
+                if (reuseOwnResult && node.id === nodeId) {
+                    return { ...node, metadata: rollbackMediaInPlaceGeneration(node.metadata, reuseHistoryId, NODE_STATUS_IDLE) };
+                }
+                return node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node;
+            });
         });
         return;
     }
@@ -353,6 +364,11 @@ export async function executeImageGeneration({
                 };
             }
             if (node.id === rootId) {
+                // 全部失败且归并目标就是来源节点自己：顶层旧图已在建任务时压进历史，
+                // 这里必须取回来，否则节点变成「没有图的空壳」。
+                if (reuseOwnResult && !hasSuccess) {
+                    return { ...node, metadata: { ...rollbackMediaInPlaceGeneration(node.metadata, reuseHistoryId, NODE_STATUS_ERROR), ...(representativeFailure || { errorDetails: "全部图片生成失败" }) } };
+                }
                 if (count > 1) return collapseCompletedImageBatch(reconcileImageBatchRoot(node, current), current);
                 return {
                     ...node,
