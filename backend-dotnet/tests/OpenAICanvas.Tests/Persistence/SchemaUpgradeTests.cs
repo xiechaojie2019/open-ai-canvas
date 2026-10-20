@@ -57,8 +57,10 @@ public class SchemaUpgradeTests : IDisposable
             await connection.ExecuteAsync($"ALTER TABLE \"{table}\" RENAME COLUMN \"{newName}\" TO \"{oldName}\"");
         }
 
-        // 抹掉 v35 账本行，让迁移器认为这是 v34 库。
-        await connection.ExecuteAsync("DELETE FROM schema_migrations WHERE version = 35");
+        // 抹掉改名迁移之后的账本行，让迁移器认为这套改名还没执行过。
+        await connection.ExecuteAsync(
+            "DELETE FROM schema_migrations WHERE version >= @version",
+            new { version = SchemaMigrationCatalog.CurrentSchemaVersion });
     }
 
     private static async Task<bool> TableExistsAsync(SqliteConnection connection, string name)
@@ -69,7 +71,7 @@ public class SchemaUpgradeTests : IDisposable
     }
 
     [Fact]
-    public async Task 从_v34_升级到_v35_数据保留且标识符收敛为_camelCase()
+    public async Task 改名迁移数据保留且标识符收敛为_camelCase()
     {
         SchemaMigrator migrator = new(_database);
         await migrator.MigrateAsync();
@@ -100,13 +102,14 @@ public class SchemaUpgradeTests : IDisposable
             Assert.Equal(Sentinels, value);
         }
 
-        // 账本此刻应为 v34。
+        // 账本此刻应停在改名迁移之前。
+        long beforeVersion = SchemaMigrationCatalog.CurrentSchemaVersion - 1;
         SchemaStatus before = await migrator.ReadStatusAsync();
-        Assert.Equal(34, before.Current);
-        Assert.Equal(35, before.Expected);
+        Assert.Equal(beforeVersion, before.Current);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, before.Expected);
         Assert.False(before.Ready);
 
-        // ---- 补 v35 ----
+        // ---- 补改名迁移 ----
         SchemaMigrator upgrade = new(_database);
         await upgrade.MigrateAsync();
 
@@ -126,26 +129,26 @@ public class SchemaUpgradeTests : IDisposable
                 "SELECT \"userId\" FROM \"announcementImageDrafts\" WHERE \"resourceId\" = @id", new { id = Sentinels });
             Assert.Equal("USR_UPGRADE_PROBE", userId);
 
-            // 账本表本身没被改名波及：v1–v34 的记录仍在，且 applied_at 列还在。
+            // 账本表本身没被改名波及：改名之前的记录仍在，且 applied_at 列还在。
             long versions = await verify.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM schema_migrations");
-            Assert.Equal(35, versions);
+            Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, versions);
             long appliedAt = await verify.ExecuteScalarAsync<long>(
                 "SELECT COUNT(*) FROM pragma_table_info('schema_migrations') WHERE name = 'applied_at'");
             Assert.Equal(1, appliedAt);
         }
 
         SchemaStatus after = await upgrade.ReadStatusAsync();
-        Assert.Equal(35, after.Current);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, after.Current);
         Assert.True(after.Ready);
     }
 
     [Fact]
-    public async Task 逆向改名后再补_v35_是幂等且可重复的()
+    public async Task 重复执行改名迁移是幂等且可重复的()
     {
         SchemaMigrator migrator = new(_database);
         await migrator.MigrateAsync();
 
-        // 连续两次"补 v35"不应产生任何结构或账本变化。
+        // 连续两次"补改名迁移"不应产生任何结构或账本变化。
         SchemaMigrator second = new(_database);
         await second.MigrateAsync();
 
@@ -153,7 +156,7 @@ public class SchemaUpgradeTests : IDisposable
         await connection.OpenAsync();
 
         long versions = await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM schema_migrations");
-        Assert.Equal(35, versions);
+        Assert.Equal(SchemaMigrationCatalog.CurrentSchemaVersion, versions);
         Assert.True(await TableExistsAsync(connection, "announcementImageDrafts"));
     }
 }

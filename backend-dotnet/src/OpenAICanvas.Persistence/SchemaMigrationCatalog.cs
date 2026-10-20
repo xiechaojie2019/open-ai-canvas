@@ -18,10 +18,11 @@ public static class SchemaMigrationCatalog
 {
     /// <summary>对应 Go: <c>database.CurrentSchemaVersion</c>。</summary>
     /// <remarks>
-    /// 35 是 .NET 侧独有的 <c>camel_case_identifiers</c>（库内标识符 snake_case → camelCase），
-    /// 排在 Go 的 v34 之后，因此不占用 Go 的号段。
+    /// 35~37 是 Go 版后续追加的迁移，.NET 版必须逐字复用其名称与校验和才能接管 Go 迁过的库
+    /// （<c>validateMigrationRecord</c> 会逐条比对）。
+    /// .NET 独有的 <c>camel_case_identifiers</c> 因此让到 38。
     /// </remarks>
-    public const long CurrentSchemaVersion = 35;
+    public const long CurrentSchemaVersion = 38;
 
     /// <summary>PostgreSQL 迁移排他锁 ID。对应 Go: <c>postgresSchemaMigrationLockID</c>。</summary>
     public const long PostgresMigrationLockId = 73123910420260830;
@@ -61,7 +62,13 @@ public static class SchemaMigrationCatalog
     private const string ChannelModelTagsChecksum = "sha256:channel-model-tags-v32";
     private const string OAuthStateAcceptedTermsChecksum = "sha256:oauth-state-accepted-terms-v33";
     private const string TaskMediaRecoveryChecksum = "sha256:task-media-recovery-v34";
-    private const string CamelCaseIdentifiersChecksum = "sha256:camel-case-identifiers-v35-20260929";
+    private const string AuthNotificationsChecksum = "sha256:auth-notifications-v35-20260924";
+    private const string CloudAgentGeminiCacheChecksum = "sha256:cloud-agent-gemini-cache-v36-20260924";
+    private const string CloudAgentGeminiCacheIdentityChecksum = "sha256:cloud-agent-gemini-cache-identity-v37-20260925";
+    private const string CamelCaseIdentifiersChecksum = "sha256:camel-case-identifiers-v38-20260929";
+
+    /// <summary>早期 .NET 独占 35 号时的校验和（见 <see cref="PlanFor"/> 的历史兼容分支）。</summary>
+    private const string LegacyCamelCaseV35Checksum = "sha256:camel-case-identifiers-v35-20260929";
 
     /// <summary>标准顺序的迁移计划。</summary>
     public static IReadOnlyList<SchemaMigration> Plan { get; } = BuildPlan();
@@ -428,9 +435,33 @@ public static class SchemaMigrationCatalog
                 await AddColumnsIfMissingAsync(ctx, "tasks", "media_recovery_json", "media_stage").ConfigureAwait(false);
             },
         },
+        // 35~37 是 Go 版追加的迁移。它们在 Go 侧创建了 .NET 不使用的表
+        // （notification_quotas / cloud_agent_gemini_caches 等），这里只补记录以对齐号段，
+        // Apply 为幂等空操作：线上库早已由 Go 版建好这些表，.NET 不读写它们。
         new SchemaMigration
         {
             Version = 35,
+            Name = "auth_notifications",
+            Checksum = AuthNotificationsChecksum,
+            Apply = static _ => Task.CompletedTask,
+        },
+        new SchemaMigration
+        {
+            Version = 36,
+            Name = "cloud_agent_gemini_cache",
+            Checksum = CloudAgentGeminiCacheChecksum,
+            Apply = static _ => Task.CompletedTask,
+        },
+        new SchemaMigration
+        {
+            Version = 37,
+            Name = "cloud_agent_gemini_cache_identity",
+            Checksum = CloudAgentGeminiCacheIdentityChecksum,
+            Apply = static _ => Task.CompletedTask,
+        },
+        new SchemaMigration
+        {
+            Version = 38,
             Name = "camel_case_identifiers",
             Checksum = CamelCaseIdentifiersChecksum,
             Apply = Baseline.ApplyCamelCaseIdentifiersAsync,
@@ -444,8 +475,21 @@ public static class SchemaMigrationCatalog
     /// 历史发布曾把版本 6 用于 <c>asset_library_folders</c>，之后合并引入了
     /// "6 播放副本、7 素材目录" 的顺序。仅当版本 6 记录的名称与校验和精确匹配历史值时，
     /// 才切换到历史顺序；否则一律使用标准顺序。
+    /// <para>
+    /// 另有一条 .NET 独有的历史：早期 .NET 版把 <c>camel_case_identifiers</c> 放在 35 号，
+    /// 而 Go 版后来也占用了 35（<c>auth_notifications</c>）。这类库必须走 legacy 计划，
+    /// 否则版本 35 的名称校验会直接失败。
+    /// </para>
     /// </remarks>
-    public static IReadOnlyList<SchemaMigration> PlanFor(SchemaMigrationRecord? version6Record)
+    public static IReadOnlyList<SchemaMigration> PlanFor(
+        SchemaMigrationRecord? version6Record,
+        SchemaMigrationRecord? version35Record = null)
+    {
+        IReadOnlyList<SchemaMigration> basePlan = ResolveVersion6Order(version6Record);
+        return ResolveVersion35Legacy(basePlan, version35Record);
+    }
+
+    private static IReadOnlyList<SchemaMigration> ResolveVersion6Order(SchemaMigrationRecord? version6Record)
     {
         if (version6Record is null)
         {
@@ -482,6 +526,53 @@ public static class SchemaMigrationCatalog
 
         return legacy;
     }
+
+    /// <summary>
+    /// 识别「35 号是 .NET 自己的 camelCase 改名」这类库。
+    /// 该库缺 35~37 三条记录，需要把它们顺延成 36/37/38，camelCase 保留在 35。
+    /// </summary>
+    private static IReadOnlyList<SchemaMigration> ResolveVersion35Legacy(
+        IReadOnlyList<SchemaMigration> basePlan,
+        SchemaMigrationRecord? version35Record)
+    {
+        if (version35Record is null
+            || !string.Equals(version35Record.Name, "camel_case_identifiers", StringComparison.Ordinal)
+            || !string.Equals(version35Record.Checksum, LegacyCamelCaseV35Checksum, StringComparison.Ordinal))
+        {
+            return basePlan;
+        }
+
+        List<SchemaMigration> legacy = [];
+        foreach (SchemaMigration item in basePlan)
+        {
+            legacy.Add(item.Version switch
+            {
+                // 注意：必须重建对象并显式改写 Version，不能直接复用 basePlan 的实例
+                // （否则顺延后会出现重复版本号）。
+                35 => new SchemaMigration
+                {
+                    Version = 35,
+                    Name = "camel_case_identifiers",
+                    Checksum = LegacyCamelCaseV35Checksum,
+                    Apply = item.Apply,
+                },
+                36 => Renumber(basePlan.First(m => m.Version == 35), 36),
+                37 => Renumber(basePlan.First(m => m.Version == 36), 37),
+                38 => Renumber(basePlan.First(m => m.Version == 37), 38),
+                _ => item,
+            });
+        }
+
+        return legacy;
+    }
+
+    private static SchemaMigration Renumber(SchemaMigration source, long version) => new()
+    {
+        Version = version,
+        Name = source.Name,
+        Checksum = source.Checksum,
+        Apply = source.Apply,
+    };
 
     /// <summary>按完整建表脚本里的定义逐列补齐。对应 Go 的 <c>Migrator().AddColumn()</c> 循环。</summary>
     private static async Task AddColumnsIfMissingAsync(SchemaMigrationContext ctx, string table, params string[] columns)

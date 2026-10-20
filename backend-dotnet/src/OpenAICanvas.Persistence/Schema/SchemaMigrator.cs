@@ -44,8 +44,10 @@ public sealed class SchemaMigrator
 
             SchemaMigrationRecord? version6 = await ReadRecordAsync(
                 connection, transaction, 6, cancellationToken).ConfigureAwait(false);
+            SchemaMigrationRecord? version35 = await ReadRecordAsync(
+                connection, transaction, 35, cancellationToken).ConfigureAwait(false);
 
-            IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6);
+            IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6, version35);
 
             foreach (SchemaMigration item in plan)
             {
@@ -147,7 +149,9 @@ public sealed class SchemaMigrator
     {
         SchemaMigrationRecord? version6 = await ReadRecordAsync(
             connection, transaction, 6, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6);
+        SchemaMigrationRecord? version35 = await ReadRecordAsync(
+            connection, transaction, 35, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6, version35);
 
         foreach (SchemaMigration item in plan)
         {
