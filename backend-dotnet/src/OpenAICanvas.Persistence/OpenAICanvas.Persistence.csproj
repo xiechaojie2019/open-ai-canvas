@@ -31,4 +31,9 @@
     <EmbeddedResource Include="Schema\PostgresSchema.sql" />
   </ItemGroup>
 
+  <!-- 测试需要直接构造内部迁移上下文（SchemaMigrationContext 构造函数是 internal）。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenAICanvas.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -355,11 +355,27 @@ public static class Baseline
     /// 与其 <c>applied_at</c> 不在计划内（迁移链自身在改名前后都要读写它）。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 库里是否还存在 snake_case 的表。
+    /// </summary>
+    /// <remarks>
+    /// 用于判断改名是否还有必要：全新 .NET 库建表时就是 snake_case（v38 要改），
+    /// 而已经是 camelCase 的库（改名已完成、或本就不是 .NET 基线建的）不需要再动结构。
+    /// 只看表名里是否含下划线，不看具体是哪些表，避免把计划外的 Go 表也算进来。
+    /// </remarks>
+    public static async Task<bool> HasSnakeCaseTablesAsync(SchemaMigrationContext ctx)
+    {
+        HashSet<string> tables = await ReadExistingTableNamesAsync(ctx).ConfigureAwait(false);
+
+        // 账本表自身不在改名计划内，不能作为判据。
+        return tables.Any(name =>
+            name != "schema_migrations" && name.Contains('_', StringComparison.Ordinal));
+    }
+
     public static async Task ApplyCamelCaseIdentifiersAsync(SchemaMigrationContext ctx)
     {
         HashSet<string> tables = await ReadExistingTableNamesAsync(ctx).ConfigureAwait(false);
         HashSet<(string Table, string Column)> columns = await ReadExistingColumnsAsync(ctx).ConfigureAwait(false);
-
         // 列改名：跳过不存在的表/列，使重复执行与部分迁移过的库都能安全通过。
         foreach ((string table, string oldName, string newName) in CamelCaseRenamePlan.Columns)
         {

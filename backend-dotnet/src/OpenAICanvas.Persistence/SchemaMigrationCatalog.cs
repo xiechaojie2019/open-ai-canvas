@@ -20,7 +20,10 @@ public static class SchemaMigrationCatalog
     /// <remarks>
     /// 35~37 是 Go 版后续追加的迁移，.NET 版必须逐字复用其名称与校验和才能接管 Go 迁过的库
     /// （<c>validateMigrationRecord</c> 会逐条比对）。
-    /// .NET 独有的 <c>camel_case_identifiers</c> 因此让到 38。
+    /// <para>
+    /// .NET 独有的 <c>camel_case_identifiers</c> 因此让到 38。Go 侧已确认不会再有新的迁移
+    /// （Go 代码从未进入本仓库的 codeup，线上库是 Go 版部署的历史遗留），38 号可安全占用。
+    /// </para>
     /// </remarks>
     public const long CurrentSchemaVersion = 38;
 
@@ -466,9 +469,7 @@ public static class SchemaMigrationCatalog
             Checksum = CamelCaseIdentifiersChecksum,
             Apply = Baseline.ApplyCamelCaseIdentifiersAsync,
         },
-    ];
-
-    /// <summary>
+    ];    /// <summary>
     /// 按数据库实际情况选择迁移计划。对应 Go: <c>migrationsForDatabase</c>。
     /// </summary>
     /// <remarks>
@@ -486,7 +487,8 @@ public static class SchemaMigrationCatalog
         SchemaMigrationRecord? version35Record = null)
     {
         IReadOnlyList<SchemaMigration> basePlan = ResolveVersion6Order(version6Record);
-        return ResolveVersion35Legacy(basePlan, version35Record);
+        basePlan = ResolveVersion35Legacy(basePlan, version35Record);
+        return ResolveRenameGuard(basePlan, version35Record);
     }
 
     private static IReadOnlyList<SchemaMigration> ResolveVersion6Order(SchemaMigrationRecord? version6Record)
@@ -573,6 +575,52 @@ public static class SchemaMigrationCatalog
         Checksum = source.Checksum,
         Apply = source.Apply,
     };
+
+    /// <summary>
+    /// v38 的改名步骤在「库里的表已经是 camelCase」时是空操作。
+    /// </summary>
+    /// <remarks>
+    /// 改名计划是按 .NET 基线生成的冻结快照，只覆盖 .NET 认识的表。线上库是 Go 版
+    /// （GORM，snake_case 物理名）建出来的，Go 侧后来新增的表并不在计划里；
+    /// 若对这类库强行改名，一旦漏改某张表，.NET 就再也读不到它，而改名不可逆。
+    /// <para>
+    /// 因此这里不按「35 号记录」这类外部信号判断，而是直接看库里的实际表名：
+    /// <list type="bullet">
+    /// <item>库里已无 snake_case 表 ⇒ 改名早已完成（或本就是 camelCase 库）⇒ 跳过，纯补账本。</item>
+    /// <item>库里还有 snake_case 表 ⇒ 这是 .NET 基线建的库，改名必须执行。</item>
+    /// </list>
+    /// 两种情况都不会动到计划外的表。
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<SchemaMigration> ResolveRenameGuard(
+        IReadOnlyList<SchemaMigration> basePlan,
+        SchemaMigrationRecord? version35Record)
+    {
+        List<SchemaMigration> adjusted = [];
+        foreach (SchemaMigration item in basePlan)
+        {
+            adjusted.Add(item.Version == 38
+                ? new SchemaMigration
+                {
+                    Version = 38,
+                    Name = item.Name,
+                    Checksum = item.Checksum,
+                    // 只在库确实还是 snake_case 时才改名。
+                    Apply = async ctx =>
+                    {
+                        if (!await Baseline.HasSnakeCaseTablesAsync(ctx).ConfigureAwait(false))
+                        {
+                            return;
+                        }
+
+                        await Baseline.ApplyCamelCaseIdentifiersAsync(ctx).ConfigureAwait(false);
+                    },
+                }
+                : item);
+        }
+
+        return adjusted;
+    }
 
     /// <summary>按完整建表脚本里的定义逐列补齐。对应 Go 的 <c>Migrator().AddColumn()</c> 循环。</summary>
     private static async Task AddColumnsIfMissingAsync(SchemaMigrationContext ctx, string table, params string[] columns)
