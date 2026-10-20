@@ -102,7 +102,12 @@ export function CanvasMediaHistoryModal({
                                 if (!isCurrent) onSelect(entry.id);
                             }}
                         >
-                            {node?.type === CanvasNodeType.Video ? (
+                            {node?.type === CanvasNodeType.Text ? (
+                                // 文本节点的产物就是正文本身（metadata.content），没有缩略图可渲染。
+                                <span className="line-clamp-6 block h-full overflow-hidden whitespace-pre-wrap break-words px-3 py-2 text-left text-xs leading-5" style={{ color: theme.node.text }}>
+                                    {entry.content || "（这次结果没有正文）"}
+                                </span>
+                            ) : node?.type === CanvasNodeType.Video ? (
                                 <CanvasVideoPreviewImage
                                     node={{ ...node, metadata: { ...node.metadata, ...entry } }}
                                     alt={entry.prompt || "历史视频"}
@@ -158,6 +163,8 @@ export function CanvasMediaHistoryModal({
 function dimensionLabel(entry: CanvasMediaHistoryEntry) {
     if (entry.naturalWidth && entry.naturalHeight) return `${entry.naturalWidth} × ${entry.naturalHeight}`;
     if (entry.durationMs) return `${Math.round(entry.durationMs / 1000)} 秒`;
+    // 文本没有尺寸概念，给字数比「——」有用。
+    if (entry.content) return `${entry.content.length} 字`;
     return "——";
 }
 

@@ -128,7 +128,8 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasMediaContent = hasImageContent || hasVideoContent || hasAudioContent;
     const isBatchRoot = data.type === CanvasNodeType.Image && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
-    // 同一来源多次生成时，旧结果留在 metadata.mediaHistory 里，节点只展示最新一张。
+    // 同一来源多次生成时，旧结果留在 metadata.mediaHistory 里，节点只展示最新一个。
+    // 媒体节点的产物是图/视频，文本节点的产物是正文（metadata.content），两者共用这一套历史。
     const mediaHistoryCount = data.metadata?.mediaHistory?.length ?? 0;
     const showStatusTrack = Boolean(resourceLabel || data.metadata?.locked || isBatchRoot || (isBatchChild && !readOnly) || (hasMediaContent && !readOnly) || mediaHistoryCount > 0);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
