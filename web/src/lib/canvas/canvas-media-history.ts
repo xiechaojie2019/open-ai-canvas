@@ -3,6 +3,8 @@ import type { CanvasMediaHistoryEntry, CanvasNodeMetadata } from "@/types/canvas
 /**
  * 同一生成来源的产物个数上限。超出后丢弃最旧的一条，避免节点元数据无限膨胀
  * （画布文档是整体 PUT 的 JSON，历史条目会直接放大每次保存的体积）。
+ *
+ * 文本节点共用这一套：它的「产物」就是`metadata.content`。
  */
 export const MEDIA_HISTORY_LIMIT = 30;
 
@@ -91,9 +93,19 @@ export function pushCurrentMediaToHistory(
         createdAt: extra?.createdAt ?? new Date().toISOString(),
     };
     const previous = mediaHistoryEntries(metadata);
-    const duplicated = previous.length > 0 && Boolean(entry.storageKey) && previous[0].storageKey === entry.storageKey;
+    // 去重：媒体按 storageKey 认同一份产物；文本没有 storageKey，只能按正文认。
+    // 不去重的话回写重试会把同一条正文重复入栈，历史面板越点越多。
+    const duplicated =
+        previous.length > 0 &&
+        (entry.storageKey
+            ? previous[0].storageKey === entry.storageKey
+            : Boolean(entry.content) && previous[0].content === entry.content);
     next.mediaHistory = (duplicated ? previous : [entry, ...previous]).slice(0, MEDIA_HISTORY_LIMIT);
     for (const field of MEDIA_FIELDS) delete next[field];
+    // 文本节点的富文本层必须与正文一起丢弃：历史条目只存纯文本正文，
+    // 留着旧 richText 会渲染出「正文是这次的、排版是上次」的错乱结果。
+    // 媒体节点本来就没有 richText，这行对它们是无害的。
+    delete next.richText;
     return next;
 }
 
@@ -103,7 +115,36 @@ export function selectMediaHistoryVersion(metadata: CanvasNodeMetadata | undefin
     const index = history.findIndex((entry) => entry.id === entryId);
     if (index < 0) return { ...metadata };
     const selected = history[index];
-    const swap: CanvasMediaHistoryEntry = {
+    // ⚠️ 顶层没有产物时**不能**往历史里塞空占位：生成尚未回写时切换，
+    // 会把空条目换到顶层、同时把刚选中的那条挤成空条目 —— 一次切换净少一条历史。
+    // 此时只需把选中项提到顶层，并从历史中移除。
+    const rest = history.filter((_, i) => i !== index);
+    const next: CanvasNodeMetadata = {
+        ...metadata,
+        content: selected.content,
+        storageKey: selected.storageKey,
+        previewContent: selected.previewContent,
+        videoPreview: selected.videoPreview,
+        naturalWidth: selected.naturalWidth,
+        naturalHeight: selected.naturalHeight,
+        bytes: selected.bytes,
+        mimeType: selected.mimeType,
+        durationMs: selected.durationMs,
+        mediaHistory: hasCurrentMedia(metadata) ? [currentMediaEntry(metadata), ...rest] : rest,
+        // 切换只是换展示，不重新生成：状态回到成功，避免停在旧的 loading/error 上。
+        status: hasCurrentMedia(selected) ? "success" : metadata?.status,
+    };
+    for (const field of MEDIA_FIELDS) {
+        if (next[field] === undefined) delete next[field];
+    }
+    // 同push：切回历史正文时清掉富文本层，否则渲染的是旧排版+ 新正文。
+    delete next.richText;
+    return next;
+}
+
+/** 顶层当前展示的产物，字段形状与历史条目一致。 */
+function currentMediaEntry(metadata: CanvasNodeMetadata | undefined): CanvasMediaHistoryEntry {
+    return {
         id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         content: metadata?.content,
         storageKey: metadata?.storageKey,
@@ -118,23 +159,4 @@ export function selectMediaHistoryVersion(metadata: CanvasNodeMetadata | undefin
         taskId: metadata?.taskId,
         createdAt: new Date().toISOString(),
     };
-    const next: CanvasNodeMetadata = {
-        ...metadata,
-        content: selected.content,
-        storageKey: selected.storageKey,
-        previewContent: selected.previewContent,
-        videoPreview: selected.videoPreview,
-        naturalWidth: selected.naturalWidth,
-        naturalHeight: selected.naturalHeight,
-        bytes: selected.bytes,
-        mimeType: selected.mimeType,
-        durationMs: selected.durationMs,
-        mediaHistory: [...history.slice(0, index), swap, ...history.slice(index + 1)],
-        // 切换只是换展示，不重新生成：状态回到成功，避免停在旧的 loading/error 上。
-        status: hasCurrentMedia(selected) ? "success" : metadata?.status,
-    };
-    for (const field of MEDIA_FIELDS) {
-        if (next[field] === undefined) delete next[field];
-    }
-    return next;
 }
