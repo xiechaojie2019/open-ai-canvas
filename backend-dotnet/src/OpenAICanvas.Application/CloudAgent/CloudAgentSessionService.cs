@@ -1,4 +1,5 @@
 #nullable enable
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using OpenAICanvas.Domain.Canvas.Capability;
@@ -126,6 +127,31 @@ public sealed class CloudAgentSessionService
     /// <summary>创作冲突。对应 Go: <c>creationConflict</c>（409）。</summary>
     public static AppError CreationConflict(string message = "创作运行已变化，请刷新后重试") =>
         AppError.New(409, message);
+
+    /// <summary>
+    /// 画布摘要单次读取的 token 预算（按 <see cref="CloudAgentContextBudgets.EstimatedTokens"/> 计）。
+    /// 默认 128K 窗口的输入预算约 106K token，摘要取其中约 20%，余量留给对话历史、
+    /// system prompt 与工具 schema。
+    /// </summary>
+    public const int CanvasSummaryTokenBudget = 20_000;
+
+    /// <summary>
+    /// 摘要字符数的绝对兜底，只防病态数据（例如未截断的分镜全文）。
+    /// 正常画布在 token 预算处就会被裁掉，走不到这里。
+    /// </summary>
+    public const int CanvasSummaryCharLimit = 256_000;
+
+    /// <summary>
+    /// 摘要序列化专用选项：<see cref="JavaScriptEncoder.UnsafeRelaxedJsonEscaping"/>。
+    /// .NET 默认编码器把中文转义成 <c>\uXXXX</c>（1 汉字 → 6 ASCII 字符），实测字符膨胀 3.2 倍、
+    /// 真实 token 膨胀 2.4 倍（cl100k：「中」=1 token，「\u4e2d」=5 token），
+    /// 并且让 <see cref="CloudAgentContextBudgets.EstimatedTokens"/> 低估 54% ⇒ 预算闸门失效。
+    /// 摘要只进 system prompt，不落库、不进协议，无转义兼容负担。
+    /// </summary>
+    private static readonly JsonSerializerOptions RelaxedSummaryJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     // ------------------------------------------------------------ 创建运行
 
@@ -791,6 +817,9 @@ public sealed class CloudAgentSessionService
         List<JsonObject> nodes = CloudAgentJsonHelpers.Maps(CloudAgentJsonHelpers.Get(doc, "nodes"));
         JsonArray items = [];
         int included = 0;
+        int omitted = 0;
+        // 固定开销（标题 / savedAt / 计数 / 提示语）预留，避免压线。
+        int usedTokens = 256;
         foreach (JsonObject node in nodes)
         {
             if (included == 80)
@@ -807,20 +836,34 @@ public sealed class CloudAgentSessionService
                 ["title"] = CloudAgentContracts.TruncateRunes(
                     CloudAgentJsonHelpers.StringValue(CloudAgentJsonHelpers.Get(node, "title")), 300),
             };
-            if (!known)
+            if (known)
+            {
+                JsonObject meta = node["metadata"] as JsonObject ?? new JsonObject();
+                JsonObject projected = CloudAgentCanvasState.ProjectNodeFields(
+                    node, meta, descriptor, descriptor.SummaryFields, 600, precise: false, structuredOffset: 0);
+                foreach ((string key, JsonNode? value) in projected)
+                {
+                    item[key] = value?.DeepClone();
+                }
+            }
+            else
             {
                 item["agentSupported"] = false;
                 item["agentUnsupportedReason"] = "仅展示基础信息；当前 Agent 不支持操作此类型节点";
-                items.Add(item);
-                included++;
-                continue;
             }
-            JsonObject meta = node["metadata"] as JsonObject ?? new JsonObject();
-            JsonObject projected = CloudAgentCanvasState.ProjectNodeFields(
-                node, meta, descriptor, descriptor.SummaryFields, 600, precise: false, structuredOffset: 0);
-            foreach ((string key, JsonNode? value) in projected)
+            if (included > 0)
             {
-                item[key] = value?.DeepClone();
+                // 首节点无条件纳入，保证 Agent 至少看得见画布里有什么；之后按 token
+                // 预算裁剪。超预算的节点跳过并计数，由 Agent 用 canvas_read 按 id 单独
+                // 读取，不再整单拒绝——中文画布曾因转义膨胀在 46 个节点上就撞 64KB。
+                int itemTokens = CloudAgentContextBudgets.EstimatedTokens(
+                    item.ToJsonString(RelaxedSummaryJson));
+                if (usedTokens + itemTokens > CanvasSummaryTokenBudget)
+                {
+                    omitted++;
+                    continue;
+                }
+                usedTokens += itemTokens;
             }
             items.Add(item);
             included++;
@@ -833,10 +876,16 @@ public sealed class CloudAgentSessionService
             ["includedNodes"] = included,
             ["nodes"] = items,
         };
-        string data = payload.ToJsonString();
-        if (data.Length > 64000)
+        if (omitted > 0)
         {
-            throw AppError.BadAuthRequest("画布摘要超过 64KB，请缩小画布后重试");
+            payload["omittedNodes"] = omitted;
+            payload["note"] = "另有 " + omitted
+                + " 个节点未纳入摘要（超出单次读取预算），需要时请用 canvas_read 按节点 id 单独读取";
+        }
+        string data = payload.ToJsonString(RelaxedSummaryJson);
+        if (data.Length > CanvasSummaryCharLimit)
+        {
+            throw AppError.BadAuthRequest("画布内容异常庞大，AI 暂时读取不完，请先删除部分内容较长的节点后重试");
         }
         return data;
     }

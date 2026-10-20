@@ -58,6 +58,7 @@ public static class AgentEndpoints
                 ["billing"] = "fixed_request",
                 ["maxHistoryPairs"] = 0,
                 ["maxHistoryBytes"] = 64000,
+                ["canvasSummaryTokenBudget"] = CloudAgentSessionService.CanvasSummaryTokenBudget,
                 ["maxSteps"] = 0,
                 ["tools"] = CloudAgentTools.SupportedToolNames(),
                 ["capabilitySetVersion"] = version,
