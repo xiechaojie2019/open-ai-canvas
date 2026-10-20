@@ -1,3 +1,5 @@
+using Dapper;
+using Microsoft.Data.Sqlite;
 using OpenAICanvas.Persistence;
 using OpenAICanvas.Persistence.Schema;
 using Xunit;
@@ -76,8 +78,12 @@ public class SchemaVersionTakeoverTests
 
         IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6Record: null, go35);
 
-        Assert.Equal(SchemaMigrationCatalog.Plan, plan);
+        // 账本侧与标准计划完全一致：1..37 逐字复用 Go，38 是 .NET 自己的改名迁移。
+        Assert.Equal(SchemaMigrationCatalog.Plan.Count, plan.Count);
         Assert.Equal("auth_notifications", plan.Single(m => m.Version == 35).Name);
+        Assert.Equal("sha256:auth-notifications-v35-20260924", plan.Single(m => m.Version == 35).Checksum);
+        Assert.Equal("cloud_agent_gemini_cache", plan.Single(m => m.Version == 36).Name);
+        Assert.Equal("cloud_agent_gemini_cache_identity", plan.Single(m => m.Version == 37).Name);
         Assert.Equal("camel_case_identifiers", plan.Single(m => m.Version == 38).Name);
     }
 
@@ -104,5 +110,71 @@ public class SchemaVersionTakeoverTests
         Assert.Equal("auth_notifications", plan.Single(m => m.Version == 36).Name);
         Assert.Equal("cloud_agent_gemini_cache", plan.Single(m => m.Version == 37).Name);
         Assert.Equal("cloud_agent_gemini_cache_identity", plan.Single(m => m.Version == 38).Name);
+    }
+
+    [Fact]
+    public async Task 已经是_camelCase_的库上_v38_不改名只补记录()
+    {
+        IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6Record: null, version35Record: null);
+
+        SchemaMigration v38 = plan.Single(m => m.Version == 38);
+        Assert.Equal("camel_case_identifiers", v38.Name);
+        Assert.Equal("sha256:camel-case-identifiers-v38-20260929", v38.Checksum);
+
+        // 造一个已经是 camelCase 的库：改名没有可做的对象，表名必须原封不动。
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+
+        await connection.ExecuteAsync(
+            "CREATE TABLE announcementImageDrafts (resourceId TEXT, userId TEXT, createdAt TEXT)");
+
+        SchemaMigrationContext context = new(
+            connection,
+            transaction,
+            SqlDialect.Sqlite,
+            SchemaScripts.Load());
+
+        await v38.Apply(context);
+
+        long renamed = await connection.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'announcementImageDrafts'");
+        long snake = await connection.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'announcement_image_drafts'");
+
+        Assert.Equal(1, renamed);
+        Assert.Equal(0, snake);
+    }
+
+    [Fact]
+    public async Task 还是_snakeCase_的库上_v38_执行改名()
+    {
+        IReadOnlyList<SchemaMigration> plan = SchemaMigrationCatalog.PlanFor(version6Record: null, version35Record: null);
+
+        SchemaMigration v38 = plan.Single(m => m.Version == 38);
+
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+
+        // 造一张 .NET 基线里会被改名的表。
+        await connection.ExecuteAsync(
+            "CREATE TABLE announcement_image_drafts (resource_id TEXT, user_id TEXT, created_at TEXT)");
+
+        SchemaMigrationContext context = new(
+            connection,
+            transaction,
+            SqlDialect.Sqlite,
+            SchemaScripts.Load());
+
+        await v38.Apply(context);
+
+        long renamed = await connection.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'announcementImageDrafts'");
+        long snake = await connection.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'announcement_image_drafts'");
+
+        Assert.Equal(1, renamed);
+        Assert.Equal(0, snake);
     }
 }
