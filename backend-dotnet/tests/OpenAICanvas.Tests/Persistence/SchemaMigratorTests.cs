@@ -36,7 +36,7 @@ public class SchemaMigratorTests : IDisposable
     }
 
     [Fact]
-    public async Task 全新库迁移后写入全部_35_条迁移记录()
+    public async Task 全新库迁移后写入全部迁移记录()
     {
         SchemaMigrator migrator = new(_database);
         await migrator.MigrateAsync();
@@ -64,8 +64,12 @@ public class SchemaMigratorTests : IDisposable
         Assert.Equal("sha256:canvas-revision-history-v23-20260918", records[22].Checksum);
         Assert.Equal("task_media_recovery", records[33].Name);
         Assert.Equal("sha256:task-media-recovery-v34", records[33].Checksum);
-        Assert.Equal("camel_case_identifiers", records[34].Name);
-        Assert.Equal("sha256:camel-case-identifiers-v35-20260929", records[34].Checksum);
+        Assert.Equal("auth_notifications", records[34].Name);
+        Assert.Equal("sha256:auth-notifications-v35-20260924", records[34].Checksum);
+        Assert.Equal("cloud_agent_gemini_cache_identity", records[36].Name);
+        Assert.Equal("sha256:cloud-agent-gemini-cache-identity-v37-20260925", records[36].Checksum);
+        Assert.Equal("camel_case_identifiers", records[37].Name);
+        Assert.Equal("sha256:camel-case-identifiers-v38-20260929", records[37].Checksum);
     }
 
     [Fact]
