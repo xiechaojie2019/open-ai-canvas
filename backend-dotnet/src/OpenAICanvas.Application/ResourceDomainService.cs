@@ -181,10 +181,23 @@ public sealed class ResourceDomainService
         return resource;
     }
 
-    /// <summary>同步到方舟私有资产。对应 Go: <c>SyncResourceToArkPrivateAsset</c>（依赖 #25 云 SDK，留待）。</summary>
-    public Task SyncResourceToArkPrivateAssetAsync(
-        string userId, string resourceId, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("Ark 私有资产同步依赖云 SDK（待确认 #25）");
+    /// <summary>同步到方舟私域素材库。对应 Go: <c>SyncResourceToArkPrivateAsset</c>。</summary>
+    public async Task<ArkPrivateAssetSyncResult> SyncResourceToArkPrivateAssetAsync(
+        string userId, string resourceId, CancellationToken cancellationToken = default)
+    {
+        ArkPrivateAssetService service = ArkPrivateAssets
+            ?? throw new InvalidOperationException("方舟可信素材库服务未装配");
+        return await service.SyncResourceAsync(userId, resourceId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>方舟可信素材同步服务；由组合根在启动时装配。</summary>
+    public ArkPrivateAssetService? ArkPrivateAssets { get; private set; }
+
+    /// <summary>装配方舟可信素材服务。启动完成后不再变更，请求路径只读。</summary>
+    public void AttachArkPrivateAssets(ArkPrivateAssetService service)
+    {
+        ArkPrivateAssets = service ?? throw new ArgumentNullException(nameof(service));
+    }
 
 
 

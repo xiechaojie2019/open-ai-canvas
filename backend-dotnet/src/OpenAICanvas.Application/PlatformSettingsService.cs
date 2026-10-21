@@ -131,6 +131,24 @@ public sealed class PublicArkPrivateAssetSettingDto
 }
 
 /// <summary>
+/// 方舟素材库连接配置（服务端内部使用）。<see cref="AccessKeySecret"/> 是解密后的明文，
+/// 仅用于控制面签名；不要返回给管理端 DTO，也不要写入日志。
+/// </summary>
+internal sealed class ArkPrivateAssetConnection
+{
+    public bool Configured { get; init; }
+    public bool Enabled { get; init; }
+    public string Region { get; init; } = "";
+    public string ProjectName { get; init; } = "";
+    public string AccessKeyID { get; init; } = "";
+    public string AccessKeySecret { get; init; } = "";
+
+    // 同一任务的多张参考图共用一次建组结果，建组后必须在内存里也更新，
+    // 否则第二张图会再发一次 CreateAssetGroup。
+    public string DefaultGroupID { get; set; } = "";
+}
+
+/// <summary>
 /// 平台设置：运行时策略、模型响应拦截、方舟素材库。
 /// 对应 Go: <c>internal/platform/runtime_policy.go</c> / <c>app/response_interception.go</c> /
 /// <c>app/settings_ark_assets.go</c>。
@@ -846,6 +864,43 @@ public sealed class PlatformSettingsService
         stored.AccessKeySecret = SettingsCrypto.EncryptSecret(stored.AccessKeySecret, _dataDir);
         setting.ValueJSON = JsonSerializer.Serialize(stored, CanvasJsonOptions);
         await _repository.SaveSystemSettingAsync(setting, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 任务执行侧读取方舟素材库连接配置（含明文 Secret），只供服务端调用方使用，
+    /// 不得序列化进管理端响应或日志。
+    /// </summary>
+    internal async Task<ArkPrivateAssetConnection> ReadArkPrivateAssetConnectionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        (SystemSetting? setting, ArkPrivateAssetValue value) = await ReadArkPrivateAssetAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return new ArkPrivateAssetConnection
+        {
+            Configured = setting is not null,
+            Enabled = value.Enabled,
+            Region = value.Region,
+            ProjectName = value.ProjectName,
+            AccessKeyID = value.AccessKeyID,
+            AccessKeySecret = value.AccessKeySecret,
+            DefaultGroupID = value.DefaultGroupID,
+        };
+    }
+
+    /// <summary>首次自动建组后写回默认素材组，后续任务复用该组。</summary>
+    internal async Task SaveArkPrivateAssetDefaultGroupAsync(
+        string groupId, CancellationToken cancellationToken = default)
+    {
+        (SystemSetting? setting, ArkPrivateAssetValue value) = await ReadArkPrivateAssetAsync(cancellationToken)
+            .ConfigureAwait(false);
+        value.DefaultGroupID = groupId.Trim();
+        setting ??= new SystemSetting
+        {
+            Key = ArkPrivateAssetSettingKey,
+            CreatedAt = DateTime.UtcNow,
+        };
+        setting.UpdatedAt = DateTime.UtcNow;
+        await SaveArkPrivateAssetAsync(setting, value, cancellationToken).ConfigureAwait(false);
     }
 
     private static ArkPrivateAssetValue ArkPrivateAssetFromRequest(

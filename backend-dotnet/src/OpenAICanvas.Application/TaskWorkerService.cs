@@ -782,8 +782,13 @@ public sealed class TaskWorkerService
         // 执行端补注入视频能力声明（对应 Go: validateResolvedVideoCapability 的渠道模型分支）：
         // 任务 input 不持久化 VideoCapability，分辨率等参数归一依赖执行时按渠道模型能力
         // 合同重放，缺失时裸值（如 UI 发的 "720"）会原样透传给上游并被 400。
-        if (task.Type.StartsWith("canvas_video", StringComparison.Ordinal)
-            || task.Type.StartsWith("video_", StringComparison.Ordinal))
+        bool videoTask = task.Type.StartsWith("canvas_video", StringComparison.Ordinal)
+            || task.Type.StartsWith("video_", StringComparison.Ordinal);
+        if (videoTask && input.Mode.Trim().Length == 0)
+        {
+            input.Mode = "video";
+        }
+        if (videoTask)
         {
             OpenAICanvas.Providers.VideoCapabilityConfig? videoProfile = await ResolveVideoCapabilityAsync(
                 input.Config, cancellationToken).ConfigureAwait(false);
@@ -792,6 +797,16 @@ public sealed class TaskWorkerService
                 input.VideoCapability = videoProfile;
                 ProviderVideoOptions.ApplyFixedVideoResolution(input.Config, videoProfile);
             }
+        }
+        // 方舟私域素材只在首次提交前上传；恢复已有上游任务时继续用原任务 ID 查询，
+        // 不重复建素材、也不改写原请求。
+        if (task.ProviderRequestID.Trim().Length == 0
+            && ArkPrivateAssetService.RequiresPreparation(input))
+        {
+            ArkPrivateAssetService service = CanvasService?.ResourceDomain.ArkPrivateAssets
+                ?? throw new InvalidOperationException("任务 Worker 未装配方舟可信素材服务");
+            await service.PrepareVideoReferencesAsync(
+                task.UserID, input, cancellationToken).ConfigureAwait(false);
         }
 
         ProviderExecutionResult execution = task.Type switch

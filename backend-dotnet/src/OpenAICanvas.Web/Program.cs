@@ -290,6 +290,20 @@ builder.Services.AddSingleton(serviceProvider => new OpenAICanvas.Application.St
 
 WebApplication app = builder.Build();
 
+// 方舟私域素材库：Worker 走 CanvasService.ResourceDomain，手工同步接口走 DI 中的
+// ResourceDomainService，两个实例必须共用同一个绑定仓储与设置服务。
+OpenAICanvas.Application.CanvasService canvasService =
+    app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>();
+OpenAICanvas.Application.PlatformSettingsService arkSettings =
+    app.Services.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>();
+OpenAICanvas.Persistence.Repositories.Repository arkRepository =
+    app.Services.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>();
+OpenAICanvas.Application.ArkPrivateAssetService arkPrivateAssets = new(
+    arkRepository, arkSettings, canvasService.ResourceDomain.ProviderResourceUrlAsync);
+canvasService.ResourceDomain.AttachArkPrivateAssets(arkPrivateAssets);
+app.Services.GetRequiredService<OpenAICanvas.Application.ResourceDomainService>()
+    .AttachArkPrivateAssets(arkPrivateAssets);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();

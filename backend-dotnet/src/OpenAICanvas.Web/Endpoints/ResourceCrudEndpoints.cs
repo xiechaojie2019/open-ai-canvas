@@ -230,9 +230,16 @@ public static class ResourceCrudEndpoints
                 {
                     return Results.Empty;
                 }
-                await resources
+                ArkPrivateAssetSyncResult result = await resources
                     .SyncResourceToArkPrivateAssetAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
-                return ApiResults.Ok(new { sync = new { } });
+                return ApiResults.Ok(new
+                {
+                    sync = new
+                    {
+                        resourceId = result.ResourceID,
+                        status = result.Status,
+                    },
+                });
             }
             catch (Exception error)
             {

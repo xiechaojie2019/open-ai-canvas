@@ -51,6 +51,39 @@ public static class ProviderHelpers
     }
 
     /// <summary>
+    /// Seedance 视频参考图：除公网 URL 和 data URL 外，还接受方舟私域素材 ID
+    /// <c>asset://&lt;assetId&gt;</c>。其他 OpenAI 风格协议仍使用
+    /// <see cref="OpenAIImageInputURL"/>，避免把内部素材 ID 发给不支持的模型。
+    /// </summary>
+    public static string SeedanceImageInputURL(ProviderMedia media)
+    {
+        string value = media.URL.Trim();
+        if (value.StartsWith("asset://", StringComparison.Ordinal))
+        {
+            return value;
+        }
+        if (value.StartsWith("data:image/", StringComparison.Ordinal) || IsPublicMediaURL(value))
+        {
+            return value;
+        }
+        if (value.StartsWith("data:", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("参考图片 MIME 类型无效，请重新读取或上传图片");
+        }
+        value = media.DataURL.Trim();
+        if (value.StartsWith("data:image/", StringComparison.Ordinal))
+        {
+            return value;
+        }
+        if (value.StartsWith("data:", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("参考图片 MIME 类型无效，请重新读取或上传图片");
+        }
+        throw new InvalidOperationException(
+            "Seedance /videos 参考图片需要公网 URL、asset:// 素材 ID 或 base64 data URL");
+    }
+
+    /// <summary>
     /// 文本多模态的参考视频来源：仅接受 <c>data:video/</c> 或公网 URL。
     /// 对应 Go: <c>openAIVideoInputURL</c>。
     /// </summary>

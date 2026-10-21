@@ -375,7 +375,7 @@ public sealed class ProviderVideoTask
             body.GenerateAudio = ProviderVideoOptions.ParseBool(input.Config.VideoGenerateAudio, true);
         }
 
-        List<string> imageUrls = [.. input.ReferenceImages.Select(ProviderHelpers.OpenAIImageInputURL)];
+        List<string> imageUrls = [.. input.ReferenceImages.Select(ProviderHelpers.SeedanceImageInputURL)];
         List<string> frameImageUrls = ProviderVideoOptions.VideoFrameImageUrls(
             input.Metadata, input.ReferenceImages, imageUrls);
 
