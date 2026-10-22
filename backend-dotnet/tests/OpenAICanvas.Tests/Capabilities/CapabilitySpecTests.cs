@@ -619,6 +619,147 @@ public class CapabilitySpecTests
         Assert.Null(ModelSku.ChannelModelPriceTierForIntent(channelModel, intent));
     }
 
+    [Theory]
+    [InlineData("1:1", "1K", "1024x1024")]
+    [InlineData("16:9", "1K", "1824x1024")]
+    [InlineData("9:16", "1K", "1024x1824")]
+    [InlineData("4:3", "1K", "1360x1024")]
+    [InlineData("3:4", "1K", "1024x1360")]
+    [InlineData("3:2", "1K", "1536x1024")]
+    [InlineData("2:3", "1K", "1024x1536")]
+    [InlineData("4:5", "1K", "1024x1280")]
+    [InlineData("5:4", "1K", "1280x1024")]
+    [InlineData("21:9", "1K", "2048x878")]
+    [InlineData("1:1", "2K", "2048x2048")]
+    [InlineData("16:9", "2K", "2752x1536")]
+    [InlineData("9:16", "2K", "1536x2752")]
+    [InlineData("4:3", "2K", "2304x1728")]
+    [InlineData("3:4", "2K", "1728x2304")]
+    [InlineData("3:2", "2K", "2496x1664")]
+    [InlineData("2:3", "2K", "1664x2496")]
+    [InlineData("4:5", "2K", "1792x2240")]
+    [InlineData("5:4", "2K", "2240x1792")]
+    [InlineData("21:9", "2K", "3136x1344")]
+    [InlineData("1:1", "4K", "2880x2880")]
+    [InlineData("16:9", "4K", "3840x2160")]
+    [InlineData("9:16", "4K", "2160x3840")]
+    [InlineData("4:3", "4K", "3264x2448")]
+    [InlineData("3:4", "4K", "2448x3264")]
+    [InlineData("3:2", "4K", "3504x2336")]
+    [InlineData("2:3", "4K", "2336x3504")]
+    [InlineData("4:5", "4K", "2560x3200")]
+    [InlineData("5:4", "4K", "3200x2560")]
+    [InlineData("21:9", "4K", "3808x1632")]
+    public void 画布全部画幅与分辨率预设都能命中对应价格档(string ratio, string quality, string size)
+    {
+        ChannelModel channelModel = new()
+        {
+            ID = "CM_1",
+            PriceTiers =
+            [
+                new ChannelModelPriceTier
+                {
+                    ID = "TIER_" + ratio + "_" + quality,
+                    SelectorJSON = $"{{\"quality\":\"{quality.ToLowerInvariant()}\",\"size\":\"{ratio}\"}}",
+                    Resolution = "*",
+                    Enabled = true,
+                    PriceConfigured = true,
+                    UnitPriceMicrocredits = 5_000_000,
+                },
+            ],
+        };
+        ModelRequestIntent intent = new()
+        {
+            Capability = "image",
+            Operation = "image",
+            Options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["size"] = Str(size),
+                ["quality"] = Str("auto"),
+            },
+        };
+
+        ChannelModelPriceTier? selected = ModelSku.ChannelModelPriceTierForIntent(channelModel, intent);
+        Assert.NotNull(selected);
+        Assert.Equal("TIER_" + ratio + "_" + quality, selected.ID);
+    }
+
+    [Theory]
+    [InlineData("16:9", "1024x1024")]
+    [InlineData("4:3", "1824x1024")]
+    [InlineData("21:9", "1536x1024")]
+    public void 画布不同画幅不会误命中其它价格档(string tierRatio, string size)
+    {
+        ChannelModel channelModel = new()
+        {
+            ID = "CM_1",
+            PriceTiers =
+            [
+                new ChannelModelPriceTier
+                {
+                    ID = "TIER_OTHER",
+                    SelectorJSON = $"{{\"quality\":\"1k\",\"size\":\"{tierRatio}\"}}",
+                    Resolution = "*",
+                    Enabled = true,
+                    PriceConfigured = true,
+                    UnitPriceMicrocredits = 5_000_000,
+                },
+            ],
+        };
+        ModelRequestIntent intent = new()
+        {
+            Capability = "image",
+            Operation = "image",
+            Options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["size"] = Str(size),
+                ["quality"] = Str("1k"),
+            },
+        };
+
+        Assert.Null(ModelSku.ChannelModelPriceTierForIntent(channelModel, intent));
+    }
+
+    [Fact]
+    public void 像素价格档不会被同比例其它分辨率命中()
+    {
+        ChannelModel channelModel = new()
+        {
+            ID = "CM_1",
+            PriceTiers =
+            [
+                new ChannelModelPriceTier
+                {
+                    ID = "TIER_PIXELS",
+                    SelectorJSON = "{\"size\":\"1536x1024\"}",
+                    Resolution = "*",
+                    Enabled = true,
+                    PriceConfigured = true,
+                    UnitPriceMicrocredits = 5_000_000,
+                },
+            ],
+        };
+        ModelRequestIntent intent = new()
+        {
+            Capability = "image",
+            Operation = "image",
+            Options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["size"] = Str("2496x1664"),
+            },
+        };
+
+        Assert.Null(ModelSku.ChannelModelPriceTierForIntent(channelModel, intent));
+    }
+
+    [Theory]
+    [InlineData("16:9", "1824x1024")]
+    [InlineData("3:2", "1536×1024px")]
+    public void 比例价格档兼容常见像素写法(string ratio, string size)
+    {
+        Assert.True(ModelSku.SameImageAspectRatio(ratio, size));
+    }
+
     [Fact]
     public void 未启用或未定价的档位不参与匹配()
     {

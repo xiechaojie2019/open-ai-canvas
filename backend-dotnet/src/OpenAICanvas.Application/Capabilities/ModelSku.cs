@@ -276,33 +276,43 @@ public static class ModelSku
 
     /// <summary>
     /// 判断两种图片尺寸写法是否表示同一画幅：支持 "3:2"、"1536x1024"、
-    /// "1024*1024px" 等，比较前把宽高约分。
+    /// "1024*1024px" 等。前端预设为对齐 16 的倍数会偏离整数比例
+    /// （如 16:9 的 1K 是 1824x1024），因此与前端 closestRatio 一样用 2.5% 容差。
     /// </summary>
     public static bool SameImageAspectRatio(string left, string right)
     {
-        (long leftWidth, long leftHeight) = ParseImageDimensions(left);
-        (long rightWidth, long rightHeight) = ParseImageDimensions(right);
+        (long leftWidth, long leftHeight, bool leftPixels) = ParseImageDimensions(left);
+        (long rightWidth, long rightHeight, bool rightPixels) = ParseImageDimensions(right);
         if (leftWidth <= 0 || leftHeight <= 0 || rightWidth <= 0 || rightHeight <= 0)
         {
             return false;
         }
-        return leftWidth * rightHeight == rightWidth * leftHeight;
+        // 两边都是具体像素时必须等尺寸：避免只配了 size、没配 quality 的价格档
+        // 把同比例但不同分辨率的请求也算进来。
+        if (leftPixels && rightPixels)
+        {
+            return leftWidth == rightWidth && leftHeight == rightHeight;
+        }
+        double leftRatio = (double)leftWidth / leftHeight;
+        double rightRatio = (double)rightWidth / rightHeight;
+        return Math.Abs(leftRatio - rightRatio) / rightRatio <= 0.025;
     }
 
-    private static (long Width, long Height) ParseImageDimensions(string raw)
+    private static (long Width, long Height, bool Pixels) ParseImageDimensions(string raw)
     {
-        string value = raw.Trim().ToLowerInvariant();
+        string value = raw.Trim().ToLowerInvariant().Replace('×', 'x');
         if (value.EndsWith("px", StringComparison.Ordinal))
         {
             value = value[..^2].Trim();
         }
-        string[] parts = value.Split(['x', '*', '×', ':'], StringSplitOptions.TrimEntries);
+        bool pixels = value.Contains('x') || value.Contains('*');
+        string[] parts = value.Split(['x', '*', ':'], StringSplitOptions.TrimEntries);
         if (parts.Length != 2
             || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out long width)
             || !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long height))
         {
-            return (0, 0);
+            return (0, 0, false);
         }
-        return (width, height);
+        return (width, height, pixels);
     }
 }
