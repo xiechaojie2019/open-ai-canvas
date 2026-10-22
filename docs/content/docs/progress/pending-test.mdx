@@ -5,6 +5,15 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## net8 运行时策略补 Agent 单步输出上限与秒级超时
+
+- net8 后端的运行时策略缺 `agentStepMaxOutputTokens` / `agentStepTimeoutSeconds`，管理端「平台配置 → 资源与策略」在 `Number(undefined)` 得到 `NaN` 后整页报「服务端返回的“单步输出上限”无效」。本次在 `RuntimeTaskPolicy` 补齐两个字段（默认 16384 tokens、0 秒），默认提供器读取 `CANVAS_AGENT_STEP_MAX_OUTPUT_TOKENS`（夹取 256-131072）与 `CANVAS_AGENT_STEP_TIMEOUT_SECONDS`（非正数视为 0，否则夹取 30-3600），自用模板取两档上限，校验文案与 Go 逐字一致。策略值真正接入执行链路：云 Agent 的单步请求在 `textOptions` 带 `maxOutputTokens`，任务墙钟对 `cloud_agent` / `cloud_agent_step` 按秒取值（0 时仍用文本任务超时）。
+- 旧策略 JSON 不含这两个字段时由属性初始值回填默认，无需数据迁移。
+- [x] `dotnet build` 0 错误；`AdminPlatformSettings` 6 项测试通过（新增默认值、PUT 回读、自用模板 131072 断言）。
+- [x] 已部署 `.211` 的 `canvas-dotnet-backend`，容器 healthy，容器内 `OpenAICanvas.Platform.dll` MD5 与本地发布一致；`GET /api/admin/settings/runtime-policy` 返回 `agentStepMaxOutputTokens=16384`、`agentStepTimeoutSeconds=0`，越界 PUT 返回 400 与 Go 相同文案，合法值保存/回读正常，随后已重置为未配置。
+- [x] 浏览器打开 `http://192.168.0.211:5173/admin/settings/runtime-policy`，页面完整渲染，「画布 Agent 单步」显示 16384 / 0，配置来源为系统默认；保存与回读已由接口实测覆盖。
+- [ ] 与 Go 的已知差异：net8 未移植空输出关思考重试与单步超时后关思考重试，秒级超时到点会整步失败并停止本轮；后续单独补齐。
+
 ## net8 图片价格档按画幅比例匹配像素尺寸
 
 - 管理端给图片模型配置价格档时，`size` 选择器保存的是画幅比例（如 `3:2`），而画布提交给后端的是该画幅对应的具体像素（如 `1536x1024`）。后端此前对 `size` 做字符串全等比较，导致已配置的价格档匹配不到，任务创建直接返回 400「指定的模型未配置当前规格的有效价格」（`model_price_not_configured`）。现仅对图片能力启用尺寸等价匹配：价格档与请求分别解析宽高后按画幅比例比较，`3:2` 与 `1536x1024`、`2048*1024px` 等写法互相命中；分辨率仍由 `quality`（`1k` / `2k` / `4k`）区分，不同画幅不会串价。前端预设按 16 对齐会产生 `1824x1024` 这类非严格 16:9 的像素，因此与前端 `closestRatio` 一致使用 2.5% 容差；两边都是具体像素时仍要求完全相等，避免同比例不同分辨率互相命中。未命中具体比例时仍按原有逻辑报错。

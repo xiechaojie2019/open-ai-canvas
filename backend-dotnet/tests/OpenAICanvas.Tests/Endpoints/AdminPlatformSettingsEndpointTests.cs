@@ -102,19 +102,24 @@ public sealed class AdminPlatformSettingsEndpointTests : IDisposable
         JsonElement initialSetting = (await ReadDataAsync(initial)).GetProperty("setting");
         Assert.False(initialSetting.GetProperty("configured").GetBoolean());
         Assert.Equal(5, initialSetting.GetProperty("task").GetProperty("activeTaskLimit").GetInt64());
+        // Agent 单步边界必须出现在默认响应里，否则管理端解析会因缺字段失败。
+        Assert.Equal(16384, initialSetting.GetProperty("task").GetProperty("agentStepMaxOutputTokens").GetInt64());
+        Assert.Equal(0, initialSetting.GetProperty("task").GetProperty("agentStepTimeoutSeconds").GetInt64());
 
         // 更新：合法值持久化并标记 configured。
         HttpResponseMessage updated = await admin.PutAsJsonAsync(
             "/api/admin/settings/runtime-policy", new
             {
                 resource = new { resourceUploadMB = 80, generatedFileMB = 64, dailyUploadMB = 2048, storedFileGB = 20, structuredDataMB = 256, taskDataGB = 1, assetCount = 2000, canvasCount = 1000, taskCount = 20000, apiCallLogCount = 100000, recycleBinRetentionDays = 30 },
-                task = new { workerConcurrency = 3, channelConcurrency = 3, activeTaskLimit = 8, imageTimeoutMinutes = 8, textTimeoutMinutes = 8, audioTimeoutMinutes = 8, videoTimeoutMinutes = 60, storyboardTimeoutMinutes = 20, defaultTimeoutMinutes = 10 },
+                task = new { workerConcurrency = 3, channelConcurrency = 3, activeTaskLimit = 8, imageTimeoutMinutes = 8, textTimeoutMinutes = 8, audioTimeoutMinutes = 8, videoTimeoutMinutes = 60, storyboardTimeoutMinutes = 20, defaultTimeoutMinutes = 10, agentStepMaxOutputTokens = 32768, agentStepTimeoutSeconds = 120 },
                 request = new { taskCreatePerMinute = 30, resourceUploadPerMinute = 30, resourceImportPerMinute = 30, assetWritePerMinute = 120, canvasWritePerMinute = 120, registerPerHour = 30, emailCodePerHour = 60, loginIpPerTenMinutes = 50, loginAccountPerTenMinutes = 10, systemRelayPerMinute = 120, customRelayPerMinute = 120, customRelayConcurrency = 4, customRelayRequestMB = 32, customRelayResponseMB = 32, customRelayTimeoutMinutes = 10, systemRelayRequestMB = 64, systemRelayResponseMB = 128, channelCircuitFailureCount = 5, channelCircuitOpenSeconds = 60 },
             });
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         JsonElement updatedSetting = (await ReadDataAsync(updated)).GetProperty("setting");
         Assert.True(updatedSetting.GetProperty("configured").GetBoolean());
         Assert.Equal(8, updatedSetting.GetProperty("task").GetProperty("activeTaskLimit").GetInt64());
+        Assert.Equal(32768, updatedSetting.GetProperty("task").GetProperty("agentStepMaxOutputTokens").GetInt64());
+        Assert.Equal(120, updatedSetting.GetProperty("task").GetProperty("agentStepTimeoutSeconds").GetInt64());
         Assert.Equal(80, updatedSetting.GetProperty("resource").GetProperty("resourceUploadMB").GetInt64());
 
         // 校验：单文件 0MB → 400（Go 文案）。
@@ -134,6 +139,9 @@ public sealed class AdminPlatformSettingsEndpointTests : IDisposable
         Assert.Equal(
             999,
             (await ReadDataAsync(selfUse)).GetProperty("setting").GetProperty("task").GetProperty("activeTaskLimit").GetInt64());
+        Assert.Equal(
+            131072,
+            (await ReadDataAsync(selfUse)).GetProperty("setting").GetProperty("task").GetProperty("agentStepMaxOutputTokens").GetInt64());
 
         // 重置 → 回到默认且未配置。
         HttpResponseMessage reset = await admin.DeleteAsync("/api/admin/settings/runtime-policy");

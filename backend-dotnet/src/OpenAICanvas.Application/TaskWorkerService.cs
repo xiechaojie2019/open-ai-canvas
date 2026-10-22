@@ -288,7 +288,7 @@ public sealed class TaskWorkerService
     {
         // 执行不受 HTTP 请求生命周期影响：超时来自任务类型策略，取消只由续租失败或停机触发。
         using CancellationTokenSource timeoutCancellation = new();
-        timeoutCancellation.CancelAfter(TaskExecutionTimeout(claimed.Type));
+        timeoutCancellation.CancelAfter(TaskExecutionTimeout(claimed));
         using CancellationTokenSource execution = CancellationTokenSource.CreateLinkedTokenSource(
             timeoutCancellation.Token);
         int timeoutHit = 0;
@@ -1116,22 +1116,28 @@ public sealed class TaskWorkerService
 
     // ------------------------------------------------------------- 超时与落库
 
-    /// <summary>任务类型对应的执行超时。对应 Go: <c>taskExecutionTimeoutWithPolicy</c>。</summary>
-    private TimeSpan TaskExecutionTimeout(string taskType)
+    /// <summary>任务执行墙钟。对应 Go: <c>taskExecutionTimeout</c>。</summary>
+    private TimeSpan TaskExecutionTimeout(TaskEntity task)
     {
-        RuntimeTaskPolicy task = _policy.Current().Task;
+        RuntimeTaskPolicy policy = _policy.Current().Task;
+        // 画布 Agent 的单步调用可以配秒级超时；0 表示沿用文本任务超时。
+        if (task.Operation is "cloud_agent" or "cloud_agent_step" && policy.AgentStepTimeoutSeconds > 0)
+        {
+            return TimeSpan.FromSeconds(policy.AgentStepTimeoutSeconds);
+        }
+        string taskType = task.Type;
         if (taskType.StartsWith("canvas_video", StringComparison.Ordinal)
             || taskType.StartsWith("video_", StringComparison.Ordinal))
         {
-            return TimeSpan.FromMinutes(Math.Max(task.VideoTimeoutMinutes, 5));
+            return TimeSpan.FromMinutes(Math.Max(policy.VideoTimeoutMinutes, 5));
         }
         if (taskType.StartsWith("canvas_image", StringComparison.Ordinal))
         {
-            return TimeSpan.FromMinutes(task.ImageTimeoutMinutes);
+            return TimeSpan.FromMinutes(policy.ImageTimeoutMinutes);
         }
         if (taskType.StartsWith("canvas_audio", StringComparison.Ordinal))
         {
-            return TimeSpan.FromMinutes(task.AudioTimeoutMinutes);
+            return TimeSpan.FromMinutes(policy.AudioTimeoutMinutes);
         }
         if (taskType == "timeline_transcription")
         {
@@ -1143,9 +1149,9 @@ public sealed class TaskWorkerService
         }
         if (taskType.StartsWith("canvas_text", StringComparison.Ordinal))
         {
-            return TimeSpan.FromMinutes(task.TextTimeoutMinutes);
+            return TimeSpan.FromMinutes(policy.TextTimeoutMinutes);
         }
-        return TimeSpan.FromMinutes(task.DefaultTimeoutMinutes);
+        return TimeSpan.FromMinutes(policy.DefaultTimeoutMinutes);
     }
 
     /// <summary>图片/视频进度由上游状态响应回报。对应 Go: <c>taskUsesUpstreamReportedProgress</c>。</summary>

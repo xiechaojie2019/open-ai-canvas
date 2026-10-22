@@ -880,6 +880,9 @@ public sealed partial class CloudAgentRuntimeService
                 ["stream"] = JsonSerializer.SerializeToElement(true),
                 ["thinking"] = JsonSerializer.SerializeToElement(
                     CloudAgentPolicyCompiler.ReasoningEnabled(state.Policy.ReasoningMode)),
+                // 单步输出上限来自运行时策略；0 表示不限制，由上游按剩余上下文放行。
+                ["maxOutputTokens"] = JsonSerializer.SerializeToElement(
+                    _runtimePolicy.Current().Task.AgentStepMaxOutputTokens),
             }),
         };
         if (imageReferences.Count > 0)

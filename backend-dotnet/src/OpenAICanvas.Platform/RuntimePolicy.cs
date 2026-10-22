@@ -73,6 +73,39 @@ public sealed class RuntimeTaskPolicy
 
     [JsonPropertyName("defaultTimeoutMinutes")]
     public int DefaultTimeoutMinutes { get; init; } = 10;
+
+    /// <summary>
+    /// 画布 Agent 单步模型调用的输出上限（思考 + 正文 + 工具调用参数）。
+    /// 0 表示不限制输出，此时单步最坏耗时只由 <see cref="AgentStepTimeoutSeconds"/> 兜底。
+    /// 对应 Go: <c>RuntimeTaskPolicy.AgentStepMaxOutputTokens</c>。
+    /// </summary>
+    [JsonPropertyName("agentStepMaxOutputTokens")]
+    public int AgentStepMaxOutputTokens { get; init; } = DefaultAgentStepMaxOutputTokens;
+
+    /// <summary>
+    /// 画布 Agent 单步模型调用的秒级墙钟；0 表示沿用文本任务超时。
+    /// 对应 Go: <c>RuntimeTaskPolicy.AgentStepTimeoutSeconds</c>。
+    /// </summary>
+    [JsonPropertyName("agentStepTimeoutSeconds")]
+    public int AgentStepTimeoutSeconds { get; init; } = DefaultAgentStepTimeoutSeconds;
+
+    /// <summary>与 Go 的 <c>MinRuntimeAgentStepOutputTokens</c> 一致。</summary>
+    public const int MinAgentStepMaxOutputTokens = 256;
+
+    /// <summary>与 Go 的 <c>MaxRuntimeAgentStepOutputTokens</c> 一致。</summary>
+    public const int MaxAgentStepMaxOutputTokens = 131_072;
+
+    /// <summary>与 Go 的 <c>DefaultRuntimeAgentStepOutputTokens</c> 一致。</summary>
+    public const int DefaultAgentStepMaxOutputTokens = 16_384;
+
+    /// <summary>与 Go 的 <c>MinRuntimeAgentStepTimeoutSeconds</c> 一致。</summary>
+    public const int MinAgentStepTimeoutSeconds = 30;
+
+    /// <summary>与 Go 的 <c>MaxRuntimeAgentStepTimeoutSeconds</c> 一致。</summary>
+    public const int MaxAgentStepTimeoutSeconds = 3_600;
+
+    /// <summary>与 Go 的 <c>DefaultRuntimeAgentStepTimeout</c> 一致。</summary>
+    public const int DefaultAgentStepTimeoutSeconds = 0;
 }
 
 /// <summary>
@@ -203,6 +236,23 @@ public sealed class DefaultRuntimePolicyProvider : IRuntimePolicyProvider
         int circuitFailures = ReadEnvInt("CANVAS_CHANNEL_CIRCUIT_FAILURES", 5);
         int circuitSeconds = ReadEnvInt("CANVAS_CHANNEL_CIRCUIT_SECONDS", 60);
 
+        // 与 Go 一致：部署级环境变量只给基线，且按同一套范围夹取；超时的非正数一律视为“跟随文本任务超时”。
+        int agentStepOutputTokens = Math.Clamp(
+            ReadEnvInt(
+                "CANVAS_AGENT_STEP_MAX_OUTPUT_TOKENS",
+                RuntimeTaskPolicy.DefaultAgentStepMaxOutputTokens),
+            RuntimeTaskPolicy.MinAgentStepMaxOutputTokens,
+            RuntimeTaskPolicy.MaxAgentStepMaxOutputTokens);
+        int agentStepTimeoutSeconds = ReadEnvInt(
+            "CANVAS_AGENT_STEP_TIMEOUT_SECONDS",
+            RuntimeTaskPolicy.DefaultAgentStepTimeoutSeconds);
+        agentStepTimeoutSeconds = agentStepTimeoutSeconds <= 0
+            ? RuntimeTaskPolicy.DefaultAgentStepTimeoutSeconds
+            : Math.Clamp(
+                agentStepTimeoutSeconds,
+                RuntimeTaskPolicy.MinAgentStepTimeoutSeconds,
+                RuntimeTaskPolicy.MaxAgentStepTimeoutSeconds);
+
         RuntimePolicySetting baseline = RuntimePolicySetting.Default;
 
         _policy = new RuntimePolicySetting
@@ -219,6 +269,8 @@ public sealed class DefaultRuntimePolicyProvider : IRuntimePolicyProvider
                 VideoTimeoutMinutes = baseline.Task.VideoTimeoutMinutes,
                 StoryboardTimeoutMinutes = baseline.Task.StoryboardTimeoutMinutes,
                 DefaultTimeoutMinutes = baseline.Task.DefaultTimeoutMinutes,
+                AgentStepMaxOutputTokens = agentStepOutputTokens,
+                AgentStepTimeoutSeconds = agentStepTimeoutSeconds,
             },
             Request = new RuntimeRequestPolicy
             {

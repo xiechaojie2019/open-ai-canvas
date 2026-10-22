@@ -323,6 +323,8 @@ public sealed class PlatformSettingsService
                 VideoTimeoutMinutes = MaxRuntimeTimeoutMinutes,
                 StoryboardTimeoutMinutes = MaxRuntimeTimeoutMinutes,
                 DefaultTimeoutMinutes = MaxRuntimeTimeoutMinutes,
+                AgentStepMaxOutputTokens = Platform.RuntimeTaskPolicy.MaxAgentStepMaxOutputTokens,
+                AgentStepTimeoutSeconds = Platform.RuntimeTaskPolicy.MaxAgentStepTimeoutSeconds,
             },
             Request = new Platform.RuntimeRequestPolicy
             {
@@ -427,6 +429,20 @@ public sealed class PlatformSettingsService
             {
                 throw AppError.BadAuthRequest($"{label}必须是 1-{MaxRuntimeTimeoutMinutes} 分钟的整数");
             }
+        }
+        if (task.AgentStepMaxOutputTokens != 0
+            && (task.AgentStepMaxOutputTokens < Platform.RuntimeTaskPolicy.MinAgentStepMaxOutputTokens
+                || task.AgentStepMaxOutputTokens > Platform.RuntimeTaskPolicy.MaxAgentStepMaxOutputTokens))
+        {
+            throw AppError.BadAuthRequest(
+                $"Agent 单步输出上限必须是 0 或 {Platform.RuntimeTaskPolicy.MinAgentStepMaxOutputTokens}-{Platform.RuntimeTaskPolicy.MaxAgentStepMaxOutputTokens} 的整数 (0 表示不限制)");
+        }
+        if (task.AgentStepTimeoutSeconds != 0
+            && (task.AgentStepTimeoutSeconds < Platform.RuntimeTaskPolicy.MinAgentStepTimeoutSeconds
+                || task.AgentStepTimeoutSeconds > Platform.RuntimeTaskPolicy.MaxAgentStepTimeoutSeconds))
+        {
+            throw AppError.BadAuthRequest(
+                $"Agent 单步超时必须是 0 或 {Platform.RuntimeTaskPolicy.MinAgentStepTimeoutSeconds}-{Platform.RuntimeTaskPolicy.MaxAgentStepTimeoutSeconds} 秒的整数 (0 表示沿用文本任务超时)");
         }
 
         Platform.RuntimeRequestPolicy request = value.Request;
