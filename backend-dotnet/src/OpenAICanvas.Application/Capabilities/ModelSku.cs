@@ -222,6 +222,22 @@ public static class ModelSku
         };
     }
 
+    /// <summary>
+    /// 图片价格档使用的 quality：显式 quality 优先；auto/空值时按像素尺寸推导
+    /// （画布选 2K / 4K 时 quality 仍是 auto，固定 1k 会把高分辨率按 1K 计价）。
+    /// 尺寸也无法解析时保持历史兜底 1k。
+    /// </summary>
+    public static string PricingQualityForImage(string rawQuality, string rawSize)
+    {
+        string quality = rawQuality.Trim().ToLowerInvariant();
+        if (quality.Length > 0 && quality != "<nil>" && quality != "auto" && quality != "any")
+        {
+            return quality;
+        }
+        string derived = NormalizeImagePriceQuality("", rawSize);
+        return derived.Length > 0 ? derived : "1k";
+    }
+
     /// <summary>对应 Go: <c>skuSelectorForTier</c>。SelectorJSON 为空时回落到解析度/时长。</summary>
     public static Dictionary<string, string> SkuSelectorForTier(ChannelModelPriceTier tier)
     {

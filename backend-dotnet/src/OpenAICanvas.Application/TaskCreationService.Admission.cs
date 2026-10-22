@@ -523,23 +523,18 @@ public sealed partial class TaskCreationService
         {
             Dictionary<string, JsonElement> pricingOptions = new(intent.Options, StringComparer.Ordinal);
             string rawQuality = ScalarText(GetValueOrDefault(nextConfig, "quality")).ToLowerInvariant();
-            if (rawQuality.Length > 0 && rawQuality != "<nil>" && rawQuality != "auto" && rawQuality != "any")
-            {
-                pricingOptions["quality"] = JsonSerializer.SerializeToElement(rawQuality);
-            }
-            else if (!pricingOptions.TryGetValue("quality", out JsonElement currentQuality)
-                || currentQuality.ValueKind == JsonValueKind.Null
-                || (currentQuality.ValueKind == JsonValueKind.String
-                    && (currentQuality.GetString() ?? "").Length == 0)
-                || (currentQuality.ValueKind == JsonValueKind.String && currentQuality.GetString() == "auto"))
-            {
-                pricingOptions["quality"] = JsonSerializer.SerializeToElement("1k");
-            }
             if (ScalarText(GetValueOrDefault(nextConfig, "size")).ToLowerInvariant() is { Length: > 0 } rawSize
                 && rawSize != "<nil>" && rawSize != "auto")
             {
                 pricingOptions["size"] = JsonSerializer.SerializeToElement(rawSize);
             }
+            string rawSizeForQuality = pricingOptions.TryGetValue("size", out JsonElement sizeElement)
+                && sizeElement.ValueKind == JsonValueKind.String
+                    ? sizeElement.GetString() ?? ""
+                    : "";
+            // 画布 2K/4K 只改 size，quality 仍是 auto；固定成 1k 会按 1K 价格扣费。
+            pricingOptions["quality"] = JsonSerializer.SerializeToElement(
+                ModelSku.PricingQualityForImage(rawQuality, rawSizeForQuality));
             pricingIntent.Options = pricingOptions;
         }
 

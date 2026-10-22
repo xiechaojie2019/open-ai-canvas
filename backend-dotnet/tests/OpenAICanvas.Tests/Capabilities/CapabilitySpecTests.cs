@@ -473,6 +473,18 @@ public class CapabilitySpecTests
         Assert.Equal("", ModelSku.NormalizeImagePriceQuality("", "16:9"));
     }
 
+    [Theory]
+    [InlineData("auto", "1536x1024", "1k")]
+    [InlineData("auto", "2496x1664", "2k")]
+    [InlineData("auto", "3504x2336", "4k")]
+    [InlineData("", "2048x2048", "2k")]
+    [InlineData("auto", "1:1", "1k")]
+    [InlineData("high", "1536x1024", "high")]
+    public void 图片计价质量按尺寸推导而不是固定1k(string quality, string size, string expected)
+    {
+        Assert.Equal(expected, ModelSku.PricingQualityForImage(quality, size));
+    }
+
     [Fact]
     public void 价格档选择精确规格优先于通配()
     {
