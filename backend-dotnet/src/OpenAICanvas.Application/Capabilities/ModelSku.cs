@@ -68,6 +68,10 @@ public static class ModelSku
         ChannelModel channelModel, ModelRequestIntent intent)
     {
         Dictionary<string, string> selector = SkuSelectorForIntent(intent);
+        // 图片画布保存的是 "3:2"，而执行端提交的是同一画幅的具体像素
+        // （例如 1536x1024）。价格档同时接受两种写法，尺寸按画幅比例等价匹配，
+        // 分辨率仍由 quality 键（1k/2k/4k）区分。
+        bool imageSizeRatioFallback = CapabilitySpecOps.NormalizeCapability(intent.Capability) == "image";
         int bestScore = -1;
         ChannelModelPriceTier? best = null;
         foreach (ChannelModelPriceTier tier in channelModel.PriceTiers)
@@ -76,7 +80,8 @@ public static class ModelSku
             {
                 continue;
             }
-            (bool matched, int score) = MatchSkuSelector(SkuSelectorForTier(tier), selector);
+            (bool matched, int score) = MatchSkuSelector(
+                SkuSelectorForTier(tier), selector, imageSizeRatioFallback);
             if (!matched)
             {
                 continue;
@@ -241,7 +246,9 @@ public static class ModelSku
     /// 对应 Go: <c>matchSKUSelector</c>。返回是否匹配与命中键数（分数越高越精确）。
     /// </summary>
     public static (bool Matched, int Score) MatchSkuSelector(
-        IReadOnlyDictionary<string, string> tier, IReadOnlyDictionary<string, string> requested)
+        IReadOnlyDictionary<string, string> tier,
+        IReadOnlyDictionary<string, string> requested,
+        bool imageSizeRatioFallback = false)
     {
         int score = 0;
         foreach ((string key, string expectedRaw) in tier)
@@ -253,10 +260,49 @@ public static class ModelSku
             }
             if (!requested.TryGetValue(key, out string? actual) || actual != expected)
             {
-                return (false, 0);
+                bool equivalent = imageSizeRatioFallback
+                    && key == "size"
+                    && actual is not null
+                    && SameImageAspectRatio(expected, actual);
+                if (!equivalent)
+                {
+                    return (false, 0);
+                }
             }
             score++;
         }
         return (true, score);
+    }
+
+    /// <summary>
+    /// 判断两种图片尺寸写法是否表示同一画幅：支持 "3:2"、"1536x1024"、
+    /// "1024*1024px" 等，比较前把宽高约分。
+    /// </summary>
+    public static bool SameImageAspectRatio(string left, string right)
+    {
+        (long leftWidth, long leftHeight) = ParseImageDimensions(left);
+        (long rightWidth, long rightHeight) = ParseImageDimensions(right);
+        if (leftWidth <= 0 || leftHeight <= 0 || rightWidth <= 0 || rightHeight <= 0)
+        {
+            return false;
+        }
+        return leftWidth * rightHeight == rightWidth * leftHeight;
+    }
+
+    private static (long Width, long Height) ParseImageDimensions(string raw)
+    {
+        string value = raw.Trim().ToLowerInvariant();
+        if (value.EndsWith("px", StringComparison.Ordinal))
+        {
+            value = value[..^2].Trim();
+        }
+        string[] parts = value.Split(['x', '*', '×', ':'], StringSplitOptions.TrimEntries);
+        if (parts.Length != 2
+            || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out long width)
+            || !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long height))
+        {
+            return (0, 0);
+        }
+        return (width, height);
     }
 }
