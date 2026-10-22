@@ -26,6 +26,8 @@ public sealed class ArkPrivateAssetService
     private const string StatusProcessing = "processing";
     private const string StatusActive = "active";
     private const string StatusFailed = "failed";
+    /// <summary>方舟未返回 ErrorMessage 时写入绑定的占位原因（仅用于诊断展示）。</summary>
+    private const string UnauditedReason = "方舟未通过素材审核";
 
     private readonly Repository _repository;
     private readonly PlatformSettingsService _settings;
@@ -151,7 +153,10 @@ public sealed class ArkPrivateAssetService
         }
         EnsureCredentials(setting);
 
-        await EnsureAssetAsync(userId, resource, setting, cancellationToken).ConfigureAwait(false);
+        // 手动同步是用户显式重传入口：审核被拒的素材（ArkAssetID 已存在）也允许重新上传，
+        // 否则该资源会永久停留在 failed 绑定上，只能靠删库恢复。
+        await EnsureAssetAsync(userId, resource, setting, cancellationToken, retryRejectedAsset: true)
+            .ConfigureAwait(false);
         return new ArkPrivateAssetSyncResult(resource.ID, StatusActive);
     }
 
@@ -206,9 +211,37 @@ public sealed class ArkPrivateAssetService
         }
     }
 
+    /// <summary>
+    /// 素材准备失败必须带原始原因抵达用户：ProjectName/Region 填错、IAM 无权限、素材审核拒绝
+    /// 都是能自助修复的具体问题。
+    /// </summary>
+    /// <remarks>
+    /// 这里抛裸 <see cref="InvalidOperationException"/> 会被
+    /// <see cref="ProviderErrorMessages.UserFacing"/> 归入未知异常，兜底成
+    /// 「连接模型服务失败，请检查渠道地址和网络」，把配置和素材问题伪装成网络故障。
+    /// </remarks>
+    private static AppError AssetFailure(string message, Exception? cause = null) =>
+        AppError.Wrap(400, message, cause);
+
+    /// <summary>
+    /// 方舟审核拒绝通常只返回 <c>Status=failed</c>，不带 ErrorMessage；空原因要补上可执行的下一步。
+    /// 私域素材库（GroupType=AIGC）只收虚拟人像，真人照片会因肖像权被拒。
+    /// </summary>
+    private static string DescribeAuditFailure(string? upstreamMessage)
+    {
+        string reason = (upstreamMessage ?? "").Trim();
+        if (reason.Length == 0 || reason == UnauditedReason)
+        {
+            return "方舟素材库审核未通过（未返回具体原因）：私域素材库只接受虚拟人像，"
+                + "请换用 AI 生成的虚拟人物素材，或为该真人素材在方舟控制台完成肖像授权后，"
+                + "重新点「上传到方舟素材库」同步";
+        }
+        return "方舟素材库审核未通过：" + reason;
+    }
+
     private async Task<string> EnsureAssetAsync(
         string userId, Resource resource, ArkPrivateAssetConnection setting,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool retryRejectedAsset = false)
     {
         ArkPrivateAssetBinding? binding = await _repository
             .ArkPrivateAssetBindingAsync(resource.ID, setting.ProjectName, cancellationToken).ConfigureAwait(false);
@@ -221,9 +254,15 @@ public sealed class ArkPrivateAssetService
                 await _repository.SaveArkPrivateAssetBindingAsync(binding, cancellationToken).ConfigureAwait(false);
                 return await WaitForAssetAsync(binding, setting, cancellationToken).ConfigureAwait(false);
             }
-            if (!ShouldRetry(binding))
+            bool reuploadRejected = retryRejectedAsset && IsRejectedBinding(binding);
+            if (!reuploadRejected && !ShouldRetry(binding))
             {
                 return await WaitForAssetAsync(binding, setting, cancellationToken).ConfigureAwait(false);
+            }
+            if (reuploadRejected)
+            {
+                // 旧素材已被方舟判为 failed，必须换一个新素材，不能继续轮询原 assetId。
+                binding.ArkAssetID = "";
             }
             binding.Status = StatusCreating;
             binding.Error = "";
@@ -249,7 +288,7 @@ public sealed class ArkPrivateAssetService
                 binding = await _repository
                     .ArkPrivateAssetBindingAsync(resource.ID, setting.ProjectName, cancellationToken)
                     .ConfigureAwait(false)
-                    ?? throw new InvalidOperationException("读取方舟可信素材绑定失败");
+                    ?? throw AssetFailure("读取方舟可信素材绑定失败");
                 return await WaitForAssetAsync(binding, setting, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -277,7 +316,7 @@ public sealed class ArkPrivateAssetService
         catch (Exception error) when (error is not OperationCanceledException)
         {
             throw await FailAsync(
-                binding, new InvalidOperationException("生成方舟素材临时地址失败：" + error.Message, error),
+                binding, AssetFailure("生成方舟素材临时地址失败：" + error.Message, error),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -296,7 +335,7 @@ public sealed class ArkPrivateAssetService
         catch (Exception error) when (error is not OperationCanceledException)
         {
             throw await FailAsync(
-                binding, new InvalidOperationException("上传方舟可信素材失败：" + error.Message, error),
+                binding, AssetFailure("上传方舟可信素材失败：" + error.Message, error),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -304,7 +343,7 @@ public sealed class ArkPrivateAssetService
         if (assetId.Length == 0)
         {
             throw await FailAsync(
-                binding, new InvalidOperationException("方舟素材库没有返回素材 ID"),
+                binding, AssetFailure("方舟素材库没有返回素材 ID"),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -335,12 +374,12 @@ public sealed class ArkPrivateAssetService
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            throw new InvalidOperationException("创建方舟素材组失败：" + error.Message, error);
+            throw AssetFailure("创建方舟素材组失败：" + error.Message, error);
         }
         string groupId = ResponseField(response, "GroupId", "GroupID", "group_id", "Id", "ID", "id");
         if (groupId.Length == 0)
         {
-            throw new InvalidOperationException("方舟素材库没有返回素材组 ID");
+            throw AssetFailure("方舟素材库没有返回素材组 ID");
         }
         setting.DefaultGroupID = groupId;
         await _settings.SaveArkPrivateAssetDefaultGroupAsync(groupId, cancellationToken).ConfigureAwait(false);
@@ -359,14 +398,11 @@ public sealed class ArkPrivateAssetService
             {
                 return binding.ArkAssetID.Trim().Length > 0
                     ? binding.ArkAssetID
-                    : throw new InvalidOperationException("方舟可信素材记录缺少素材 ID");
+                    : throw AssetFailure("方舟可信素材记录缺少素材 ID");
             }
             if (status == StatusFailed)
             {
-                string reason = string.IsNullOrWhiteSpace(binding.Error)
-                    ? "请更换拥有使用权的虚拟人物素材后重试"
-                    : binding.Error;
-                throw new InvalidOperationException("方舟可信素材审核失败：" + reason);
+                throw AssetFailure(DescribeAuditFailure(binding.Error));
             }
 
             if (binding.ArkAssetID.Trim().Length > 0)
@@ -382,7 +418,7 @@ public sealed class ArkPrivateAssetService
                 }
                 catch (Exception error) when (error is not OperationCanceledException)
                 {
-                    throw new InvalidOperationException(
+                    throw AssetFailure(
                         "查询方舟可信素材审核状态失败：" + error.Message, error);
                 }
 
@@ -398,12 +434,12 @@ public sealed class ArkPrivateAssetService
                     case StatusFailed:
                         string message = ResponseField(response, "ErrorMessage", "Message", "message");
                         binding.Status = StatusFailed;
-                        binding.Error = message.Length > 0 ? message : "方舟未通过素材审核";
+                        binding.Error = message.Length > 0 ? message : UnauditedReason;
                         await _repository.SaveArkPrivateAssetBindingAsync(binding, cancellationToken)
                             .ConfigureAwait(false);
-                        throw new InvalidOperationException("方舟可信素材审核失败：" + binding.Error);
+                        throw AssetFailure(DescribeAuditFailure(message));
                     case "":
-                        throw new InvalidOperationException("方舟可信素材状态缺失");
+                        throw AssetFailure("方舟可信素材状态缺失");
                 }
             }
 
@@ -411,9 +447,9 @@ public sealed class ArkPrivateAssetService
             binding = await _repository
                 .ArkPrivateAssetBindingAsync(binding.ResourceID, binding.ProjectName, cancellationToken)
                 .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("方舟可信素材记录不存在");
+                ?? throw AssetFailure("方舟可信素材记录不存在");
         }
-        throw new InvalidOperationException("方舟可信素材审核超时，请稍后重新提交视频任务");
+        throw AssetFailure("方舟可信素材审核超时，请稍后重新提交视频任务");
     }
 
     /// <summary>素材组尚未建成时任何失败都可重试；素材已建后只有创建阶段的失败可重试。</summary>
@@ -432,6 +468,11 @@ public sealed class ArkPrivateAssetService
         return binding.Error.Contains("上传方舟可信素材失败", StringComparison.Ordinal)
             || binding.Error.Contains("方舟素材库没有返回素材 ID", StringComparison.Ordinal);
     }
+
+    /// <summary>审核已给出结论（ArkAssetID 非空）的终态失败，仅手动同步允许重传。</summary>
+    private static bool IsRejectedBinding(ArkPrivateAssetBinding binding) =>
+        string.Equals(binding.Status, StatusFailed, StringComparison.OrdinalIgnoreCase)
+        && binding.ArkAssetID.Trim().Length > 0;
 
     /// <summary>旧版 GetAsset 参数错误导致轮询失败时恢复轮询，不重新上传素材。</summary>
     private static bool ShouldResumePolling(ArkPrivateAssetBinding binding) =>
@@ -458,14 +499,14 @@ public sealed class ArkPrivateAssetService
         region = (region ?? "").Trim().ToLowerInvariant();
         if (region.Length == 0)
         {
-            throw new InvalidOperationException("方舟素材库未配置 Region");
+            throw AssetFailure("方舟素材库未配置 Region");
         }
         foreach (char character in region)
         {
             bool valid = character is >= 'a' and <= 'z' or >= '0' and <= '9' or '-';
             if (!valid)
             {
-                throw new InvalidOperationException("方舟素材库 Region 格式无效");
+                throw AssetFailure("方舟素材库 Region 格式无效");
             }
         }
         return "https://ark." + region + ".volcengineapi.com";
@@ -499,14 +540,14 @@ public sealed class ArkPrivateAssetService
         if (!response.IsSuccessStatusCode)
         {
             string detail = UpstreamDetail(parsed);
-            throw new InvalidOperationException(detail.Length > 0
+            throw AssetFailure(detail.Length > 0
                 ? $"方舟素材库请求失败（HTTP {(int)response.StatusCode}）：{detail}"
                 : $"方舟素材库请求失败（HTTP {(int)response.StatusCode}）");
         }
         string upstream = UpstreamDetail(parsed);
         if (upstream.Length > 0)
         {
-            throw new InvalidOperationException(upstream);
+            throw AssetFailure(upstream);
         }
         return parsed;
     }

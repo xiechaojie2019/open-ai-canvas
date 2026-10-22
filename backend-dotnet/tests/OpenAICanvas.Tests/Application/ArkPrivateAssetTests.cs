@@ -296,10 +296,11 @@ public sealed class ArkPrivateAssetTests : IDisposable
             pollTimeout: TimeSpan.FromSeconds(1));
 
         TextTaskInput input = InputWith("video", "doubao-seedance-1-0-pro", "volcengine-ark-video", "res-1");
-        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppError error = await Assert.ThrowsAsync<AppError>(
             () => service.PrepareVideoReferencesAsync(UserID, input));
 
         Assert.Contains("Region 格式无效", error.Message, StringComparison.Ordinal);
+        Assert.Equal(error.Message, ProviderErrorMessages.UserFacing(error));
         Assert.Empty(handler.Requests);
         ArkPrivateAssetBinding binding = Assert.IsType<ArkPrivateAssetBinding>(
             await _repository.ArkPrivateAssetBindingAsync("res-1", ProjectName));
@@ -318,15 +319,68 @@ public sealed class ArkPrivateAssetTests : IDisposable
         ArkPrivateAssetService service = CreateService(handler);
 
         TextTaskInput input = InputWith("video", "doubao-seedance-1-0-pro", "volcengine-ark-video", "res-1");
-        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+        AppError error = await Assert.ThrowsAsync<AppError>(
             () => service.PrepareVideoReferencesAsync(UserID, input));
 
         Assert.Contains("HTTP 403", error.Message, StringComparison.Ordinal);
         Assert.Contains("AccessDenied", error.Message, StringComparison.Ordinal);
+        Assert.Equal(error.Message, ProviderErrorMessages.UserFacing(error));
         ArkPrivateAssetBinding binding = Assert.IsType<ArkPrivateAssetBinding>(
             await _repository.ArkPrivateAssetBindingAsync("res-1", ProjectName));
         Assert.Equal("failed", binding.Status);
         Assert.Contains("AccessDenied", binding.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 建组时ProjectName不存在要透出上游原因而不是网络错误()
+    {
+        await MigrateAsync();
+        await SeedSettingAsync(projectName: "infinite_canvas");
+        await SeedReadyResourceAsync("res-1");
+        StubHandler handler = new(_ => StubHandler.Json(
+            "{\"ResponseMetadata\":{\"Error\":{\"Code\":\"NotFound.ProjectName\"," +
+            "\"Message\":\"The specified ProjectName infinite_canvas is not found.\"}}}",
+            HttpStatusCode.NotFound));
+        ArkPrivateAssetService service = CreateService(handler);
+
+        TextTaskInput input = InputWith("video", "doubao-seedance-1-0-pro", "volcengine-ark-video", "res-1");
+        AppError error = await Assert.ThrowsAsync<AppError>(
+            () => service.PrepareVideoReferencesAsync(UserID, input));
+
+        string visible = ProviderErrorMessages.UserFacing(error);
+        Assert.Contains("创建方舟素材组失败", visible, StringComparison.Ordinal);
+        Assert.Contains("HTTP 404", visible, StringComparison.Ordinal);
+        Assert.Contains("ProjectName", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain(ProviderErrorMessages.NetworkFailure, visible, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 素材审核未通过时要给出可执行的审核原因()
+    {
+        await MigrateAsync();
+        await SeedSettingAsync();
+        await SeedReadyResourceAsync("res-1");
+        StubHandler handler = new(request => request.Action switch
+        {
+            "CreateAssetGroup" => StubHandler.Json("{\"Result\":{\"GroupId\":\"group-1\"}}"),
+            "CreateAsset" => StubHandler.Json("{\"Result\":{\"AssetId\":\"asset-1\"}}"),
+            "GetAsset" => StubHandler.Json("{\"Result\":{\"Status\":\"failed\"}}"),
+            _ => StubHandler.Json("{}", HttpStatusCode.BadRequest),
+        });
+        ArkPrivateAssetService service = CreateService(handler);
+
+        TextTaskInput input = InputWith("video", "doubao-seedance-1-0-pro", "volcengine-ark-video", "res-1");
+        AppError error = await Assert.ThrowsAsync<AppError>(
+            () => service.PrepareVideoReferencesAsync(UserID, input));
+
+        string visible = ProviderErrorMessages.UserFacing(error);
+        Assert.Contains("方舟素材库审核未通过", visible, StringComparison.Ordinal);
+        Assert.Contains("虚拟人像", visible, StringComparison.Ordinal);
+        Assert.DoesNotContain(ProviderErrorMessages.NetworkFailure, visible, StringComparison.Ordinal);
+        ArkPrivateAssetBinding binding = Assert.IsType<ArkPrivateAssetBinding>(
+            await _repository.ArkPrivateAssetBindingAsync("res-1", ProjectName));
+        Assert.Equal("failed", binding.Status);
+        Assert.Equal("asset-1", binding.ArkAssetID);
     }
 
     [Fact]
@@ -366,6 +420,39 @@ public sealed class ArkPrivateAssetTests : IDisposable
             URL = "asset://asset-1",
         });
         Assert.Equal("asset://asset-1", url);
+    }
+
+    [Fact]
+    public async Task 审核拒绝后手动同步会重新上传并替换旧素材()
+    {
+        await MigrateAsync();
+        await SeedSettingAsync();
+        await SeedReadyResourceAsync("res-1");
+        await using (SqliteConnection connection = (SqliteConnection)_database.CreateConnection())
+        {
+            await connection.OpenAsync();
+            await connection.ExecuteAsync(
+                "INSERT INTO \"arkPrivateAssetBindings\" (\"id\", \"userId\", \"resourceId\", \"projectName\", \"assetGroupId\", \"arkAssetId\", \"status\", \"error\", \"createdAt\", \"updatedAt\") " +
+                "VALUES ('binding-1', @userID, 'res-1', @projectName, 'group-1', 'asset-old', 'failed', '方舟未通过素材审核', datetime('now'), datetime('now'))",
+                new { userID = UserID, projectName = ProjectName });
+        }
+        StubHandler handler = new(request => request.Action switch
+        {
+            "CreateAsset" => StubHandler.Json("{\"Result\":{\"AssetId\":\"asset-new\"}}"),
+            "GetAsset" => StubHandler.Json("{\"Result\":{\"Status\":\"Active\"}}"),
+            _ => StubHandler.Json("{}", HttpStatusCode.BadRequest),
+        });
+        ArkPrivateAssetService service = CreateService(handler);
+
+        await service.SyncResourceAsync(UserID, "res-1");
+
+        Assert.Equal(["CreateAsset", "GetAsset"], handler.Actions);
+        Assert.DoesNotContain("CreateAssetGroup", handler.Actions);
+        ArkPrivateAssetBinding binding = Assert.IsType<ArkPrivateAssetBinding>(
+            await _repository.ArkPrivateAssetBindingAsync("res-1", ProjectName));
+        Assert.Equal("active", binding.Status);
+        Assert.Equal("asset-new", binding.ArkAssetID);
+        Assert.Equal("group-1", binding.AssetGroupID);
     }
 
     private sealed class StubHandler : HttpMessageHandler

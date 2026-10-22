@@ -8,11 +8,14 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 ## net8 后端 Seedance 参考图自动入方舟私域素材库
 
 - 豆包 Seedance 视频对人脸类参考图只接受方舟素材库的 `asset://<assetID>`，公网 URL 会被拒。本次在 net8 后端补上方传链路：仅 `volcengine-ark-video` / `volcengine-ark-agent-plan-video` 且模型名含 `seedance` 的视频任务，在首次提交上游前把 `resource:` 参考图上传私域素材库并改写为 `asset://`；图片任务、非 Seedance 视频、无参考图、用户关闭「自动同步可信素材」、已是 `asset://`、已提交过上游（`ProviderRequestID` 非空）的任务都保持原样。素材组按 `GroupType=AIGC` 建一次并把 `defaultGroupId` 写回平台设置（键 `ark_private_assets`），绑定记录落 `arkPrivateAssetBindings`（资源 × 项目唯一），创建后 2 秒一次轮询 `GetAsset` 至 `Active`，`Failed` 记错误；控制面用 AK/SK 签名，推理仍走 Bearer API Key。管理端设置页与画布右键「上传到方舟素材库」复用既有前端，本次未改前端。
+- 方舟素材库失败原先抛 `InvalidOperationException`，被 `ProviderErrorMessages.UserFacing` 归入未知异常，兜底成「连接模型服务失败，请检查渠道地址和网络」。现统一包成 `AppError`，任务错误、审计行和诊断日志都显示真实原因（如 `NotFound.ProjectName`、控制面 403、素材审核未通过）；审核拒绝且方舟未返回 ErrorMessage 时，明确提示私域素材库只接受虚拟人像并给出两种处理方式。审核拒绝的绑定不再只能用 SQL 清理：画布「上传到方舟素材库」会清空旧 assetId 重新上传，视频任务自动路径仍复用终态失败，避免每次生成都重复送审。
 - [x] 专项测试 10 项通过（仅 Seedance 命中、非 Seedance 零控制面请求、建组/建素材/轮询、`asset://` 改写并清空 DataURL、绑定落 `active`、一任务一组一图一传、关闭开关保留原图、缺 AK/SK 显式失败、非法 Region 不发网络请求、上游错误落 `failed`、旧轮询失败恢复不重传、`asset://` 作为输入可接受）。全量构建 0 错误；既有 `ProviderMediaHydrationTests` 的失败源于夹具用旧 snake_case 列而库已迁移到 camelCase，与本次无关。
 - [x] 已部署 `.211` 的 `canvas-dotnet-backend`（镜像 `open-ai-canvas-backend-dotnet:local`，容器内 `OpenAICanvas.Application.dll` MD5 与本地发布一致），容器 healthy，`GET /api/tasks` 200，PostgreSQL 已存在 `arkPrivateAssetBindings` 表；前端 `192.168.0.211:5173` 未改动。
 - [ ] 211 上 `systemSettings` 尚无 `ark_private_assets` 行，需在管理端「平台设置 → 方舟素材库」开启并填 Region / ProjectName / AK / SK 后才会真正上传。
 - [ ] 真实验收：用带参考图的 Seedance 视频任务确认上游请求体为 `asset://`、`arkPrivateAssetBindings` 出现 `active` 行；再用非 Seedance 视频任务确认不新增绑定。
 - [ ] 确认 211 的资源公网地址能被方舟拉取（`CreateAsset` 用 URL 传图），内网地址会失败。
+- [ ] 用填错的 ProjectName 或真人照片复现：任务错误必须显示「创建方舟素材组失败…ProjectName…」或「方舟素材库审核未通过…」，不再是「连接模型服务失败，请检查渠道地址和网络」。
+- [ ] 审核被拒的图片在画布点「上传到方舟素材库」：控制面重新发出 `CreateAsset`（复用原素材组、不新建组），绑定 `arkAssetId` 更新为新值。
 
 ## net8 任务链路调用审计（请求明细 backend-task 日志）
 
