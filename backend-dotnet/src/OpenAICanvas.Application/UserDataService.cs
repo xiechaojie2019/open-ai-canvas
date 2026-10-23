@@ -141,6 +141,25 @@ public sealed class UserDataService
         }
     }
 
+    /// <summary>用户主动彻底删除素材（单条或批量）。对应 Go: <c>Service.PurgeUserAssets</c>。</summary>
+    /// <returns>去重并 trim 后的素材 ID（保持请求顺序）。</returns>
+    public async Task<IReadOnlyList<string>> PurgeUserAssetsAsync(
+        string userId,
+        IReadOnlyList<string> ids,
+        CancellationToken cancellationToken = default)
+    {
+        await _storageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await _resourceDelete.PurgeUserAssetsWithResourcesAsync(userId, ids, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _storageLock.Release();
+        }
+    }
+
 
     /// <summary>用户全部画布 payload。对应 Go: <c>UserCanvasProjects</c>。</summary>
     public async Task<List<JsonElement>> UserCanvasProjectsAsync(

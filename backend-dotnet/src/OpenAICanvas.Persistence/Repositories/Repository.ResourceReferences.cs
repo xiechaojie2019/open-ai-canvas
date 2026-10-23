@@ -31,12 +31,21 @@ public sealed partial class Repository
     /// <summary>素材版本与表现记录。对应 Go: <c>AssetResourceRecords</c>。</summary>
     public async Task<(IReadOnlyList<AssetVersion> Versions, IReadOnlyList<AssetRepresentation> Representations)>
         AssetResourceRecordsAsync(string assetId, CancellationToken cancellationToken = default)
+        => await AssetsResourceRecordsAsync([assetId], cancellationToken).ConfigureAwait(false);
+
+    /// <summary>整批素材的版本与表现记录。对应 Go: <c>AssetsResourceRecords</c>。</summary>
+    public async Task<(IReadOnlyList<AssetVersion> Versions, IReadOnlyList<AssetRepresentation> Representations)>
+        AssetsResourceRecordsAsync(IReadOnlyList<string> assetIds, CancellationToken cancellationToken = default)
     {
+        if (assetIds.Count == 0)
+        {
+            return ([], []);
+        }
         await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
         List<AssetVersion> versions = (await QueryAsync<AssetVersion>(
             connection,
-            SqlBuilder.Select<AssetVersion>("\"assetId\" = @assetId"),
-            new { assetId },
+            SqlBuilder.Select<AssetVersion>("\"assetId\" IN @assetIds"),
+            new { assetIds },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         if (versions.Count == 0)
         {
@@ -48,6 +57,59 @@ public sealed partial class Repository
             new { versionIds = versions.Select(version => version.ID).ToList() },
             cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
         return (versions, representations);
+    }
+
+    /// <summary>
+    /// 整批删除范围之外的素材引用快照，只扫描素材本身（payload、版本定义、表现资源与元数据）。
+    /// 对应 Go: <c>OtherAssetResourceReferences</c>；用于判断物理对象是否仍被其他素材共享。
+    /// </summary>
+    public async Task<ResourceReferenceSnapshot> OtherAssetResourceReferencesAsync(
+        string userId,
+        IReadOnlyList<string> excludedAssetIds,
+        CancellationToken cancellationToken = default)
+    {
+        List<ResourceReferenceDocument> documents = [];
+        List<ResourceDirectReference> direct = [];
+        await using DbConnection connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+        List<Asset> assets = (await QueryAsync<Asset>(
+            connection,
+            SqlBuilder.Select<Asset>("\"userId\" = @userId AND id NOT IN @excludedAssetIds"),
+            new { userId, excludedAssetIds },
+            cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
+        foreach (Asset asset in assets)
+        {
+            documents.Add(new ResourceReferenceDocument("素材", asset.ID, asset.Title, asset.PayloadJSON, ""));
+        }
+        List<string> assetIds = assets.Select(asset => asset.ID).ToList();
+        if (assetIds.Count == 0)
+        {
+            return new ResourceReferenceSnapshot(documents, direct);
+        }
+
+        List<AssetVersion> versions = (await QueryAsync<AssetVersion>(
+            connection,
+            SqlBuilder.Select<AssetVersion>("\"assetId\" IN @assetIds"),
+            new { assetIds },
+            cancellationToken: cancellationToken).ConfigureAwait(false)).ToList();
+        foreach (AssetVersion version in versions)
+        {
+            documents.Add(new ResourceReferenceDocument("素材", version.ID, "", version.DefinitionJSON, ""));
+        }
+        if (versions.Count == 0)
+        {
+            return new ResourceReferenceSnapshot(documents, direct);
+        }
+        List<string> versionIds = versions.Select(version => version.ID).ToList();
+        foreach (AssetRepresentation representation in await QueryAsync<AssetRepresentation>(
+                     connection,
+                     SqlBuilder.Select<AssetRepresentation>("\"assetVersionId\" IN @versionIds"),
+                     new { versionIds },
+                     cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            direct.Add(new ResourceDirectReference("素材", representation.ID, "", representation.ResourceID));
+            documents.Add(new ResourceReferenceDocument("素材", representation.ID, "", representation.MetadataJSON, ""));
+        }
+        return new ResourceReferenceSnapshot(documents, direct);
     }
 
     /// <summary>
@@ -410,14 +472,79 @@ public sealed partial class Repository
         string assetId,
         IReadOnlyList<string> resourceIds,
         IReadOnlyList<ResourceDeletionJob> deletionJobs,
+        bool deleteReferencedResources = true,
+        CancellationToken cancellationToken = default)
+        => await DeleteAssetsAndResourcesAsync(
+            userId, [assetId], resourceIds, deletionJobs, deleteReferencedResources, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// 整批删除素材及关联资源：版本引用/绑定/表现/项目链接/候选/版本/素材本体/删除任务/私有绑定/资源，同事务。
+    /// 对应 Go: <c>DeleteAssetsAndResources</c>；任一素材不属于当前用户或已不存在时整批回滚。
+    /// </summary>
+    public async Task DeleteAssetsAndResourcesAsync(
+        string userId,
+        IReadOnlyList<string> assetIds,
+        IReadOnlyList<string> resourceIds,
+        IReadOnlyList<ResourceDeletionJob> deletionJobs,
+        bool deleteReferencedResources = true,
         CancellationToken cancellationToken = default)
     {
+        if (assetIds.Count == 0)
+        {
+            throw new InvalidOperationException("record not found");
+        }
         await InTransactionAsync(async (connection, transaction) =>
         {
+            // 与 Go 一致：先锁住本批素材行并确认归属，数量不一致直接失败，后续一条都不删。
+            List<string> ownedAssetIds = (await QueryAsync<string>(
+                connection,
+                "SELECT \"id\" FROM \"assets\" WHERE \"userId\" = @userId AND \"id\" IN @assetIds ORDER BY \"id\"" +
+                Dialect.ForUpdate(),
+                new { userId, assetIds },
+                transaction,
+                cancellationToken).ConfigureAwait(false)).ToList();
+            if (ownedAssetIds.Count != assetIds.Count)
+            {
+                throw new InvalidOperationException("record not found");
+            }
+
+            if (resourceIds.Count > 0)
+            {
+                // 与历史快照写入串行化，避免清除索引后又插入外键引用。
+                await QueryAsync<string>(
+                    connection,
+                    "SELECT \"id\" FROM \"resources\" WHERE \"id\" IN @resourceIds ORDER BY \"id\"" +
+                    Dialect.ForUpdate(),
+                    new { resourceIds },
+                    transaction,
+                    cancellationToken).ConfigureAwait(false);
+                if (deleteReferencedResources)
+                {
+                    // 用户主动彻底删除：画布历史只保留快照本体，删除其中的资源索引。
+                    await ExecuteAsync(connection,
+                        "DELETE FROM \"canvasSnapshotResources\" WHERE \"resourceId\" IN @resourceIds",
+                        new { resourceIds }, transaction, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    long historyRefs = await ScalarAsync<long>(
+                        connection,
+                        "SELECT COUNT(*) FROM \"canvasSnapshotResources\" WHERE \"resourceId\" IN @resourceIds",
+                        new { resourceIds },
+                        transaction,
+                        cancellationToken).ConfigureAwait(false);
+                    if (historyRefs > 0)
+                    {
+                        throw AppError.BadAuthRequest("素材仍被画布历史版本引用，已保留文件");
+                    }
+                }
+            }
+
             List<string> versionIds = (await QueryAsync<string>(
                 connection,
-                "SELECT \"id\" FROM \"assetVersions\" WHERE \"assetId\" = @assetId",
-                new { assetId },
+                "SELECT \"id\" FROM \"assetVersions\" WHERE \"assetId\" IN @assetIds",
+                new { assetIds },
                 transaction,
                 cancellationToken).ConfigureAwait(false)).ToList();
 
@@ -434,17 +561,17 @@ public sealed partial class Repository
                     new { versionIds }, transaction, cancellationToken).ConfigureAwait(false);
             }
             await ExecuteAsync(connection,
-                "DELETE FROM \"projectAssetLinks\" WHERE \"assetId\" = @assetId",
-                new { assetId }, transaction, cancellationToken).ConfigureAwait(false);
+                "DELETE FROM \"projectAssetLinks\" WHERE \"assetId\" IN @assetIds",
+                new { assetIds }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"projectAssetCandidates\" WHERE \"resolvedAssetId\" = @assetId",
-                new { assetId }, transaction, cancellationToken).ConfigureAwait(false);
+                "DELETE FROM \"projectAssetCandidates\" WHERE \"resolvedAssetId\" IN @assetIds",
+                new { assetIds }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"assetVersions\" WHERE \"assetId\" = @assetId",
-                new { assetId }, transaction, cancellationToken).ConfigureAwait(false);
+                "DELETE FROM \"assetVersions\" WHERE \"assetId\" IN @assetIds",
+                new { assetIds }, transaction, cancellationToken).ConfigureAwait(false);
             await ExecuteAsync(connection,
-                "DELETE FROM \"assets\" WHERE \"id\" = @assetId AND \"userId\" = @userId",
-                new { assetId, userId }, transaction, cancellationToken).ConfigureAwait(false);
+                "DELETE FROM \"assets\" WHERE \"id\" IN @assetIds AND \"userId\" = @userId",
+                new { assetIds, userId }, transaction, cancellationToken).ConfigureAwait(false);
 
             foreach (ResourceDeletionJob job in deletionJobs)
             {

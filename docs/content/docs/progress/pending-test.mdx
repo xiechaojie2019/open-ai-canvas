@@ -5,6 +5,14 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## net8 素材批量彻底删除接口
+
+- .NET 后端仅有 `DELETE /assets/{id}`，前端回收站「彻底删除」统一调用 `POST /assets/batch-delete`（单条也走该接口），211 报 `Not Found`。本次补齐批量路由：请求体为顶层 JSON 数组（1–1000 个 ID，256 KiB 上限），trim 去重后整批单事务删除；任一 ID 不存在或不属于当前用户时返回 404 且整批保留；共享物理对象跳过删除，并一次 drain 删除队列。
+- 单条 `DELETE /assets/{id}` 同步切到 purge 入口，与 Go 一致：不再因画布/项目/任务引用而阻塞，找不到素材返回 404（原为 500）。
+- 无数据库结构变化、无前端改动。
+- [x] `dotnet build -c Release` 0 错误；`AssetBatchDeleteTests` 10/10 通过；`AssetDeleteTests` 7/7 通过。
+- [ ] 211 部署验收：登录后 `POST /api/assets/batch-delete` 空数组 400、不存在 ID 404；`192.168.0.211:5173` 素材页回收站单条与批量「彻底删除」均成功且文件释放。
+
 ## net8 运行时策略接上读库实现
 
 - `Program.cs` 注册的是 `DefaultRuntimePolicyProvider`（固定内置默认值），真正读库的 `SettingsRuntimePolicyProvider` 只定义、从未注册。管理端「平台配置 → 资源与策略」保存的 `resourceUploadPerMinute` 等值写进了 `systemSettings.runtime_policy`，运行时却仍按默认 30/分钟限流，配置静默失效。现改为注册 `SettingsRuntimePolicyProvider`，管理端路由也改为从容器取同一个 `PlatformSettingsService` 实例，避免保存与读取落在两个对象上。
@@ -3173,3 +3181,4 @@ c7ad4a29 的水合修复部署后，重新提交带参考图的图片编辑任�
 - 测试 5 个（GeneratedMediaPersistTests，对应 Go resource_test/provider_test 用例）：无效 dataURL 严格拒绝、账号存储 20GB 上限拦截、dataUrl 落库改写（含宽高补齐 + DB 资源行核验）、多张内联图全部落库（防短路）、无内联媒体原样返回（string 类型保持）。
 - [x] GeneratedMediaPersist 5/5、ResourceObjectStorage + TimelineTaskExecutor 8/8、TaskMediaRecovery + CloudAgent 套件通过；同批 ProviderMediaHydration 3 个失败为**存量问题**（其裸 SQL 仍用 snake_case 列名 `user_id`/`object_key`，camelCase 改名迁移后必挂，与本轮改动无交集，待另行修复）。
 - [ ] 部署后验收：测试站重新用 Agent 生成海报，generate_media 应成功回写画布节点（节点 status=success、图片可见）；任务中心新任务 resultJson 应含 resourceId/storageKey 而非纯 dataUrl。
+

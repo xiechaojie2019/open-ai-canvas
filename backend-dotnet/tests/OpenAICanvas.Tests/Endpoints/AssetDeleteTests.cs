@@ -176,7 +176,7 @@ public sealed class AssetDeleteTests : IDisposable
     }
 
     [Fact]
-    public async Task 删除被画布引用的素材返回占用提示()
+    public async Task 彻底删除被画布引用的素材_不阻塞并清理资源()
     {
         await SignInAsAdminAsync();
         await SeedResourceAndAssetAsync("RES_DEL2", "asset-del2");
@@ -202,15 +202,14 @@ public sealed class AssetDeleteTests : IDisposable
         }
 
         HttpResponseMessage deleted = await _adminClient!.DeleteAsync("/api/assets/asset-del2");
-        Assert.Equal(HttpStatusCode.BadRequest, deleted.StatusCode);
-        string body = await deleted.Content.ReadAsStringAsync();
-        Assert.Contains("素材仍被", body, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
 
-        // 素材未被删除。
+        // 素材与画布历史中的资源索引一并清理。
         await using (AsyncServiceScope scope = _factory.Services.CreateAsyncScope())
         {
             Repository repository = scope.ServiceProvider.GetRequiredService<Repository>();
-            Assert.NotNull(await repository.AssetForUserAsync(_userId, "asset-del2"));
+            Assert.Null(await repository.AssetForUserAsync(_userId, "asset-del2"));
+            Assert.Empty(await repository.ResourcesForUserIDsAsync(_userId, ["RES_DEL2"]));
         }
     }
 
@@ -265,7 +264,7 @@ public sealed class AssetDeleteTests : IDisposable
     }
 
     [Fact]
-    public async Task 删除被项目链接引用的素材返回占用提示()
+    public async Task 彻底删除被项目链接引用的素材_不阻塞()
     {
         await SignInAsAdminAsync();
         await SeedResourceAndAssetAsync("RES_DEL_PROJECT", "asset-del-project");
@@ -279,12 +278,11 @@ public sealed class AssetDeleteTests : IDisposable
         linked.EnsureSuccessStatusCode();
 
         HttpResponseMessage deleted = await _adminClient!.DeleteAsync("/api/assets/asset-del-project");
-        Assert.Equal(HttpStatusCode.BadRequest, deleted.StatusCode);
-        Assert.Contains("项目", await deleted.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
 
         await using AsyncServiceScope scope = _factory.Services.CreateAsyncScope();
         Repository repository = scope.ServiceProvider.GetRequiredService<Repository>();
-        Assert.NotNull(await repository.AssetForUserAsync(_userId, "asset-del-project"));
+        Assert.Null(await repository.AssetForUserAsync(_userId, "asset-del-project"));
     }
 
     [Fact]
@@ -322,7 +320,7 @@ public sealed class AssetDeleteTests : IDisposable
         }
 
         HttpResponseMessage deleted = await _adminClient!.DeleteAsync("/api/assets/asset-other-owner");
-        Assert.Equal(HttpStatusCode.InternalServerError, deleted.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, deleted.StatusCode);
         Assert.DoesNotContain("其他用户素材", await deleted.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         await using AsyncServiceScope verifyScope = _factory.Services.CreateAsyncScope();
@@ -381,14 +379,14 @@ public sealed class AssetDeleteTests : IDisposable
     }
 
     [Fact]
-    public async Task 删除不存在的素材返回_500()
+    public async Task 删除不存在的素材返回_404()
     {
         await SignInAsAdminAsync();
 
         HttpResponseMessage response = await _adminClient!.DeleteAsync("/api/assets/asset-nope");
 
-        // Go 返回裸 gorm.ErrRecordNotFound → failService 500 固定文案。
-        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        // Go: PurgeUserAssets 找不到归属素材时返回 NotFound。
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private static async Task<JsonElement> ReadDataAsync(HttpResponseMessage response)

@@ -22,6 +22,9 @@ namespace OpenAICanvas.Application;
 /// </remarks>
 public sealed class ResourceDeleteService
 {
+    /// <summary>单次批量彻底删除的素材上限。对应 Go: <c>1-1000</c>。</summary>
+    private const int MaxPurgeAssets = 1000;
+
     private readonly Repository _repository;
     private readonly string _dataDir;
     private readonly StorageSettingsService? _storageSettings;
@@ -163,7 +166,12 @@ public sealed class ResourceDeleteService
         try
         {
             await _repository.DeleteAssetAndResourcesAsync(
-                userId, assetId, ownedIDs, deletionJobs, cancellationToken).ConfigureAwait(false);
+                userId,
+                assetId,
+                ownedIDs,
+                deletionJobs,
+                deleteReferencedResources: true,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (error is not AppError)
         {
@@ -174,6 +182,159 @@ public sealed class ResourceDeleteService
             // Go 异步 drain；C# 同步清理本地对象（云 provider 任务保留 pending 由后续 worker 处理）。
             await DrainResourceDeletionJobsAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// 用户主动彻底删除素材（单条与批量共用）。对应 Go: <c>deleteUserAssetsWithResources(userID, ids, true)</c>。
+    /// </summary>
+    /// <remarks>
+    /// 与保留引用校验的普通删除不同，彻底删除不因画布、项目或任务仍引用素材而阻塞；
+    /// 仍被其他素材共享的物理对象会跳过，其余对象随记录删除进入 Outbox 队列。
+    /// 整批素材在同一个事务内删除，任一 ID 不属于当前用户时全部保留。
+    /// </remarks>
+    /// <returns>去重并 trim 后的素材 ID（保持请求顺序）。</returns>
+    public async Task<IReadOnlyList<string>> PurgeUserAssetsWithResourcesAsync(
+        string userId,
+        IReadOnlyList<string> ids,
+        CancellationToken cancellationToken = default)
+    {
+        List<string> assetIDs = NormalizePurgeAssetIDs(userId, ids);
+        IReadOnlyList<Asset> assets = await _repository.AssetsForUserIDsAsync(
+            userId, assetIDs, cancellationToken).ConfigureAwait(false);
+        if (assets.Count != assetIDs.Count)
+        {
+            throw AppError.NotFound("素材不存在或无权删除");
+        }
+        (IReadOnlyList<AssetVersion> versions, IReadOnlyList<AssetRepresentation> representations) =
+            await _repository.AssetsResourceRecordsAsync(assetIDs, cancellationToken).ConfigureAwait(false);
+
+        HashSet<string> resourceIDs = new(StringComparer.Ordinal);
+        foreach (Asset asset in assets)
+        {
+            CollectOwnedDocumentReferencesOrThrow(asset.PayloadJSON, resourceIDs, "素材");
+        }
+        foreach (AssetVersion version in versions)
+        {
+            CollectOwnedDocumentReferencesOrThrow(version.DefinitionJSON, resourceIDs, "素材版本");
+        }
+        foreach (AssetRepresentation representation in representations)
+        {
+            string resourceID = ValidCanvasResourceID(representation.ResourceID);
+            if (resourceID.Length > 0)
+            {
+                resourceIDs.Add(resourceID);
+            }
+            CollectOwnedDocumentReferencesOrThrow(representation.MetadataJSON, resourceIDs, "素材表现");
+        }
+
+        string[] candidateIDs = SortedReferenceIDs(resourceIDs);
+        IReadOnlyList<Resource> resources = await _repository.ResourcesForUserIDsAsync(
+            userId, candidateIDs, cancellationToken).ConfigureAwait(false);
+        HashSet<string> ownedIDSet = resources.Select(resource => resource.ID).ToHashSet(StringComparer.Ordinal);
+
+        if (ownedIDSet.Count > 0)
+        {
+            // 彻底删除只关心物理对象是否仍被其他素材共用；业务引用不再阻塞。
+            ResourceReferenceSnapshot snapshot = await _repository.OtherAssetResourceReferencesAsync(
+                userId, assetIDs, cancellationToken).ConfigureAwait(false);
+            HashSet<string> sharedAssetResourceIDs = new(StringComparer.Ordinal);
+            foreach (ResourceDirectReference reference in snapshot.Direct)
+            {
+                if (ownedIDSet.Contains(reference.ResourceID) && reference.Kind == "素材")
+                {
+                    sharedAssetResourceIDs.Add(reference.ResourceID);
+                }
+            }
+            foreach (ResourceReferenceDocument document in snapshot.Documents)
+            {
+                HashSet<string> referencedIDs = DocumentReferencedResourceIDs(document.PrimaryJSON, ownedIDSet);
+                foreach (string resourceID in DocumentReferencedResourceIDs(document.SecondaryJSON, ownedIDSet))
+                {
+                    referencedIDs.Add(resourceID);
+                }
+                if (referencedIDs.Count == 0 || document.Kind != "素材")
+                {
+                    continue;
+                }
+                foreach (string resourceID in referencedIDs)
+                {
+                    sharedAssetResourceIDs.Add(resourceID);
+                }
+            }
+            if (sharedAssetResourceIDs.Count > 0)
+            {
+                ownedIDSet.ExceptWith(sharedAssetResourceIDs);
+            }
+        }
+
+        List<string> ownedIDs = resources
+            .Where(resource => ownedIDSet.Contains(resource.ID))
+            .Select(resource => resource.ID)
+            .ToList();
+        // 所有引用校验必须先完成；仍被其他资源记录共享的物理对象不会进入删除队列。
+        Dictionary<string, Resource> physicalObjects = new(StringComparer.Ordinal);
+        foreach (Resource resource in resources)
+        {
+            if (!ownedIDSet.Contains(resource.ID))
+            {
+                continue;
+            }
+            long sharedCount = await _repository.ResourceStorageReferenceCountAsync(
+                resource, ownedIDs, cancellationToken).ConfigureAwait(false);
+            if (sharedCount > 0)
+            {
+                continue;
+            }
+            physicalObjects[ResourceStorageIdentity(resource)] = resource;
+        }
+        List<ResourceDeletionJob> deletionJobs = ResourceDeletionJobs(userId, physicalObjects);
+        try
+        {
+            await _repository.DeleteAssetsAndResourcesAsync(
+                userId,
+                assetIDs,
+                ownedIDs,
+                deletionJobs,
+                deleteReferencedResources: true,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException error) when (error.Message == "record not found")
+        {
+            throw AppError.NotFound("素材不存在或无权删除");
+        }
+        catch (Exception error) when (error is not AppError)
+        {
+            throw AppError.New(500, "素材记录删除失败，请重试：" + error.Message);
+        }
+        if (deletionJobs.Count > 0)
+        {
+            await DrainResourceDeletionJobsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return assetIDs;
+    }
+
+    /// <summary>校验并规范化批量素材 ID：非空、1–1000、去重保序。对应 Go: <c>deleteUserAssetsWithResources</c> 入参段。</summary>
+    private static List<string> NormalizePurgeAssetIDs(string userId, IReadOnlyList<string> ids)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || ids.Count == 0 || ids.Count > MaxPurgeAssets)
+        {
+            throw AppError.BadAuthRequest("每次删除须提供 1–1000 个素材 ID 和有效用户");
+        }
+        List<string> assetIDs = new(ids.Count);
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (string raw in ids)
+        {
+            string id = raw.Trim();
+            if (id.Length == 0)
+            {
+                throw AppError.BadAuthRequest("素材 ID 不能为空");
+            }
+            if (seen.Add(id))
+            {
+                assetIDs.Add(id);
+            }
+        }
+        return assetIDs;
     }
 
     /// <summary>

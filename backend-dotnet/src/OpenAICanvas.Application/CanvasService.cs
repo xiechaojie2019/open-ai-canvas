@@ -490,6 +490,13 @@ public sealed class CanvasService
         CancellationToken cancellationToken = default) =>
         UserData.DeleteUserAssetAsync(userId, id, cancellationToken);
 
+    /// <summary>对应 Go: <c>Service.PurgeUserAssets</c>（单个 ID 亦走批量入口）。</summary>
+    public Task<IReadOnlyList<string>> PurgeUserAssetsAsync(
+        string userId,
+        IReadOnlyList<string> ids,
+        CancellationToken cancellationToken = default) =>
+        UserData.PurgeUserAssetsAsync(userId, ids, cancellationToken);
+
     /// <summary>对应 Go: <c>Service.UserAssetsByIDs</c>。</summary>
     public Task<List<JsonElement>> UserAssetsByIDsAsync(
         string userId,

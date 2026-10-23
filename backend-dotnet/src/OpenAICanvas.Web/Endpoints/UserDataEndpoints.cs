@@ -227,8 +227,44 @@ public static class UserDataEndpoints
             {
                 User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
                     .ConfigureAwait(false);
-                await service.DeleteUserAssetAsync(user.ID, id, cancellationToken).ConfigureAwait(false);
+                await service.PurgeUserAssetsAsync(user.ID, [id], cancellationToken).ConfigureAwait(false);
                 return ApiResults.Ok(new { id });
+            }
+            catch (Exception error)
+            {
+                return ApiResults.FailService(error, context);
+            }
+        });
+
+        // 批量彻底删除。请求体为素材 ID 数组（对应 Go: POST /assets/batch-delete，上限 256 KiB）。
+        api.MapPost("/assets/batch-delete", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                User user = await service.CurrentUserAsync(SessionCookie.Read(context), cancellationToken)
+                    .ConfigureAwait(false);
+                JsonElement? request = await ReadJsonAsync(context, 256 << 10, cancellationToken)
+                    .ConfigureAwait(false);
+                if (request is null || request.Value.ValueKind != JsonValueKind.Array)
+                {
+                    return ApiResults.Fail(
+                        StatusCodes.Status400BadRequest,
+                        new InvalidOperationException("请求体须为素材 ID 数组"));
+                }
+                List<string> ids = [];
+                foreach (JsonElement item in request.Value.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                    {
+                        return ApiResults.Fail(
+                            StatusCodes.Status400BadRequest,
+                            new InvalidOperationException("请求体须为素材 ID 数组"));
+                    }
+                    ids.Add(item.GetString() ?? "");
+                }
+                IReadOnlyList<string> deleted = await service.PurgeUserAssetsAsync(user.ID, ids, cancellationToken)
+                    .ConfigureAwait(false);
+                return ApiResults.Ok(new { ids = deleted });
             }
             catch (Exception error)
             {
