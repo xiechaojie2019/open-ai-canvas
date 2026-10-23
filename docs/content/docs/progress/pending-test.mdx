@@ -11,7 +11,7 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - 单条 `DELETE /assets/{id}` 同步切到 purge 入口，与 Go 一致：不再因画布/项目/任务引用而阻塞，找不到素材返回 404（原为 500）。
 - 无数据库结构变化、无前端改动。
 - [x] `dotnet build -c Release` 0 错误；`AssetBatchDeleteTests` 10/10 通过；`AssetDeleteTests` 7/7 通过。
-- [ ] 211 部署验收：登录后 `POST /api/assets/batch-delete` 空数组 400、不存在 ID 404；`192.168.0.211:5173` 素材页回收站单条与批量「彻底删除」均成功且文件释放。
+- [x] 211 部署验收：容器 healthy，`live=200 ready=200`，未登录 `POST /api/assets/batch-delete` 返回 401（不再是 404）。登录后空数组 400、非数组 400、不存在 ID 404。临时素材实测：单条 `DELETE /api/assets/{id}` 200、重复删除 404；批量删除 2 条 200 并回显 `ids`、重复删除 404。以上均通过 `8081` 直连和 `5173` 前端代理两条链路验证。
 
 ## net8 运行时策略接上读库实现
 
