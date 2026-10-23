@@ -5,6 +5,16 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 文本一次生成多份收口到单个节点
+
+- 文本生成面板「份数 = N」时，画布不再并排留下 N 个文本节点：最新一份留在承载节点顶层，其余进该节点的 `metadata.mediaHistory`，节点左上角「历史 N」徽标可切换查看（切回旧版本走原有的 `selectMediaHistoryVersion`）。
+- 承载节点的选择：普通文本节点原地生成 → 来源节点承载；配置节点 → 第一个成功的子节点承载（配置节点本身不写正文）。来源节点自己失败但子结果成功时，把第一份成功结果连同任务绑定一起提升到来源节点，不留空壳。失败子节点保留，供「重试失败部分」继续使用。
+- 与图片批次一致：子任务仍在途时不收口；收口后成功子节点与相关连线从画布文档真正删除（不是隐藏）。历史条目 id 由子节点 id 派生（`hist-<childId>`），重复收口幂等，上限仍是 30 条。
+- 单份失败不再中断整批：逐项 `.catch` 后只标记失败的那一份，其余结果照常回写与收口；队列容量错误只有在整批都无成功结果时才整体回退到 idle。
+- 纯前端改动：只改画布 JSON（`metadata.content` / `metadata.mediaHistory`），不涉及数据库结构与后端接口。
+- [x] 专项测试 21/21 通过（原有 13 项文本历史 + 新增 8 项批次收口）；`tsc` 对本轮三个文件零新增错误。
+- [ ] 211 部署后验收：配置节点份数填 2/3，生成完成后画布应只剩一个文本节点并显示「历史 1」「历史 2」；切换历史应能来回查看不同正文；其中一份失败时应保留失败节点且其余结果照常收口。
+
 ## net8 任务链路调用审计（请求明细 backend-task 日志）
 
 - net8 后端此前任务执行链路完全不写 `api_call_logs`：管理端「请求明细」在切线后不再出现图片/视频/文本调用（测试站该表自 2026-09-25 起零新增），管理分析与计费成本富化同源缺数据。本次按 Go 语义补齐移植：`ProviderTransport.SendAsync` 出站收口在每个终态（成功 / 非 2xx / 连接失败 / 响应超限 / 取消）发观测事件，`ApiCallAuditWriter`（Application）按 Go `recordProviderRequest` + `LogAPICall` 管线落库——用量提取（OpenAI/佐慈 usage、Gemini usageMetadata、方舟视频 completion_tokens）、上游请求 ID 与 providerStatus 提取、失败安全文案合并、按模型报价估算成本、账单 `providerRequestId` 回填、任务行 `providerRequestId` 回写（worker 崩溃后恢复轮询的数据源）、视频 poll 合并回 create 根行（pollCount/最新报文/终态用量）、日志条数与任务历史字节配额（超限转计费待核对）；报文脱敏移植为 `OpenAICanvas.Platform.ApiCallPayload`（密钥键名 [REDACTED]、内嵌 data URL 省略、1MB/128KB 限长）。审计元数据在 `TaskWorkerService.ExecuteProviderTaskAsync` 装配（对应 Go `withProviderAnalytics`：渠道 ID/模型取解析后 config、能力按 input.Mode 覆盖、系统渠道自代理 URL 推断），文本 / 图片 / 视频 / 音频 / 工作流 / 声明式协议的全部出站发送点穿透上下文。任务失败且完全无调用日志时由 `TaskTerminalService` 两个失败入口补 `INTERNAL` 兜底行（`/task/provider-preflight|provider-request|provider-state`），对应 Go `ensureFailedProviderAttemptLogged`。
