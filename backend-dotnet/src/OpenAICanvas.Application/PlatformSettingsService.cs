@@ -181,12 +181,19 @@ public sealed class PlatformSettingsService
 
     private readonly Repository _repository;
     private readonly string _dataDir;
+    private long _runtimePolicyVersion;
 
     public PlatformSettingsService(Repository repository, string? dataDir = null)
     {
         _repository = repository;
         _dataDir = string.IsNullOrWhiteSpace(dataDir) ? "data" : dataDir!;
     }
+
+    /// <summary>
+    /// 运行时策略写入版本。保存或重置后自增，供 <see cref="SettingsRuntimePolicyProvider"/> 立即失效缓存，
+    /// 对应 Go 每次准入都读库、保存后下一次请求即生效的行为。
+    /// </summary>
+    public long RuntimePolicyVersion => Interlocked.Read(ref _runtimePolicyVersion);
 
     // ------------------------------------------------------------ 运行时策略
 
@@ -236,6 +243,7 @@ public sealed class PlatformSettingsService
             UpdatedAt = DateTime.UtcNow,
         };
         await _repository.SaveSystemSettingAsync(setting, cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _runtimePolicyVersion);
         return PublicRuntimePolicy(setting, value);
     }
 
@@ -245,6 +253,7 @@ public sealed class PlatformSettingsService
     {
         CanvasService.RequireAdmin(actor);
         await _repository.DeleteSystemSettingAsync(RuntimePolicySettingKey, cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _runtimePolicyVersion);
         return PublicRuntimePolicy(null, Platform.RuntimePolicySetting.Default);
     }
 
@@ -1029,6 +1038,7 @@ public sealed class SettingsRuntimePolicyProvider : Platform.IRuntimePolicyProvi
     private readonly object _gate = new();
     private Platform.RuntimePolicySetting? _cached;
     private DateTimeOffset _loadedAt;
+    private long _cachedVersion = -1;
 
     public SettingsRuntimePolicyProvider(PlatformSettingsService settings, TimeSpan? ttl = null)
     {
@@ -1039,9 +1049,10 @@ public sealed class SettingsRuntimePolicyProvider : Platform.IRuntimePolicyProvi
 
     public Platform.RuntimePolicySetting Current()
     {
+        long version = _settings.RuntimePolicyVersion;
         lock (_gate)
         {
-            if (_cached is not null && DateTimeOffset.UtcNow - _loadedAt < _ttl)
+            if (_cached is not null && _cachedVersion == version && DateTimeOffset.UtcNow - _loadedAt < _ttl)
             {
                 return _cached;
             }
@@ -1050,6 +1061,7 @@ public sealed class SettingsRuntimePolicyProvider : Platform.IRuntimePolicyProvi
         lock (_gate)
         {
             _cached = value;
+            _cachedVersion = version;
             _loadedAt = DateTimeOffset.UtcNow;
         }
         return value;

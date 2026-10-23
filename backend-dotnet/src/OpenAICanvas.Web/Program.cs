@@ -130,8 +130,11 @@ builder.Services.AddSingleton<OpenAICanvas.Application.CanvasService>(servicePro
         externalCredentialStore: serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalCredentialStore>(),
         externalBillingClient: serviceProvider.GetRequiredService<OpenAICanvas.Auth.IExternalBillingClient>()));
 builder.Services.AddSingleton<OpenAICanvas.Web.Security.IRateLimiter, OpenAICanvas.Web.Security.InMemoryRateLimiter>();
-builder.Services.AddSingleton<OpenAICanvas.Platform.IRuntimePolicyProvider,
-    OpenAICanvas.Platform.DefaultRuntimePolicyProvider>();
+// 生效策略必须读库：管理员在「平台配置 → 资源与策略」保存的值只有经 SettingsRuntimePolicyProvider
+// 才会进入限流、额度与任务超时；注册内置默认值会让所有管理端配置静默失效。
+builder.Services.AddSingleton<OpenAICanvas.Platform.IRuntimePolicyProvider>(serviceProvider =>
+    new OpenAICanvas.Application.SettingsRuntimePolicyProvider(
+        serviceProvider.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>()));
 // 资源上传：额度管理 + 写路径 + 分片会话（对应 Go 的 upload_quota.go / resource.go / resource_upload_session.go）。
 builder.Services.AddSingleton(serviceProvider =>
     new OpenAICanvas.Application.UploadQuota(
@@ -516,9 +519,7 @@ api.MapAdminInsightRoutes(app.Services.GetRequiredService<OpenAICanvas.Applicati
 // 平台设置：运行时策略 / 绘图工具 / 响应拦截 / 方舟素材库 / 公告配图上传。
 api.MapAdminPlatformSettingsRoutes(
     app.Services.GetRequiredService<OpenAICanvas.Application.CanvasService>(),
-    new OpenAICanvas.Application.PlatformSettingsService(
-        app.Services.GetRequiredService<OpenAICanvas.Persistence.Repositories.Repository>(),
-        env.DataDir),
+    app.Services.GetRequiredService<OpenAICanvas.Application.PlatformSettingsService>(),
     app.Services.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
     app.Services.GetRequiredService<OpenAICanvas.Web.Security.IRateLimiter>(),
     app.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>());

@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace OpenAICanvas.Tests.Endpoints;
@@ -149,6 +150,30 @@ public sealed class AdminPlatformSettingsEndpointTests : IDisposable
         JsonElement resetSetting = (await ReadDataAsync(reset)).GetProperty("setting");
         Assert.False(resetSetting.GetProperty("configured").GetBoolean());
         Assert.Equal(5, resetSetting.GetProperty("task").GetProperty("activeTaskLimit").GetInt64());
+    }
+
+    [Fact]
+    public async Task 运行时策略_保存后立即对限流生效()
+    {
+        using HttpClient admin = await SignInAsAdminAsync();
+        OpenAICanvas.Platform.IRuntimePolicyProvider provider =
+            _factory.Services.GetRequiredService<OpenAICanvas.Platform.IRuntimePolicyProvider>();
+
+        // 注册的必须是读库实现：注册内置默认值会让管理端配置静默失效。
+        Assert.IsType<OpenAICanvas.Application.SettingsRuntimePolicyProvider>(provider);
+        Assert.Equal(30, provider.Current().Request.ResourceUploadPerMinute);
+
+        HttpResponseMessage updated = await admin.PutAsJsonAsync(
+            "/api/admin/settings/runtime-policy", new
+            {
+                resource = new { resourceUploadMB = 50, generatedFileMB = 64, dailyUploadMB = 2048, storedFileGB = 20, structuredDataMB = 256, taskDataGB = 1, assetCount = 2000, canvasCount = 1000, taskCount = 20000, apiCallLogCount = 100000, recycleBinRetentionDays = 30 },
+                task = new { workerConcurrency = 3, channelConcurrency = 3, activeTaskLimit = 5, imageTimeoutMinutes = 8, textTimeoutMinutes = 8, audioTimeoutMinutes = 8, videoTimeoutMinutes = 60, storyboardTimeoutMinutes = 20, defaultTimeoutMinutes = 10 },
+                request = new { taskCreatePerMinute = 30, resourceUploadPerMinute = 100, resourceImportPerMinute = 30, assetWritePerMinute = 120, canvasWritePerMinute = 120, registerPerHour = 30, emailCodePerHour = 60, loginIpPerTenMinutes = 50, loginAccountPerTenMinutes = 10, systemRelayPerMinute = 120, customRelayPerMinute = 120, customRelayConcurrency = 4, customRelayRequestMB = 32, customRelayResponseMB = 32, customRelayTimeoutMinutes = 10, systemRelayRequestMB = 64, systemRelayResponseMB = 128, channelCircuitFailureCount = 5, channelCircuitOpenSeconds = 60 },
+            });
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+
+        // 缓存 TTL 是 30 秒，保存后必须立刻读到新值，不能等 TTL 过期。
+        Assert.Equal(100, provider.Current().Request.ResourceUploadPerMinute);
     }
 
     [Fact]

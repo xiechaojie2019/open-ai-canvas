@@ -5,6 +5,15 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## net8 运行时策略接上读库实现
+
+- `Program.cs` 注册的是 `DefaultRuntimePolicyProvider`（固定内置默认值），真正读库的 `SettingsRuntimePolicyProvider` 只定义、从未注册。管理端「平台配置 → 资源与策略」保存的 `resourceUploadPerMinute` 等值写进了 `systemSettings.runtime_policy`，运行时却仍按默认 30/分钟限流，配置静默失效。现改为注册 `SettingsRuntimePolicyProvider`，管理端路由也改为从容器取同一个 `PlatformSettingsService` 实例，避免保存与读取落在两个对象上。
+- 缓存仍保留 30 秒 TTL，但保存或重置后 `PlatformSettingsService` 自增版本号，提供器发现版本变化立刻重读，管理端保存后下一次请求即生效，不需要等 TTL，也不需要重启。
+- [x] `dotnet build -c Release` 0 错误；`AdminPlatformSettingsEndpointTests` 7 项通过，新增用例断言注册类型是 `SettingsRuntimePolicyProvider`、默认 30、PUT 100 后立即读到 100。
+- [x] 已部署 `.211`：容器内 `OpenAICanvas.Application.dll` / `OpenAICanvas.Web.dll` 含 `RuntimePolicyVersion`、`SettingsRuntimePolicyProvider`，Web 内已无 `DefaultRuntimePolicyProvider`；容器 healthy，`/api/health/live` 与 `/api/health/ready` 均 200。
+- [x] 接口实测：`deploycheck` 登录后连发 105 次空 `POST /api/resources`，累计第 101 次起返回 429（首轮 35 次全 400，第二轮 65 次 400 + 40 次 429），与配置的 100/分钟一致；改前会在第 31 次截断。
+- [ ] 宫格切分等一次性并发上传超过 `resourceUploadPerMinute` 时仍会触发 429，前端退避重试与「媒体节点已创建，但素材库写入失败」提示的问题不在本次范围。
+
 ## net8 运行时策略补 Agent 单步输出上限与秒级超时
 
 - net8 后端的运行时策略缺 `agentStepMaxOutputTokens` / `agentStepTimeoutSeconds`，管理端「平台配置 → 资源与策略」在 `Number(undefined)` 得到 `NaN` 后整页报「服务端返回的“单步输出上限”无效」。本次在 `RuntimeTaskPolicy` 补齐两个字段（默认 16384 tokens、0 秒），默认提供器读取 `CANVAS_AGENT_STEP_MAX_OUTPUT_TOKENS`（夹取 256-131072）与 `CANVAS_AGENT_STEP_TIMEOUT_SECONDS`（非正数视为 0，否则夹取 30-3600），自用模板取两档上限，校验文案与 Go 逐字一致。策略值真正接入执行链路：云 Agent 的单步请求在 `textOptions` 带 `maxOutputTokens`，任务墙钟对 `cloud_agent` / `cloud_agent_step` 按秒取值（0 时仍用文本任务超时）。
