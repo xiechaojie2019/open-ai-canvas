@@ -4,7 +4,15 @@ import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { getGenerationCount, isGenerationCanceled, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
 import { pushCurrentMediaToHistory } from "@/lib/canvas/canvas-media-history";
-import { canGenerateTextInPlace, rollbackTextInPlaceGeneration } from "@/lib/canvas/canvas-text-generation";
+import {
+    canGenerateTextInPlace,
+    cancelIncompleteTextBatch,
+    finalizeCompletedTextBatch,
+    hasTextBatchResult,
+    rollbackTextInPlaceGeneration,
+} from "@/lib/canvas/canvas-text-generation";
+import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-batch";
+import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { generationFailureMetadata } from "@/lib/generation-error";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -35,6 +43,7 @@ export async function executeTextGeneration({
     taskContext,
     skillMetadata,
     retryContext,
+    showError,
 }: CanvasGenerationExecution) {
     const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
     const isDirectTextTarget = sourceNode?.type === CanvasNodeType.Text && !sourceNode.metadata?.content?.trim() && !editingTextNode;
@@ -93,55 +102,119 @@ export async function executeTextGeneration({
     const targetIds = generateInPlace ? [nodeId, ...childIds] : childIds;
 
     targetIds.forEach((targetNodeId) => startGenerationRequest(targetNodeId, nodeId, nodeId, controller));
-    try {
-        await Promise.all(
-            targetIds.map((targetNodeId) =>
-                runCanvasGenerationTaskToConsumer(
-                    {
-                        projectId,
-                        nodeId: targetNodeId,
-                        ...retryContext,
-                        mode: "text",
-                        prompt: effectivePrompt,
-                        config: generationConfig,
-                        referenceImages: generationContext.referenceImages,
-                        referenceVideos: generationContext.referenceVideos,
-                        signal: controller.signal,
-                        metadata: { sourceNodeId: nodeId, ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, ...skillMetadata },
-                    },
-                    {
-                        bindTask: (task) => bindGenerationTask(targetNodeId, task),
-                        consumeTask: (task) => applyGenerationTaskResult(targetNodeId, task),
-                    },
-                )
-                    .then(() => ({ nodeId: targetNodeId }))
-                    .finally(() => finishGenerationRequest(targetNodeId, controller)),
-            ),
-        );
-    } catch (error) {
-        // 原地生成失败：旧正文已经被压进历史、顶层 content 已清空。
-        // 外层的失败处理对「来源节点本来就有正文」的场景不改状态（那是给「新拉节点」用的），
-        // 所以这里必须自己把旧正文取回顶层，否则节点会变成没有正文的空壳并永远卡在 loading。
+    let failureCount = 0;
+    let successCount = 0;
+    let capacityError: unknown;
+    await Promise.all(
+        targetIds.map((targetNodeId) =>
+            runCanvasGenerationTaskToConsumer(
+                {
+                    projectId,
+                    nodeId: targetNodeId,
+                    ...retryContext,
+                    mode: "text",
+                    prompt: effectivePrompt,
+                    config: generationConfig,
+                    referenceImages: generationContext.referenceImages,
+                    referenceVideos: generationContext.referenceVideos,
+                    signal: controller.signal,
+                    metadata: { sourceNodeId: nodeId, ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, ...skillMetadata },
+                },
+                {
+                    bindTask: (task) => bindGenerationTask(targetNodeId, task),
+                    consumeTask: (task) => applyGenerationTaskResult(targetNodeId, task),
+                },
+            )
+                .then(() => {
+                    successCount += 1;
+                })
+                .catch((error: unknown) => {
+                    if (isGenerationCanceled(error)) return;
+                    if (isGenerationTaskCapacityError(error)) capacityError ??= error;
+                    failureCount += 1;
+                    // 单份失败只标记它自己：同批其余结果照常回写、照常收口。
+                    setNodes((current) => current.map((node) => (node.id === targetNodeId ? { ...node, metadata: { ...node.metadata, status: "error", ...generationFailureMetadata(error, prompt) } } : node)));
+                })
+                .finally(() => finishGenerationRequest(targetNodeId, controller)),
+        ),
+    );
+    if (controller.signal.aborted) {
+        setNodes((current) => {
+            const cancelled = cancelIncompleteTextBatch(nodeId, childIds, current);
+            let next: CanvasNodeData[] = cancelled.nodes;
+            if (generateInPlace) {
+                next = next.map((node) => {
+                    if (node.id !== nodeId) return node;
+                    // 已落地的新正文保留；否则把生成前压进历史的旧正文取回顶层。
+                    return hasTextBatchResult(node)
+                        ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined, generationErrorCode: undefined } }
+                        : { ...node, metadata: rollbackTextInPlaceGeneration(node.metadata, inPlaceHistoryId, "idle", sourceNode?.metadata?.richText) };
+                });
+            } else if (isConfigNode) {
+                next = next.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: "idle", errorDetails: undefined } } : node));
+            }
+            const removed = new Set(cancelled.removedIds);
+            if (removed.size) {
+                setConnections((connections) => {
+                    const pruned = connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId));
+                    if (projectId) useCanvasStore.getState().updateProject(projectId, { nodes: next, connections: pruned });
+                    return pruned;
+                });
+            }
+            return next;
+        });
+        return;
+    }
+    // 队列容量错误交给外层统一回到 idle（会清掉任务绑定）。但若同批已有结果落地，
+    // 就不能整体回滚，按「部分失败」收口，否则会把已经生成的正文重新标成未开始。
+    if (capacityError && !successCount) throw capacityError;
+    if (failureCount) showError(failureCount >= targetIds.length ? "文本生成失败" : "部分文本生成失败");
+    setNodes((current) => {
+        let next: CanvasNodeData[] = current.map((node) => {
+            if (node.id !== nodeId || !isConfigNode) return node;
+            const hasSuccess = childIds.some((childId) => hasTextBatchResult(current.find((item) => item.id === childId)));
+            return {
+                ...node,
+                metadata: {
+                    ...node.metadata,
+                    status: hasSuccess ? NODE_STATUS_SUCCESS : ("error" as const),
+                    ...(hasSuccess ? { errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined } : {}),
+                },
+            };
+        });
+        // 多份结果收口成一个节点：来源节点（配置节点则是第一个成功子节点）承载最新正文，
+        // 其余成功结果进 mediaHistory，成功子节点连同连线一起从文档删除。
+        // 失败子节点保留，供「重试失败部分」继续使用。
+        const finalized = finalizeCompletedTextBatch(nodeId, childIds, next);
+        next = finalized.nodes;
         if (generateInPlace) {
-            const canceled = isGenerationCanceled(error);
-            setNodes((current) =>
-                current.map((node) =>
-                    node.id === nodeId
-                        ? {
-                              ...node,
-                              metadata: {
-                                  ...rollbackTextInPlaceGeneration(node.metadata, inPlaceHistoryId, canceled ? "idle" : "error", sourceNode?.metadata?.richText),
-                                  ...(canceled ? {} : generationFailureMetadata(error, prompt)),
-                              },
-                          }
-                        : node,
-                ),
-            );
+            // 来源节点自己失败、子结果成功时，结果已经被提升到来源节点；
+            // 全都没成功才把生成前的旧正文取回，避免留下没有正文的空壳。
+            next = next.map((node) => {
+                if (node.id !== nodeId) return node;
+                if (hasTextBatchResult(node)) {
+                    return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined } };
+                }
+                return {
+                    ...node,
+                    metadata: {
+                        ...rollbackTextInPlaceGeneration(node.metadata, inPlaceHistoryId, "error", sourceNode?.metadata?.richText),
+                        // 回滚只还原正文；这次失败的原因由任务的失败回写挂在 metadata 上，没有则给一句兜底。
+                        errorDetails: node.metadata?.errorDetails || "文本生成失败",
+                    },
+                };
+            });
         }
-        throw error;
-    }
-    if (controller.signal.aborted) return;
-    if (isConfigNode) {
-        setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined } } : node)));
-    }
+        if (finalized.removedIds.length) {
+            const removed = new Set(finalized.removedIds);
+            setConnections((connections) => {
+                const pruned = connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId));
+                if (projectId) useCanvasStore.getState().updateProject(projectId, { nodes: next, connections: pruned });
+                return pruned;
+            });
+        } else if (projectId) {
+            useCanvasStore.getState().updateProject(projectId, { nodes: next });
+        }
+        return next;
+    });
 }

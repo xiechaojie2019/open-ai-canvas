@@ -1,5 +1,5 @@
-import { mediaHistoryEntries, selectMediaHistoryVersion } from "@/lib/canvas/canvas-media-history";
-import type { CanvasNodeData, CanvasNodeMetadata, CanvasNodeTypeId } from "@/types/canvas";
+import { MEDIA_HISTORY_LIMIT, mediaHistoryEntries, selectMediaHistoryVersion } from "@/lib/canvas/canvas-media-history";
+import type { CanvasMediaHistoryEntry, CanvasNodeData, CanvasNodeMetadata, CanvasNodeTypeId } from "@/types/canvas";
 
 /**
  * 配置节点类型（`CanvasNodeType.Config` 的字面量）。
@@ -8,6 +8,9 @@ import type { CanvasNodeData, CanvasNodeMetadata, CanvasNodeTypeId } from "@/typ
  * 用 `import type` 可以保证编译产物不残留 `@/types/canvas` 的运行时依赖。
  */
 const CONFIG_NODE_TYPE = "config" as CanvasNodeTypeId;
+
+/** 文本结果节点类型（同样用字面量，避免编译产物带 @/types/canvas 的运行时依赖）。 */
+const TEXT_NODE_TYPE = "text" as CanvasNodeTypeId;
 
 /**
  * 文本生成是否可以原地写回来源节点。
@@ -43,4 +46,121 @@ export function rollbackTextInPlaceGeneration(metadata: CanvasNodeMetadata | und
     // 旧正文被取回顶层后历史可能已空：空数组留着只是噪音，删掉更干净。
     if (Array.isArray(next.mediaHistory) && next.mediaHistory.length === 0) delete next.mediaHistory;
     return next;
+}
+
+/** 节点是否已经有可展示的文本结果（空串不算，生成中还没回写）。 */
+export function hasTextBatchResult(node: CanvasNodeData | undefined): boolean {
+    return Boolean(node?.metadata?.content?.trim());
+}
+
+/**
+ * 文本批次收口：把一次生成的多份结果折成**一个**节点，其余进 `metadata.mediaHistory`。
+ *
+ * 为什么要先各落一个临时节点再收口：`commitCanvasGenerationResult` 不允许把结果写到
+ * 「已绑定其他任务」的节点上，N 份结果并发写同一个节点会互相覆盖。所以子任务照旧
+ * 各自落在自己的节点上，全部结束后再一次性合并。
+ *
+ * 规则：
+ * - 原地生成（普通文本节点）：来源节点承载最新一份，其余成功子结果进它的历史；
+ * - 配置节点不承载正文：第一个成功子节点成为承载节点，其余成功子结果进它的历史；
+ * - 来源节点自身失败但子结果成功：把第一份成功结果提升到来源节点，节点不能停在空壳；
+ * - 失败子节点保留（与图片批次一致），用来重试；
+ * - 还有子任务在途时不动，返回原数组。
+ */
+export function finalizeCompletedTextBatch(
+    sourceNodeId: string,
+    childIds: readonly string[],
+    nodes: CanvasNodeData[],
+): { nodes: CanvasNodeData[]; removedIds: string[] } {
+    const source = nodes.find((node) => node.id === sourceNodeId);
+    if (!source || !childIds.length) return { nodes, removedIds: [] };
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const children = childIds
+        .map((id) => nodeById.get(id))
+        .filter((node): node is CanvasNodeData => Boolean(node && node.type === TEXT_NODE_TYPE));
+    if (!children.length) return { nodes, removedIds: [] };
+    // 还有子任务没落地：等它出完再收口，否则把在途结果也当成失败节点留下。
+    if (children.some((node) => !hasTextBatchResult(node) && node.metadata?.status === "loading")) {
+        return { nodes, removedIds: [] };
+    }
+    const successful = children.filter(hasTextBatchResult);
+    if (!successful.length) return { nodes, removedIds: [] };
+
+    const isConfigSource = source.type === CONFIG_NODE_TYPE;
+    // 原地生成失败时来源节点是空的：把第一份成功结果提升上去，而不是让用户看到一张空节点。
+    const promote = !isConfigSource && !hasTextBatchResult(source) ? successful[0] : undefined;
+    const carrier = isConfigSource ? successful[0] : source;
+    const folded = successful.filter((node) => node.id !== carrier.id && node.id !== promote?.id);
+    const removedIds = [...folded.map((node) => node.id), ...(promote ? [promote.id] : [])];
+    const removed = new Set(removedIds);
+
+    const metadata: CanvasNodeMetadata = { ...carrier.metadata };
+    const currentContent = promote?.metadata?.content ?? carrier.metadata?.content;
+    const existing = mediaHistoryEntries(metadata);
+    const knownIds = new Set(existing.map((entry) => entry.id));
+    const knownContent = new Set(existing.map((entry) => entry.content).filter((content): content is string => Boolean(content)));
+    if (currentContent) knownContent.add(currentContent);
+    const fresh: CanvasMediaHistoryEntry[] = [];
+    for (const child of folded) {
+        const entry = textBatchHistoryEntry(child);
+        if (!entry.content || knownIds.has(entry.id) || knownContent.has(entry.content)) continue;
+        knownIds.add(entry.id);
+        knownContent.add(entry.content);
+        fresh.push(entry);
+    }
+    // 同一批里后出的排前面，与 mediaHistory「最新在前」的约定一致。
+    if (fresh.length) metadata.mediaHistory = [...fresh.reverse(), ...existing].slice(0, MEDIA_HISTORY_LIMIT);
+    if (promote) Object.assign(metadata, textResultFields(promote), { status: "success" as const, errorDetails: undefined, generationErrorCode: undefined, failedPromptFingerprint: undefined, resourceReloadAvailable: undefined });
+
+    const next = nodes
+        .filter((node) => !removed.has(node.id))
+        .map((node) => (node.id === carrier.id ? { ...node, metadata } : node));
+    return { nodes: next, removedIds };
+}
+
+/** 取消时清掉没出结果的占位节点，已完成的成功结果照常收口。 */
+export function cancelIncompleteTextBatch(sourceNodeId: string, childIds: readonly string[], nodes: CanvasNodeData[]) {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const incomplete = new Set(
+        childIds.filter((id) => {
+            const node = nodeById.get(id);
+            return Boolean(node && node.type === TEXT_NODE_TYPE && !hasTextBatchResult(node));
+        }),
+    );
+    const withoutIncomplete = incomplete.size ? nodes.filter((node) => !incomplete.has(node.id)) : nodes;
+    const finalized = finalizeCompletedTextBatch(sourceNodeId, childIds, withoutIncomplete);
+    return { nodes: finalized.nodes, removedIds: [...incomplete, ...finalized.removedIds] };
+}
+
+function textResultFields(node: CanvasNodeData) {
+    return {
+        content: node.metadata?.content,
+        richText: node.metadata?.richText,
+        prompt: node.metadata?.prompt,
+        composerContent: node.metadata?.composerContent,
+        // 任务绑定一起搬过去：原节点自己失败、由子结果顶上时，不能让节点继续挂着失败任务。
+        taskId: node.metadata?.taskId,
+        taskClientOperationId: node.metadata?.taskClientOperationId,
+        taskStatus: node.metadata?.taskStatus,
+        taskStartedAt: node.metadata?.taskStartedAt,
+        taskCompletedAt: node.metadata?.taskCompletedAt,
+        taskDurationMs: node.metadata?.taskDurationMs,
+        taskCreatedAt: node.metadata?.taskCreatedAt,
+        taskUpdatedAt: node.metadata?.taskUpdatedAt,
+        attemptGroupId: node.metadata?.attemptGroupId,
+        retryOf: node.metadata?.retryOf,
+        taskErrorCode: undefined,
+    };
+}
+
+function textBatchHistoryEntry(node: CanvasNodeData): CanvasMediaHistoryEntry {
+    return {
+        // 用子节点 id 派生：收口重试不会产生重复条目。
+        id: `hist-${node.id}`,
+        content: node.metadata?.content,
+        prompt: node.metadata?.prompt,
+        title: node.title,
+        taskId: node.metadata?.taskId,
+        createdAt: node.metadata?.taskCompletedAt || new Date().toISOString(),
+    };
 }

@@ -1,15 +1,20 @@
 import { describe, expect, test } from "bun:test";
 
 import { canvasMediaSourceKey, isMediaAggregationTarget, MEDIA_HISTORY_LIMIT, pushCurrentMediaToHistory, selectMediaHistoryVersion } from "../src/lib/canvas/canvas-media-history";
-import { canGenerateTextInPlace, rollbackTextInPlaceGeneration } from "../src/lib/canvas/canvas-text-generation";
+import {
+    canGenerateTextInPlace,
+    cancelIncompleteTextBatch,
+    finalizeCompletedTextBatch,
+    rollbackTextInPlaceGeneration,
+} from "../src/lib/canvas/canvas-text-generation";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 
 /**
  * 文本节点的历史契约。
  *
- * 文本**不参与**「同一来源归并到同一节点」（那是图片/视频的机制）：文本生成要么原地
- * 写回来源节点、要么每次新拉节点。因此历史只服务于**原地生成**——同一个节点反复生成
- * 时旧正文进 `metadata.mediaHistory`，可切回。
+ * 文本不跨任务归并（那仍是图片/视频的机制），但**同一批多份**要收口到一个节点：
+ * 一次生成 N 份时，最新一份留在顶层，其余进 `metadata.mediaHistory`，节点上的
+ * 「历史 N」徽标可切换。原地生成时旧正文同样进历史。
  * 文本的产物就是 `metadata.content`，与媒体共用 media-history 这一套数据结构。
  */
 function textNode(id: string, metadata: Partial<NonNullable<CanvasNodeData["metadata"]>> = {}): CanvasNodeData {
@@ -159,5 +164,100 @@ describe("canvas text generation history", () => {
         expect(metadata.mediaHistory).toHaveLength(MEDIA_HISTORY_LIMIT);
         // 最新在前，最旧的已被丢弃
         expect(metadata.mediaHistory?.[0].content).toBe(`第${MEDIA_HISTORY_LIMIT + 3}版`);
+    });
+});
+
+function configNode(id: string): CanvasNodeData {
+    return { ...textNode(id), type: CanvasNodeType.Config };
+}
+
+describe("canvas text batch finalize", () => {
+    test("原地生成 2 份：来源节点留最新，第二份进历史，子节点删除", () => {
+        const nodes = [textNode("t1", { content: "第一份", status: "success" }), textNode("c1", { content: "第二份", status: "success" })];
+        const result = finalizeCompletedTextBatch("t1", ["c1"], nodes);
+
+        expect(result.removedIds).toEqual(["c1"]);
+        expect(result.nodes.map((node) => node.id)).toEqual(["t1"]);
+        expect(result.nodes[0].metadata?.content).toBe("第一份");
+        expect(result.nodes[0].metadata?.mediaHistory?.map((entry) => entry.content)).toEqual(["第二份"]);
+        expect(result.nodes[0].metadata?.mediaHistory?.[0].id).toBe("hist-c1");
+    });
+
+    test("配置节点 3 份：收口到第一个成功子节点，其余两份进它的历史", () => {
+        const nodes = [
+            configNode("cfg"),
+            textNode("c1", { content: "A", status: "success" }),
+            textNode("c2", { content: "B", status: "success" }),
+            textNode("c3", { content: "C", status: "success" }),
+        ];
+        const result = finalizeCompletedTextBatch("cfg", ["c1", "c2", "c3"], nodes);
+
+        expect(result.nodes.map((node) => node.id)).toEqual(["cfg", "c1"]);
+        expect(result.nodes[1].metadata?.content).toBe("A");
+        // 同一批后出的排前面，与「最新在前」一致
+        expect(result.nodes[1].metadata?.mediaHistory?.map((entry) => entry.content)).toEqual(["C", "B"]);
+        // 配置节点本身不承载正文
+        expect(result.nodes[0].metadata?.content).toBeUndefined();
+    });
+
+    test("重复收口幂等：历史不重复、节点不再变化", () => {
+        const first = finalizeCompletedTextBatch(
+            "t1",
+            ["c1", "c2"],
+            [textNode("t1", { content: "A", status: "success" }), textNode("c1", { content: "B", status: "success" }), textNode("c2", { content: "C", status: "success" })],
+        );
+        const second = finalizeCompletedTextBatch("t1", ["c1", "c2"], first.nodes);
+        expect(second.removedIds).toEqual([]);
+        expect(second.nodes[0].metadata?.mediaHistory).toHaveLength(2);
+    });
+
+    test("仍有子任务在途时不收口", () => {
+        const nodes = [textNode("t1", { content: "A" }), textNode("c1", { content: "B" }), textNode("c2", { status: "loading" })];
+        const result = finalizeCompletedTextBatch("t1", ["c1", "c2"], nodes);
+        expect(result.removedIds).toEqual([]);
+        expect(result.nodes).toHaveLength(3);
+    });
+
+    test("失败子节点保留，成功结果照常收口", () => {
+        const nodes = [
+            textNode("t1", { content: "A", status: "success" }),
+            textNode("c1", { content: "B", status: "success" }),
+            textNode("c2", { status: "error", errorDetails: "模型拒绝" }),
+        ];
+        const result = finalizeCompletedTextBatch("t1", ["c1", "c2"], nodes);
+        expect(result.removedIds).toEqual(["c1"]);
+        expect(result.nodes.find((node) => node.id === "c2")?.metadata?.errorDetails).toBe("模型拒绝");
+        expect(result.nodes[0].metadata?.mediaHistory?.[0].content).toBe("B");
+    });
+
+    test("来源节点自己失败、子结果成功：提升第一份到来源节点，不留空壳", () => {
+        const nodes = [textNode("t1", { status: "error" }), textNode("c1", { content: "B", status: "success", taskId: "task-b" }), textNode("c2", { content: "C", status: "success" })];
+        const result = finalizeCompletedTextBatch("t1", ["c1", "c2"], nodes);
+
+        expect(result.nodes.map((node) => node.id)).toEqual(["t1"]);
+        expect(result.nodes[0].metadata?.content).toBe("B");
+        expect(result.nodes[0].metadata?.status).toBe("success");
+        // 任务绑定一起搬过去，避免节点继续挂着失败任务
+        expect(result.nodes[0].metadata?.taskId).toBe("task-b");
+        expect(result.nodes[0].metadata?.mediaHistory?.map((entry) => entry.content)).toEqual(["C"]);
+    });
+
+    test("取消：未出结果的占位节点被删，已完成结果进历史", () => {
+        const nodes = [
+            textNode("t1", { content: "A", status: "success" }),
+            textNode("c1", { content: "B", status: "success" }),
+            textNode("c2", { status: "loading" }),
+        ];
+        const result = cancelIncompleteTextBatch("t1", ["c1", "c2"], nodes);
+        expect(result.removedIds.sort()).toEqual(["c1", "c2"]);
+        expect(result.nodes.map((node) => node.id)).toEqual(["t1"]);
+        expect(result.nodes[0].metadata?.mediaHistory?.[0].content).toBe("B");
+    });
+
+    test("全部失败：不动节点，也没有历史", () => {
+        const nodes = [textNode("t1", { content: "旧正文" }), textNode("c1", { status: "error" })];
+        const result = finalizeCompletedTextBatch("t1", ["c1"], nodes);
+        expect(result.removedIds).toEqual([]);
+        expect(result.nodes[0].metadata?.mediaHistory).toBeUndefined();
     });
 });
