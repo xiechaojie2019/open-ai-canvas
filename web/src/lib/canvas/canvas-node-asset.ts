@@ -102,6 +102,8 @@ export function findCanvasNodeAsset(assets: Asset[], node: CanvasNodeData, canva
         if (asset.metadata?.nodeId !== node.id) return false;
         const sourceCanvasId = asset.metadata?.canvasId;
         if (sourceCanvasId !== canvasId && (sourceCanvasId || asset.metadata?.source !== "canvas-generation")) return false;
+        // 文本没有 storageKey，节点正文就是唯一资源标识；正文改过后必须视为新素材。
+        if (asset.kind === "text" && asset.data.content.trim() !== (node.metadata?.content?.trim() || "")) return false;
         const nodeResourceKey = node.metadata?.storageKey;
         const assetResourceKey = typeof asset.metadata?.resourceKey === "string" ? asset.metadata.resourceKey : assetStorageKey(asset);
         return !nodeResourceKey || !assetResourceKey || nodeResourceKey === assetResourceKey;
@@ -109,6 +111,7 @@ export function findCanvasNodeAsset(assets: Asset[], node: CanvasNodeData, canva
 }
 
 function sameAssetResource(asset: Asset, node: CanvasNodeData) {
+    if (asset.kind === "text") return asset.data.content.trim() === (node.metadata?.content?.trim() || "");
     const nodeResourceKey = node.metadata?.storageKey;
     const assetResourceKey = typeof asset.metadata?.resourceKey === "string" ? asset.metadata.resourceKey : assetStorageKey(asset);
     return !nodeResourceKey || !assetResourceKey || nodeResourceKey === assetResourceKey;

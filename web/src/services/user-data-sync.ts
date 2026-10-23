@@ -50,6 +50,62 @@ export async function initializeRemoteUserDataSession(userId: string) {
         acknowledgedAssets = new Map(useAssetStore.getState().assets.map((asset) => [asset.id, asset]));
         remoteUserDataPhase = "ready";
     });
+    // 旧版本可能把“本地已写、远端失败”的文本素材留成幽灵记录；登录后按画布引用补一次。
+    void repairUnsyncedCanvasTextAssets().catch((error) => console.warn("补传画布文本素材失败", error));
+}
+
+/**
+ * 只核对仍被本地画布引用的文本素材，避免整库扫描，也不会把用户已删除的素材复活。
+ * 远端缺失的记录属于旧的写入失败残留，重新提交后素材库才能再次查到。
+ */
+export async function repairUnsyncedCanvasTextAssets() {
+    const epoch = sessionEpoch;
+    const localTextById = new Map(
+        useAssetStore.getState().assets.filter((asset) => asset.kind === "text").map((asset) => [asset.id, asset]),
+    );
+    if (!localTextById.size) return;
+    const referencedIds = new Set<string>();
+    for (const project of useCanvasStore.getState().projects) {
+        for (const node of project.nodes) {
+            const assetId = node.metadata?.assetId;
+            if (assetId && localTextById.has(assetId)) referencedIds.add(assetId);
+        }
+    }
+    const ids = [...referencedIds];
+    if (!ids.length) return;
+    await withRemoteUserDataSyncExclusive(async () => {
+        if (epoch !== sessionEpoch) return;
+        requireRemoteUserDataBaseline();
+        const remoteById = new Map<string, Asset>();
+        for (let offset = 0; offset < ids.length; offset += 100) {
+            const { assets } = await getRemoteAssetsByIds(ids.slice(offset, offset + 100));
+            for (const asset of parseAssetRecordList(assets)) remoteById.set(asset.id, asset);
+        }
+        if (epoch !== sessionEpoch) return;
+        const remoteAssets: Asset[] = [];
+        for (const id of ids) {
+            const remote = remoteById.get(id);
+            if (remote) {
+                acknowledgedAssets.set(id, remote);
+                verifiedAssets.add(id);
+                const local = localTextById.get(id)!;
+                if ((Date.parse(remote.updatedAt) || 0) >= (Date.parse(local.updatedAt) || 0)) remoteAssets.push(remote);
+                continue;
+            }
+            const local = localTextById.get(id)!;
+            // 远端没有记录即旧的丢写：重新提交并把它记为已确认。
+            await upsertRemoteAsset(await ensureRemoteResourceReferences(assetForRemoteSync(local)));
+            acknowledgedAssets.set(id, local);
+            verifiedAssets.add(id);
+        }
+        if (remoteAssets.length) {
+            const remoteIds = new Set(remoteAssets.map((asset) => asset.id));
+            useAssetStore.setState((state) => ({
+                assets: state.assets.map((asset) => remoteIds.has(asset.id) ? remoteById.get(asset.id)! : asset),
+            }));
+            await flushAssetStorePersistence();
+        }
+    });
 }
 
 function liveCanvasIfUnchanged(id: string, snapshot: CanvasProject | null | undefined) {
@@ -741,6 +797,28 @@ export async function saveRemoteUserDataNow(input?: string | readonly string[] |
         syncPromise = null;
         if (syncQueued) scheduleRemoteUserDataSync();
     }
+}
+
+/**
+ * 单条素材立即落服务端。
+ *
+ * “保存到我的素材”必须先确认这条记录真的写进云端再提示成功：整库自动同步失败时
+ * 本地记录会残留，而登录基线与本地缓存一致后它再也不会被判为待同步。这里只提交
+ * 指定素材，成功后把它记为已确认，调用方失败即可安全撤回本地记录。
+ */
+export async function saveRemoteAssetNow(assetId: string) {
+    const epoch = sessionEpoch;
+    if (!activeRemoteUserId) throw new Error("尚未建立云端同步会话，本地内容尚未保存到云端");
+    requireRemoteUserDataBaseline();
+    await withRemoteUserDataSyncExclusive(async () => {
+        if (epoch !== sessionEpoch) throw new Error("账号已切换，已停止旧会话保存");
+        const asset = useAssetStore.getState().assets.find((item) => item.id === assetId);
+        if (!asset) throw new Error("素材写入本地失败");
+        const payload = await ensureRemoteResourceReferences(assetForRemoteSync(asset));
+        await upsertRemoteAsset(payload);
+        acknowledgedAssets.set(asset.id, asset);
+        verifiedAssets.add(asset.id);
+    });
 }
 
 /**

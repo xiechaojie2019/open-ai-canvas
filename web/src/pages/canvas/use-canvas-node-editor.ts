@@ -215,7 +215,12 @@ export function useCanvasNodeEditor({
         try {
             const result = await ensureCanvasNodeAsset({ canvasId, domainProjectId, node, source: "canvas-manual" });
             setNodes((current) => current.map((item) => item.id === node.id ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item));
-            if (domainProjectId) await queryClient.invalidateQueries({ queryKey: ["project", domainProjectId] });
+            // 画布侧栏资产与素材库各自缓存；保存后不刷新会继续显示旧列表。
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["canvas-workspace-assets"] }),
+                queryClient.invalidateQueries({ queryKey: ["asset-library"] }),
+                ...(domainProjectId ? [queryClient.invalidateQueries({ queryKey: ["project", domainProjectId] })] : []),
+            ]);
             message.success(result.linkedToProject ? "已加入项目资产" : "已加入我的素材");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "素材保存失败");

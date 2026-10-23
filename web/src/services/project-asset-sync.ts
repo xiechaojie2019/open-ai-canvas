@@ -15,7 +15,7 @@ import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-st
 import { generationArtifactStorageKey, loadOrStoreGenerationArtifact } from "@/services/generation-artifact-sink";
 import { createProviderNeutralGenerationTaskEffectStore } from "@/services/provider-neutral-generation-effects";
 import { getCachedResourceBlob } from "@/services/resource-blob-cache";
-import { saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { saveRemoteAssetNow, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { normalizeAssetCategory } from "@/lib/asset-category";
 import { runGenerationConsumer } from "@/services/generation-consumer-lifecycle";
@@ -115,9 +115,20 @@ async function persistCanvasNodeAsset(options: EnsureCanvasNodeAssetOptions): Pr
         store.updateAsset(asset.id, { category: declaredCategory });
         asset = useAssetStore.getState().assets.find((item) => item.id === asset?.id) || asset;
     }
+    if (created && options.source === "canvas-manual") {
+        // 手动保存必须先单独确认这条素材写入云端；整库同步失败时不能留下看不见的本地记录。
+        // 生成与上传路径保持原有批量同步节奏，避免每个子节点各发一次写入触发限流。
+        try {
+            await saveRemoteAssetNow(asset.id);
+        } catch (error) {
+            await useAssetStore.getState().removeAssets([asset.id]);
+            throw error;
+        }
+        throwIfAborted(options.signal);
+    }
     if (!options.domainProjectId) {
         // 个人画布也必须在返回成功前把素材提交到服务端，不能只依赖延迟自动同步。
-        await saveRemoteUserDataNow();
+        if (!created || options.source !== "canvas-manual") await saveRemoteUserDataNow();
         throwIfAborted(options.signal);
         return { assetId: asset.id, created, linkedToProject: false };
     }

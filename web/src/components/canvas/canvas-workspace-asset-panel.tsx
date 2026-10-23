@@ -11,12 +11,13 @@ import { useUserStore } from "@/stores/use-user-store";
 import type { Asset } from "@/stores/use-asset-store";
 import { assetPickerItemsToInsertPayloads, type InsertAssetPayload } from "./asset-picker-modal";
 
-const categories: AssetCategory[] = ["material", "character", "environment", "prop", "other"];
+const categories: Array<AssetCategory | "all"> = ["all", "material", "character", "environment", "prop", "other"];
 export function CanvasWorkspaceAssetPanel({ onInsert, onManage, onProjectAssets }: { onInsert: (payloads: InsertAssetPayload[]) => Promise<unknown>; onManage: () => void; onProjectAssets?: () => void }) {
     const { message } = App.useApp();
     const userId = useUserStore((state) => state.user?.id);
     const hydrated = useUserStore((state) => state.hydrated);
-    const [category, setCategory] = useState<AssetCategory>("material");
+    // 默认展示全部分类：文本等素材落在“其他”，只查“素材”会让刚保存的数据看起来丢失。
+    const [category, setCategory] = useState<AssetCategory | "all">("all");
     const [kind, setKind] = useState("all");
     const [input, setInput] = useState("");
     const [search, setSearch] = useState("");
@@ -28,7 +29,7 @@ export function CanvasWorkspaceAssetPanel({ onInsert, onManage, onProjectAssets 
     const query = useInfiniteQuery({
         queryKey: ["canvas-workspace-assets", userId, category, kind, search],
         initialPageParam: 1,
-        queryFn: ({ signal, pageParam }) => loadAssetLibraryPage({ page: pageParam, pageSize: 40, category, kind: kind === "all" ? undefined : kind, status: "active", query: search, signal }),
+        queryFn: ({ signal, pageParam }) => loadAssetLibraryPage({ page: pageParam, pageSize: 40, category: category === "all" ? undefined : category, kind: kind === "all" ? undefined : kind, status: "active", query: search, signal }),
         getNextPageParam: (page, pages) => (pages.reduce((count, item) => count + item.assets.length, 0) < page.total ? pages.length + 1 : undefined),
         enabled: Boolean(userId) && hydrated,
     });
@@ -55,7 +56,7 @@ export function CanvasWorkspaceAssetPanel({ onInsert, onManage, onProjectAssets 
             <div className="sidebar-subtabs border-b border-border p-2">
                 {categories.map((id) => (
                     <button key={id} type="button" className={category === id ? "active" : ""} aria-pressed={category === id} onClick={() => setCategory(id)}>
-                        {ASSET_CATEGORY_LABELS[id]}
+                        {id === "all" ? "全部" : ASSET_CATEGORY_LABELS[id]}
                     </button>
                 ))}
             </div>
