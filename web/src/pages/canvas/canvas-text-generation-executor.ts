@@ -54,6 +54,10 @@ export async function executeTextGeneration({
     const parentPosition = sourceNode?.position || { x: 0, y: 0 };
     const generateInPlace = canGenerateTextInPlace(sourceNode);
     const childIds = Array.from({ length: generateInPlace ? Math.max(0, textCount - 1) : textCount }, () => nanoid());
+    // 原地多份生成不在画布上铺开占位节点：子节点照常创建（结果要各落一个节点再收口），
+    // 但挂上图片批次那套隐藏标记，渲染层只显示承载节点的 loading。
+    // 配置节点没有承载正文的节点，隐藏后画布上会一片空白，所以维持原样。
+    const hideBatchChildren = generateInPlace && childIds.length > 0;
     registerPendingNodeIds(childIds);
     // 原地生成时旧正文入栈用的历史条目 id：失败回滚要靠它把旧正文取回顶层。
     const inPlaceHistoryId = `hist-${nanoid(10)}`;
@@ -74,6 +78,7 @@ export async function executeTextGeneration({
                               generationErrorCode: undefined,
                               resourceReloadAvailable: undefined,
                               failedPromptFingerprint: undefined,
+                              ...(hideBatchChildren ? { isBatchRoot: true, batchChildIds: childIds, imageBatchExpanded: false } : {}),
                           },
                       }
                     : node,
@@ -93,7 +98,13 @@ export async function executeTextGeneration({
             },
             width: textConfig.width,
             height: textConfig.height,
-            metadata: { ...canvasGenerationPromptMetadata(prompt, effectivePrompt), status: NODE_STATUS_LOADING, fontSize: 14, ...skillMetadata },
+            metadata: {
+                ...canvasGenerationPromptMetadata(prompt, effectivePrompt),
+                status: NODE_STATUS_LOADING,
+                fontSize: 14,
+                ...skillMetadata,
+                ...(hideBatchChildren ? { batchRootId: nodeId } : {}),
+            },
         }));
         setNodes((current) => [...current.map((node) => (node.id === nodeId && isConfigNode ? { ...node, metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, effectivePrompt), status: NODE_STATUS_LOADING, errorDetails: undefined } } : node)), ...childNodes]);
         setConnections((current) => [...current, ...childIds.map((childId) => ({ id: nanoid(), fromNodeId: nodeId, toNodeId: childId }))]);

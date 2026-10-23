@@ -501,7 +501,9 @@ export function removeCanvasNodes(nodes: CanvasNodeData[], requestedIds: Set<str
               }
             : detached;
         const childIds = cleaned.metadata?.batchChildIds?.filter((childId) => !removedIds.has(childId));
-        if (!cleaned.metadata?.isBatchRoot || childIds?.length === cleaned.metadata.batchChildIds?.length) return cleaned;
+        // 文本批次的根只是「生成期间收起子节点」的标记，没有主图概念；
+        // 把图片的主图回填逻辑套上去会往文本节点写图片字段。
+        if (cleaned.type !== CanvasNodeType.Image || !cleaned.metadata?.isBatchRoot || childIds?.length === cleaned.metadata.batchChildIds?.length) return cleaned;
         const primaryImageId = childIds?.includes(cleaned.metadata.primaryImageId || "") ? cleaned.metadata.primaryImageId : childIds?.[0];
         const primaryNode = remainingNodes.find((item) => item.id === primaryImageId);
         const batchRoot = { ...cleaned, metadata: { ...cleaned.metadata, batchChildIds: childIds, primaryImageId } };

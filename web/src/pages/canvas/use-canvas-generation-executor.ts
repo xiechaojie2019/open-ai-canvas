@@ -10,6 +10,7 @@ import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-ba
 import { buildPortraitTexturePrompt } from "@/lib/canvas/canvas-portrait-texture";
 import { buildCameraPrompt } from "@/lib/canvas/camera-prompt-library";
 import { buildTextRewritePrompt } from "@/lib/prompts";
+import { clearTextBatchMarkers } from "@/lib/canvas/canvas-text-generation";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { generationErrorMessage, generationFailureMetadata } from "@/lib/generation-error";
 import { modelCompatibilityError, modelGroupReferenceLimits, modelPromptLengthError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
@@ -340,7 +341,7 @@ export function useCanvasGenerationExecutor({
                         const failure = generationFailureMetadata(error, prompt);
                         if (options?.waitForTaskCapacity && isGenerationTaskCapacityError(error)) {
                             setNodes((current) =>
-                                current.map((node) => {
+                                clearTextBatchMarkers(current.map((node) => {
                                     if (node.id !== nodeId && !pendingNodeIds.includes(node.id)) return node;
                                     const metadata = { ...(node.metadata || {}), status: NODE_STATUS_IDLE, errorDetails: undefined };
                                     delete metadata.taskId;
@@ -353,13 +354,13 @@ export function useCanvasGenerationExecutor({
                                     delete metadata.taskCompletedAt;
                                     delete metadata.taskDurationMs;
                                     return { ...node, metadata };
-                                }),
+                                }), nodeId),
                             );
                             return;
                         }
                         message.error(failure.errorDetails);
                         setNodes((current) =>
-                            current.map((node) => (node.id === nodeId || pendingNodeIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } }) : node)),
+                            clearTextBatchMarkers(current.map((node) => (node.id === nodeId || pendingNodeIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } }) : node)), nodeId),
                         );
                     } finally {
                         finishGenerationRequest(nodeId, controller);

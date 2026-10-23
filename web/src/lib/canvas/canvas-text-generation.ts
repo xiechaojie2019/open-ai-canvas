@@ -54,6 +54,35 @@ export function hasTextBatchResult(node: CanvasNodeData | undefined): boolean {
 }
 
 /**
+ * 清掉一个文本批次留在画布上的「聚合标记」。
+ *
+ * 生成期间子节点靠 `batchRootId` 指向承载节点，渲染层据此把它们藏起来，
+ * 画布上只看到承载节点在 loading。批次结束后必须撤掉这些标记：
+ * - 承载节点不再声称自己是批次根，避免下一轮生成复用旧子节点列表；
+ * - 保留下来的失败子节点恢复可见，才能单独重试。
+ *
+ * 只处理文本节点；图片批次有自己的 reclaim 逻辑，不能被这里误清。
+ */
+export function clearTextBatchMarkers(nodes: CanvasNodeData[], rootId: string): CanvasNodeData[] {
+    const root = nodes.find((node) => node.id === rootId);
+    if (!root || root.type !== TEXT_NODE_TYPE) return nodes;
+    return nodes.map((node) => {
+        if (node.id === rootId) {
+            if (!node.metadata?.isBatchRoot && !node.metadata?.batchChildIds?.length) return node;
+            const metadata = { ...node.metadata };
+            delete metadata.isBatchRoot;
+            delete metadata.batchChildIds;
+            delete metadata.imageBatchExpanded;
+            return { ...node, metadata };
+        }
+        if (node.metadata?.batchRootId !== rootId) return node;
+        const metadata = { ...node.metadata };
+        delete metadata.batchRootId;
+        return { ...node, metadata };
+    });
+}
+
+/**
  * 文本批次收口：把一次生成的多份结果折成**一个**节点，其余进 `metadata.mediaHistory`。
  *
  * 为什么要先各落一个临时节点再收口：`commitCanvasGenerationResult` 不允许把结果写到
@@ -78,13 +107,14 @@ export function finalizeCompletedTextBatch(
     const children = childIds
         .map((id) => nodeById.get(id))
         .filter((node): node is CanvasNodeData => Boolean(node && node.type === TEXT_NODE_TYPE));
-    if (!children.length) return { nodes, removedIds: [] };
+    if (!children.length) return { nodes: clearTextBatchMarkers(nodes, sourceNodeId), removedIds: [] };
     // 还有子任务没落地：等它出完再收口，否则把在途结果也当成失败节点留下。
     if (children.some((node) => !hasTextBatchResult(node) && node.metadata?.status === "loading")) {
         return { nodes, removedIds: [] };
     }
     const successful = children.filter(hasTextBatchResult);
-    if (!successful.length) return { nodes, removedIds: [] };
+    // 全失败：收口无事可做，但批次标记必须撤掉，否则失败的子节点会一直隐藏。
+    if (!successful.length) return { nodes: clearTextBatchMarkers(nodes, sourceNodeId), removedIds: [] };
 
     const isConfigSource = source.type === CONFIG_NODE_TYPE;
     // 原地生成失败时来源节点是空的：把第一份成功结果提升上去，而不是让用户看到一张空节点。
@@ -115,7 +145,27 @@ export function finalizeCompletedTextBatch(
     const next = nodes
         .filter((node) => !removed.has(node.id))
         .map((node) => (node.id === carrier.id ? { ...node, metadata } : node));
-    return { nodes: next, removedIds };
+    return { nodes: clearTextBatchMarkers(next, sourceNodeId), removedIds };
+}
+
+/**
+ * 刷新/恢复后补齐文本批次：在途的保持隐藏，已结束的走一次收口并撤掉标记。
+ *
+ * 正常流程由 executor 收口；但刷新会中断 executor，只剩画布上的节点状态。
+ * 这里兜住「刷新后子节点永久隐藏」的情况。
+ */
+export function reconcileTextBatchRoots(nodes: CanvasNodeData[]): CanvasNodeData[] {
+    let next = nodes;
+    for (const candidate of nodes) {
+        const root = next.find((node) => node.id === candidate.id);
+        if (!root || root.type !== TEXT_NODE_TYPE || !root.metadata?.isBatchRoot) continue;
+        const childIds = root.metadata.batchChildIds || [];
+        const nodeById = new Map(next.map((node) => [node.id, node]));
+        if (childIds.some((id) => nodeById.get(id)?.metadata?.status === "loading")) continue;
+        const finalized = finalizeCompletedTextBatch(root.id, childIds, next);
+        next = clearTextBatchMarkers(finalized.nodes, root.id);
+    }
+    return next;
 }
 
 /** 取消时清掉没出结果的占位节点，已完成的成功结果照常收口。 */

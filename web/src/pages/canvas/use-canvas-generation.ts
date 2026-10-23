@@ -5,6 +5,7 @@ import { App } from "antd";
 import { applyGenerationTaskResultToNodes, generationTaskCanReloadResource, generationTaskNodeId } from "@/lib/canvas/canvas-generation-task-sync";
 import { commitCanvasGenerationResult } from "@/lib/canvas/canvas-generation-result";
 import { reconcileImageBatchRoot } from "@/lib/canvas/canvas-image-batch-retry";
+import { reconcileTextBatchRoots } from "@/lib/canvas/canvas-text-generation";
 import { markCanvasTaskRecoveryUnconfirmed } from "@/lib/canvas/canvas-task-state";
 import { applyCanvasGenerationTaskNodeEffect, isCanvasGenerationDurableAckError } from "@/services/canvas-generation-consumer";
 import { consumeGenerationTaskNode, ensureCanvasNodeAsset, retryCanvasAssetSyncAfterRateLimit } from "@/services/project-asset-sync";
@@ -377,7 +378,9 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
             if (!isCurrentProject()) return;
             const recoveryNodes = nodesRef.current.filter((node) => {
                 const pendingAgentContinuation = node.metadata?.agentGenerationContinuation?.status === "pending";
-                const aggregateBatchRoot = node.metadata?.isBatchRoot && node.metadata.batchChildIds?.length;
+                // 只有图片批次父节点是纯投影，本身没有任务；文本批次的承载节点自己就是一个任务，
+                // 跳过它会让刷新后原地生成的正文永远停在 loading。
+                const aggregateBatchRoot = node.type === CanvasNodeType.Image && node.metadata?.isBatchRoot && node.metadata.batchChildIds?.length;
                 if (aggregateBatchRoot && !pendingAgentContinuation) return false;
                 return pendingAgentContinuation || node.metadata?.status === NODE_STATUS_LOADING || node.metadata?.errorDetails === "页面刷新后生成已中断，请重新生成。" || Boolean(node.metadata?.taskId && node.metadata.status !== NODE_STATUS_SUCCESS);
             });
@@ -459,9 +462,11 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
             if (!isCurrentProject()) return;
             setNodes((current) =>
                 isCurrentProject()
-                    ? current.map((node) => {
-                          return reconcileImageBatchRoot(node, current);
-                      })
+                    ? reconcileTextBatchRoots(
+                          current.map((node) => {
+                              return reconcileImageBatchRoot(node, current);
+                          }),
+                      )
                     : current,
             );
         },

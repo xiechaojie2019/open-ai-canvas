@@ -4,7 +4,9 @@ import { canvasMediaSourceKey, isMediaAggregationTarget, MEDIA_HISTORY_LIMIT, pu
 import {
     canGenerateTextInPlace,
     cancelIncompleteTextBatch,
+    clearTextBatchMarkers,
     finalizeCompletedTextBatch,
+    reconcileTextBatchRoots,
     rollbackTextInPlaceGeneration,
 } from "../src/lib/canvas/canvas-text-generation";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
@@ -259,5 +261,72 @@ describe("canvas text batch finalize", () => {
         const result = finalizeCompletedTextBatch("t1", ["c1"], nodes);
         expect(result.removedIds).toEqual([]);
         expect(result.nodes[0].metadata?.mediaHistory).toBeUndefined();
+    });
+
+    test("收口后撤掉批次标记，失败的子节点恢复可见", () => {
+        // 生成期间子节点靠 batchRootId 藏起来；收口后若不撤掉，失败节点永远点不到。
+        const nodes = [
+            textNode("t1", { content: "A", status: "success", isBatchRoot: true, batchChildIds: ["c1", "c2"], imageBatchExpanded: false }),
+            textNode("c1", { content: "B", status: "success", batchRootId: "t1" }),
+            textNode("c2", { status: "error", errorDetails: "模型拒绝", batchRootId: "t1" }),
+        ];
+        const result = finalizeCompletedTextBatch("t1", ["c1", "c2"], nodes);
+        const root = result.nodes.find((node) => node.id === "t1");
+        const failed = result.nodes.find((node) => node.id === "c2");
+
+        expect(root?.metadata?.isBatchRoot).toBeUndefined();
+        expect(root?.metadata?.batchChildIds).toBeUndefined();
+        expect(root?.metadata?.imageBatchExpanded).toBeUndefined();
+        expect(failed?.metadata?.batchRootId).toBeUndefined();
+        expect(failed?.metadata?.errorDetails).toBe("模型拒绝");
+    });
+
+    test("全部失败也撤掉批次标记，不留永远隐藏的空壳", () => {
+        const nodes = [
+            textNode("t1", { status: "error", isBatchRoot: true, batchChildIds: ["c1"], imageBatchExpanded: false }),
+            textNode("c1", { status: "error", batchRootId: "t1" }),
+        ];
+        const result = finalizeCompletedTextBatch("t1", ["c1"], nodes);
+        expect(result.nodes[0].metadata?.isBatchRoot).toBeUndefined();
+        expect(result.nodes[1].metadata?.batchRootId).toBeUndefined();
+    });
+
+    test("取消同样撤掉批次标记，已完成的成功结果照常进历史", () => {
+        const nodes = [
+            textNode("t1", { content: "A", status: "success", isBatchRoot: true, batchChildIds: ["c1", "c2"], imageBatchExpanded: false }),
+            textNode("c1", { content: "B", status: "success", batchRootId: "t1" }),
+            textNode("c2", { status: "loading", batchRootId: "t1" }),
+        ];
+        const result = cancelIncompleteTextBatch("t1", ["c1", "c2"], nodes);
+        expect(result.nodes.map((node) => node.id)).toEqual(["t1"]);
+        expect(result.nodes[0].metadata?.isBatchRoot).toBeUndefined();
+        expect(result.nodes[0].metadata?.mediaHistory?.[0].content).toBe("B");
+    });
+
+    test("刷新恢复：已完成批次收口，在途批次保持隐藏", () => {
+        const loading = [
+            textNode("t1", { status: "loading", isBatchRoot: true, batchChildIds: ["c1"], imageBatchExpanded: false }),
+            textNode("c1", { status: "loading", batchRootId: "t1" }),
+        ];
+        expect(reconcileTextBatchRoots(loading).map((node) => node.id)).toEqual(["t1", "c1"]);
+
+        const completed = [
+            textNode("t1", { content: "A", status: "success", isBatchRoot: true, batchChildIds: ["c1", "c2"], imageBatchExpanded: false }),
+            textNode("c1", { content: "B", status: "success", batchRootId: "t1" }),
+            textNode("c2", { status: "error", errorDetails: "模型拒绝", batchRootId: "t1" }),
+        ];
+        const recovered = reconcileTextBatchRoots(completed);
+        expect(recovered.map((node) => node.id)).toEqual(["t1", "c2"]);
+        expect(recovered[0].metadata?.isBatchRoot).toBeUndefined();
+        expect(recovered[0].metadata?.mediaHistory?.[0].content).toBe("B");
+        expect(recovered[1].metadata?.batchRootId).toBeUndefined();
+    });
+
+    test("只清文本批次的标记，不碰图片批次", () => {
+        const nodes = [
+            { ...textNode("img", { isBatchRoot: true, batchChildIds: ["c1"], imageBatchExpanded: false }), type: CanvasNodeType.Image },
+            { ...textNode("c1", { batchRootId: "img" }), type: CanvasNodeType.Image },
+        ];
+        expect(clearTextBatchMarkers(nodes, "img")).toBe(nodes);
     });
 });
