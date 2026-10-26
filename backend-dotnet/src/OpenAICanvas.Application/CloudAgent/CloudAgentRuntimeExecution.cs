@@ -706,7 +706,30 @@ public sealed partial class CloudAgentRuntimeService
             }
         }
         RuntimePolicySetting policy = _runtimePolicy.Current();
-        bool claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
+        // 外部（爱创）用户在 Agent 里生成媒体时，积分在爱创侧冻结，本站只落账单事实。
+        // 否则会走本地余额扣减：爱创账号的本站 creditAccounts 余额恒为 0，
+        // 一定会抛 insufficient_credits（见 Repository.OAuth 的建号逻辑）。
+        bool externalBilling = order is not null && _externalBilling is not null
+            && await _externalBilling.IsExternalUserAsync(run.UserID, cancellationToken)
+                .ConfigureAwait(false);
+        if (externalBilling)
+        {
+            // 冻结是外部网络调用，必须在事务之外完成。
+            try
+            {
+                await _externalBilling!.HoldAsync(order!, task, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await _repository.PersistExternalBillingOrderUncertainAsync(
+                    order!, "爱创积分已冻结但本站未能保存冻结单号", cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+        bool claimed;
+        try
+        {
+            claimed = await _repository.MutateCloudAgentAsync(run.UserID, run.ID, run.Revision,
             async (current, context) =>
             {
                 if (media is not null)
@@ -729,8 +752,16 @@ public sealed partial class CloudAgentRuntimeService
                         context, run.UserID, state.Request.CanvasID, media, task, policy,
                         CloudAgentMutations.RecorderForRun(run.ID, state), state, run.ID).ConfigureAwait(false);
                 }
-                await context.CreateTaskWithQuotaAsync(task, order, policy.Task.ActiveTaskLimit)
-                    .ConfigureAwait(false);
+                if (externalBilling)
+                {
+                    await context.CreateTaskWithExternalBillingAsync(task, order, policy.Task.ActiveTaskLimit)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await context.CreateTaskWithQuotaAsync(task, order, policy.Task.ActiveTaskLimit)
+                        .ConfigureAwait(false);
+                }
                 state.TaskIDs.Add(task.ID);
                 if (media is not null)
                 {
@@ -772,8 +803,20 @@ public sealed partial class CloudAgentRuntimeService
                 CloudAgentContracts.Save(current, state);
                 await context.SaveRunAsync(current).ConfigureAwait(false);
             }, cancellationToken).ConfigureAwait(false);
+        }
+        catch when (externalBilling)
+        {
+            await ReleaseExternalHoldAsync(
+                run.UserID, order!, "本站 Agent 任务落库失败", cancellationToken).ConfigureAwait(false);
+            throw;
+        }
         if (!claimed)
         {
+            if (externalBilling)
+            {
+                await ReleaseExternalHoldAsync(
+                    run.UserID, order!, "本站 Agent 任务未落库", cancellationToken).ConfigureAwait(false);
+            }
             if (media is not null)
             {
                 // 回滚可能发生在检查点编辑之后：重载最新运行后再记工具失败，
@@ -806,6 +849,35 @@ public sealed partial class CloudAgentRuntimeService
             return result;
         }
         return new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// 本站任务落库失败/未命中时释放爱创冻结。释放或读单号失败都要留下待核对账单，
+    /// 不能让「冻结了但没扣」静默丢失。
+    /// </summary>
+    private async Task ReleaseExternalHoldAsync(
+        string userId, BillingOrder order, string reason, CancellationToken cancellationToken)
+    {
+        if (_externalBilling is null)
+        {
+            return;
+        }
+        try
+        {
+            string? holdId = await _externalBilling.ReadHoldIdAsync(order.ID, cancellationToken)
+                .ConfigureAwait(false);
+            if (holdId is null)
+            {
+                throw new InvalidOperationException("爱创冻结单号不存在");
+            }
+            await _externalBilling.ReleaseHeldAsync(userId, order.ID, holdId, reason, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            await _repository.PersistExternalBillingOrderUncertainAsync(
+                order, reason + "，且爱创积分释放结果不明确", cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static Dictionary<string, JsonElement>? InputConfigInputJson(string inputJSON)

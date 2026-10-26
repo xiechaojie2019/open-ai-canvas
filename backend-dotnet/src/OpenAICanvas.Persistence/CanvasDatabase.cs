@@ -155,7 +155,16 @@ public sealed class CanvasDatabase : IAsyncDisposable
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            // 回调内部可能已经显式回滚（例如余额不足）；对已结束的事务再次回滚，
+            // Npgsql 会抛「This NpgsqlTransaction has completed」，把真实原因盖掉。
+            try
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                // 事务已结束：保留原始异常。
+            }
             throw;
         }
     }

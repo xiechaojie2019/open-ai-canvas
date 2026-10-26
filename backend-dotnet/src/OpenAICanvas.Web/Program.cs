@@ -253,7 +253,8 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<OpenAICanvas.Application.CloudAgent.CloudAgentSessionService>(),
         canvas.Skills,
         canvas.TaskLifecycle,
-        canvas.LogicalModels);
+        canvas.LogicalModels,
+        canvas.ExternalBilling);
 });
 // 云 Agent 调度器。对应 Go 的 worker 循环内 advanceCloudAgents。
 builder.Services.AddHostedService<OpenAICanvas.Web.Workers.CloudAgentSchedulerWorker>();

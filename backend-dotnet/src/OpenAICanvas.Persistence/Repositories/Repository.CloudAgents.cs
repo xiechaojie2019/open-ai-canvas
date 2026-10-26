@@ -662,6 +662,13 @@ public sealed class CloudAgentMutationContext : IAsyncDisposable
         TaskEntity task, BillingOrder? order, int activeTaskLimit, CancellationToken cancellationToken = default) =>
         _repository.CreateTaskWithQuotaInTxAsync(_connection, _transaction, task, order, activeTaskLimit, cancellationToken);
 
+    /// <summary>在事务内落库外部积分任务：积分已由爱创冻结，本站不扣本地余额。</summary>
+    public Task CreateTaskWithExternalBillingAsync(
+        TaskEntity task, BillingOrder? order, int activeTaskLimit, CancellationToken cancellationToken = default) =>
+        _repository.CreateTaskWithQuotaInTxAsync(
+            _connection, _transaction, task, order, activeTaskLimit, cancellationToken,
+            skipLocalReservation: true);
+
     public Task CreateCloudAgentCanvasMutationAsync(
         CloudAgentCanvasMutation mutation, CancellationToken cancellationToken = default) =>
         _repository.CreateCloudAgentCanvasMutationInTxAsync(_connection, _transaction, mutation, cancellationToken);

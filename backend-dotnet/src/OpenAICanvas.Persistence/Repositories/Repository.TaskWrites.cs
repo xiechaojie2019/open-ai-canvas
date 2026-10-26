@@ -132,7 +132,6 @@ public sealed partial class Repository
             cancellationToken).ConfigureAwait(false);
         if (updated != 1)
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException("insufficient_credits");
         }
         await ExecuteAsync(

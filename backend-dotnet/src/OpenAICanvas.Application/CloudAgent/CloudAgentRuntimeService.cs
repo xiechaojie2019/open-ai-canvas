@@ -30,6 +30,9 @@ public sealed partial class CloudAgentRuntimeService
     private readonly SkillsService _skills;
     private readonly TaskLifecycleService _taskLifecycle;
 
+    /// <summary>爱创外部积分；未配置时为 null，此时所有用户按本站积分结算。</summary>
+    private readonly ExternalBillingService? _externalBilling;
+
     /// <summary>逻辑模型目录（预算交集用）；测试可省略，此时逻辑模型走默认窗口。</summary>
     private readonly LogicalModelService? _logicalModels;
 
@@ -41,7 +44,8 @@ public sealed partial class CloudAgentRuntimeService
         CloudAgentSessionService sessions,
         SkillsService skills,
         TaskLifecycleService taskLifecycle,
-        LogicalModelService? logicalModels = null)
+        LogicalModelService? logicalModels = null,
+        ExternalBillingService? externalBilling = null)
     {
         _repository = repository;
         _taskCreation = taskCreation;
@@ -51,6 +55,7 @@ public sealed partial class CloudAgentRuntimeService
         _skills = skills;
         _taskLifecycle = taskLifecycle;
         _logicalModels = logicalModels;
+        _externalBilling = externalBilling;
     }
 
     // ------------------------------------------------------------ 校验与解码

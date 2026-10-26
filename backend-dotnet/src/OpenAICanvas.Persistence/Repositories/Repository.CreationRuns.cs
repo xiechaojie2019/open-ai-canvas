@@ -595,7 +595,8 @@ public sealed partial class Repository
 
     internal async Task CreateTaskWithQuotaInTxAsync(
         DbConnection connection, DbTransaction transaction, TaskEntity task,
-        BillingOrder? order, int activeTaskLimit, CancellationToken cancellationToken)
+        BillingOrder? order, int activeTaskLimit, CancellationToken cancellationToken,
+        bool skipLocalReservation = false)
     {
         if (task.LogicalModelID.Length > 0)
         {
@@ -622,8 +623,19 @@ public sealed partial class Repository
         }
         if (order is not null)
         {
-            await ReserveBillingOrderInTransactionAsync(
-                connection, transaction, order, cancellationToken).ConfigureAwait(false);
+            if (skipLocalReservation)
+            {
+                // 外部（爱创）用户：积分已在外部冻结，本站只落账单事实，不扣本地余额。
+                order.ReservedAmountMicrocredits = order.AmountMicrocredits;
+                await ExecuteAsync(
+                    connection, SqlBuilder.Insert<BillingOrder>(), order, transaction, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await ReserveBillingOrderInTransactionAsync(
+                    connection, transaction, order, cancellationToken).ConfigureAwait(false);
+            }
         }
         await ExecuteAsync(
             connection, SqlBuilder.Insert<TaskEntity>(), task, transaction, cancellationToken).ConfigureAwait(false);
