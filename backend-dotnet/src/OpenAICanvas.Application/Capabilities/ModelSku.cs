@@ -68,6 +68,10 @@ public static class ModelSku
         ChannelModel channelModel, ModelRequestIntent intent)
     {
         Dictionary<string, string> selector = SkuSelectorForIntent(intent);
+        // 图片画布保存的是 "3:2"，而执行端提交的是同一画幅的具体像素
+        // （例如 1536x1024）。价格档同时接受两种写法，尺寸按画幅比例等价匹配，
+        // 分辨率仍由 quality 键（1k/2k/4k）区分。
+        bool imageSizeRatioFallback = CapabilitySpecOps.NormalizeCapability(intent.Capability) == "image";
         int bestScore = -1;
         ChannelModelPriceTier? best = null;
         foreach (ChannelModelPriceTier tier in channelModel.PriceTiers)
@@ -76,7 +80,8 @@ public static class ModelSku
             {
                 continue;
             }
-            (bool matched, int score) = MatchSkuSelector(SkuSelectorForTier(tier), selector);
+            (bool matched, int score) = MatchSkuSelector(
+                SkuSelectorForTier(tier), selector, imageSizeRatioFallback);
             if (!matched)
             {
                 continue;
@@ -191,7 +196,7 @@ public static class ModelSku
     /// <summary>对应 Go: <c>normalizeImagePriceQuality</c>。按像素面积估算价格档位。</summary>
     public static string NormalizeImagePriceQuality(string rawQuality, string rawSize)
     {
-        string quality = rawQuality.Trim().ToLowerInvariant();
+        string quality = NormalizeImageQualityAlias(rawQuality);
         if (quality.Length > 0 && quality != "auto" && quality != "any")
         {
             return quality;
@@ -215,6 +220,35 @@ public static class ModelSku
             <= 8_294_400 => "4k",
             _ => "",
         };
+    }
+
+    /// <summary>
+    /// 图片价格档使用 1k/2k/4k 一套档位，而画布与上游会传 low/medium/high、
+    /// standard/hd。这里统一折算，避免同一档位在价格匹配时找不到价格。
+    /// </summary>
+    private static string NormalizeImageQualityAlias(string rawQuality) =>
+        rawQuality.Trim().ToLowerInvariant() switch
+        {
+            "low" or "standard" => "1k",
+            "medium" or "hd" => "2k",
+            "high" => "4k",
+            string other => other,
+        };
+
+    /// <summary>
+    /// 图片价格档使用的 quality：显式 quality 优先；auto/空值时按像素尺寸推导
+    /// （画布选 2K / 4K 时 quality 仍是 auto，固定 1k 会把高分辨率按 1K 计价）。
+    /// 尺寸也无法解析时保持历史兜底 1k。
+    /// </summary>
+    public static string PricingQualityForImage(string rawQuality, string rawSize)
+    {
+        string quality = rawQuality.Trim().ToLowerInvariant();
+        if (quality.Length > 0 && quality != "<nil>" && quality != "auto" && quality != "any")
+        {
+            return NormalizeImageQualityAlias(quality);
+        }
+        string derived = NormalizeImagePriceQuality("", rawSize);
+        return derived.Length > 0 ? derived : "1k";
     }
 
     /// <summary>对应 Go: <c>skuSelectorForTier</c>。SelectorJSON 为空时回落到解析度/时长。</summary>
@@ -241,7 +275,9 @@ public static class ModelSku
     /// 对应 Go: <c>matchSKUSelector</c>。返回是否匹配与命中键数（分数越高越精确）。
     /// </summary>
     public static (bool Matched, int Score) MatchSkuSelector(
-        IReadOnlyDictionary<string, string> tier, IReadOnlyDictionary<string, string> requested)
+        IReadOnlyDictionary<string, string> tier,
+        IReadOnlyDictionary<string, string> requested,
+        bool imageSizeRatioFallback = false)
     {
         int score = 0;
         foreach ((string key, string expectedRaw) in tier)
@@ -253,10 +289,59 @@ public static class ModelSku
             }
             if (!requested.TryGetValue(key, out string? actual) || actual != expected)
             {
-                return (false, 0);
+                bool equivalent = imageSizeRatioFallback
+                    && key == "size"
+                    && actual is not null
+                    && SameImageAspectRatio(expected, actual);
+                if (!equivalent)
+                {
+                    return (false, 0);
+                }
             }
             score++;
         }
         return (true, score);
+    }
+
+    /// <summary>
+    /// 判断两种图片尺寸写法是否表示同一画幅：支持 "3:2"、"1536x1024"、
+    /// "1024*1024px" 等。前端预设为对齐 16 的倍数会偏离整数比例
+    /// （如 16:9 的 1K 是 1824x1024），因此与前端 closestRatio 一样用 2.5% 容差。
+    /// </summary>
+    public static bool SameImageAspectRatio(string left, string right)
+    {
+        (long leftWidth, long leftHeight, bool leftPixels) = ParseImageDimensions(left);
+        (long rightWidth, long rightHeight, bool rightPixels) = ParseImageDimensions(right);
+        if (leftWidth <= 0 || leftHeight <= 0 || rightWidth <= 0 || rightHeight <= 0)
+        {
+            return false;
+        }
+        // 两边都是具体像素时必须等尺寸：避免只配了 size、没配 quality 的价格档
+        // 把同比例但不同分辨率的请求也算进来。
+        if (leftPixels && rightPixels)
+        {
+            return leftWidth == rightWidth && leftHeight == rightHeight;
+        }
+        double leftRatio = (double)leftWidth / leftHeight;
+        double rightRatio = (double)rightWidth / rightHeight;
+        return Math.Abs(leftRatio - rightRatio) / rightRatio <= 0.025;
+    }
+
+    private static (long Width, long Height, bool Pixels) ParseImageDimensions(string raw)
+    {
+        string value = raw.Trim().ToLowerInvariant().Replace('×', 'x');
+        if (value.EndsWith("px", StringComparison.Ordinal))
+        {
+            value = value[..^2].Trim();
+        }
+        bool pixels = value.Contains('x') || value.Contains('*');
+        string[] parts = value.Split(['x', '*', ':'], StringSplitOptions.TrimEntries);
+        if (parts.Length != 2
+            || !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out long width)
+            || !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long height))
+        {
+            return (0, 0, false);
+        }
+        return (width, height, pixels);
     }
 }

@@ -786,7 +786,7 @@ func skuSelectorForIntent(intent ModelRequestIntent) map[string]string {
 }
 
 func normalizeImagePriceQuality(rawQuality string, rawSize string) string {
-	quality := strings.ToLower(strings.TrimSpace(rawQuality))
+	quality := normalizeImageQualityAlias(rawQuality)
 	if quality != "" && quality != "auto" && quality != "any" {
 		return quality
 	}
@@ -809,6 +809,21 @@ func normalizeImagePriceQuality(rawQuality string, rawSize string) string {
 		return "4k"
 	default:
 		return ""
+	}
+}
+
+// 图片价格档只有 1k/2k/4k，而画布与上游会传 low/medium/high、standard/hd。
+// 这里统一折算，避免同一档位在价格匹配时找不到价格。
+func normalizeImageQualityAlias(rawQuality string) string {
+	switch strings.ToLower(strings.TrimSpace(rawQuality)) {
+	case "low", "standard":
+		return "1k"
+	case "medium", "hd":
+		return "2k"
+	case "high":
+		return "4k"
+	default:
+		return strings.ToLower(strings.TrimSpace(rawQuality))
 	}
 }
 
