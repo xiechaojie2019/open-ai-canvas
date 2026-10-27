@@ -775,8 +775,21 @@ public sealed class FinanceService
             }
             else
             {
-                await _repository.SettleBillingOrderAsync(id, order.ProviderRequestID, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await _repository.SettleBillingOrderAsync(id, order.ProviderRequestID, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (BillingUsageUnavailableException error)
+                {
+                    // token 订单缺少上游用量时，管理端需要看到可执行的处置说明；
+                    // 直接冒泡会被包成「系统处理失败」，看不出该改走退回还是补录用量。
+                    throw new AppError(
+                        ErrorCodes.Conflict,
+                        "该订单缺少上游 token 用量，无法按用量结算；请改用退回预留，或核对上游日志后人工补录。",
+                        reason: ErrorReasons.BillingUsageUnavailable,
+                        cause: error);
+                }
             }
         }
         else

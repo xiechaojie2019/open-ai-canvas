@@ -23,6 +23,12 @@ public static class ApiCallPayload
     public const int MaxPayloadSourceBytes = 1 << 20;
 
     /// <summary>
+    /// 截断时保留的尾部字符数。流式文本的 usage 块在报文末尾，只留头部会让
+    /// 日志里永远看不到用量，结算失败时无从排查。
+    /// </summary>
+    private const int TailKeepChars = 16 << 10;
+
+    /// <summary>
     /// 触发解析克隆的上限。生图/生视频响应常内嵌数 MB 的 b64_json，对其做
     /// Parse+MarshalIndent 会造成秒级 CPU 克隆风暴（worker 执行线程 + 审计并发），
     /// 曾把任务租约续期的 timer 回调延迟到租约过期之后；超过该值直接存摘要。
@@ -46,7 +52,7 @@ public static class ApiCallPayload
         }
         if (data.Length > MaxPayloadSourceBytes)
         {
-            return $"[报文过大，已省略，共 {data.Length} 字节]";
+            return OversizeReport(data);
         }
         if (data.Length <= MaxParseBytes && IsValidJson(data))
         {
@@ -335,7 +341,67 @@ public static class ApiCallPayload
         {
             return value;
         }
-        return value[..MaxPayloadChars] + $"\n[报文已截断，原始长度 {Encoding.UTF8.GetByteCount(value)} 字节]";
+        // 头 + 尾窗口：头部保留请求上下文，尾部保留流式响应的 usage 块。
+        int head = MaxPayloadChars - TailKeepChars;
+        int tail = value.Length - TailKeepChars;
+        return value[..head]
+            + $"\n[报文已截断，原始长度 {Encoding.UTF8.GetByteCount(value)} 字节，以下为尾部 {TailKeepChars} 字符]\n"
+            + value[tail..];
+    }
+
+    /// <summary>
+    /// 超过源报文上限时的落库内容：完整报文不入库，但保留流式响应尾部的 usage 块，
+    /// 否则超限响应在日志里只剩一句「已省略」，结算失败无法定位。
+    /// </summary>
+    private static string OversizeReport(byte[] data)
+    {
+        string summary = $"[报文过大，已省略，共 {data.Length} 字节]";
+        if (!IsEventStream(data))
+        {
+            return summary;
+        }
+        string tail = Encoding.UTF8.GetString(TailWindow(data, MaxPayloadChars));
+        return summary + "\n" + Truncate(tail);
+    }
+
+    /// <summary>
+    /// 是否为 SSE 流式报文。只看首尾窗口，避免为大报文做整包扫描。
+    /// </summary>
+    public static bool IsEventStream(byte[] data)
+    {
+        if (data.Length == 0)
+        {
+            return false;
+        }
+        int headHit = IndexOf(data, EventStreamMarker, 0);
+        if (headHit >= 0 && headHit < Math.Min(data.Length, 1 << 10))
+        {
+            return true;
+        }
+        return IndexOf(data, EventStreamMarker, Math.Max(0, data.Length - (4 << 10))) >= 0;
+    }
+
+    private static readonly byte[] EventStreamMarker = "data:"u8.ToArray();
+
+    /// <summary>
+    /// 取从行首对齐的尾部窗口。从中间切开的半行会被后续解析丢弃，不影响结果。
+    /// </summary>
+    public static byte[] TailWindow(byte[] data, int maxBytes)
+    {
+        if (data.Length <= maxBytes)
+        {
+            return data;
+        }
+        int start = data.Length - maxBytes;
+        while (start < data.Length && data[start] != (byte)'\n')
+        {
+            start++;
+        }
+        if (start >= data.Length)
+        {
+            return data;
+        }
+        return data[start..];
     }
 
     private static int IndexOf(byte[] source, byte[] pattern, int start)

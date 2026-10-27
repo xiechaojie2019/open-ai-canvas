@@ -20,6 +20,9 @@ public static class ErrorReasons
     public const string Internal = "internal";
     public const string BadGateway = "bad_gateway";
 
+    /// <summary>上游成功但未返回用量，token 订单无法按用量结算。</summary>
+    public const string BillingUsageUnavailable = "billing_usage_unavailable";
+
     /// <summary>
     /// 状态码到原因的唯一映射。空字符串表示"无 reason"，调用方据此决定是否写出该字段。
     /// </summary>

@@ -426,11 +426,16 @@ public sealed class ApiCallAuditWriter
         // 生图/生视频响应内嵌数 MB 的 b64_json：对它做 JsonDocument.Parse 是 CPU 克隆风暴，
         // 会拖垮任务租约续期的 timer；超限响应只保留路径推导，跳过正文扫描（用量提取
         // 对媒体响应本就基本不存在）。
-        if (responseBody.Length > MaxEnrichParseBytes)
+        if (responseBody.Length > MaxEnrichParseBytes && !ApiCallPayload.IsEventStream(responseBody))
         {
             return;
         }
-        foreach (JsonElement payload in ResponsePayloads(responseBody))
+        // 流式文本的 usage 只在最后一块 chunk；超限时按行对齐取尾部窗口解析，
+        // 否则长回答会整段落丢用量，token 订单必然无法结算。
+        byte[] parsedBody = responseBody.Length > MaxEnrichParseBytes
+            ? ApiCallPayload.TailWindow(responseBody, MaxEnrichParseBytes)
+            : responseBody;
+        foreach (JsonElement payload in ResponsePayloads(parsedBody))
         {
             EnrichPayload(log, payload);
         }

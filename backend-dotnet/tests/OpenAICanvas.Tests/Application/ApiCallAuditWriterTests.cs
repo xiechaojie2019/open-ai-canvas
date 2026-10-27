@@ -336,6 +336,39 @@ public sealed class ApiCallAuditWriterTests : IDisposable
         Assert.Equal(1, await LogCountAsync());
     }
 
+    [Fact]
+    public async Task 流式文本响应超过解析上限_仍能从尾部窗口取到usage()
+    {
+        await SeedUserAndTaskAsync("task-audit-sse");
+
+        // 长回答的 usage 只在最后一个 chunk；整体跳过解析会让 token 订单永久无法结算。
+        StringBuilder body = new();
+        body.Append("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n");
+        for (int i = 0; i < 3000; i++)
+        {
+            body.Append("data: {\"choices\":[{\"delta\":{\"content\":\"分段正文 ");
+            body.Append(i);
+            body.Append("\"}}]}\n\n");
+        }
+        body.Append("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":321,\"completion_tokens\":654,\"total_tokens\":975}}\n\n");
+        body.Append("data: [DONE]\n\n");
+        Assert.True(Encoding.UTF8.GetByteCount(body.ToString()) > (128 << 10));
+
+        (ApiCallAuditWriter writer, _) = Writer();
+        await writer.RecordAsync(
+            Audit(taskID: "task-audit-sse", capability: "text", model: "glm-5.3-flash"),
+            Observation(
+                path: "/v1/chat/completions",
+                response: body.ToString(),
+                request: """{"model":"glm-5.3-flash","stream":true,"messages":[{"role":"user","content":"写一段介绍"}]}"""));
+
+        ApiCallLog? log = (await AllLogsAsync()).FirstOrDefault();
+        Assert.NotNull(log);
+        Assert.True(log!.UsageAvailable);
+        Assert.Equal(321, log.InputTokens);
+        Assert.Equal(654, log.OutputTokens);
+    }
+
     [Theory]
     [InlineData("canvas_image", "image")]
     [InlineData("canvas_video", "video")]
