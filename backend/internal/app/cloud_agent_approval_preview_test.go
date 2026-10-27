@@ -83,6 +83,29 @@ func TestCloudAgentCanvasApprovalPreviewRejectsUnknownTargetInsteadOfFallingBack
 	}
 }
 
+// 基于图片产出文本时，文本节点既是结果又是下一版提示词：正文必须同时写入
+// content 与 prompt/composerContent，否则画布输入框会是空的。
+func TestCloudAgentCanvasApprovalPreviewKeepsTextPromptAndAllowsImageReference(t *testing.T) {
+	doc, err := creationDocument(`{"nodes":[{"id":"image-1","type":"image","title":"红色上衣"}],"connections":[]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := applyCloudAgentCanvasPlan(doc, []agentCanvasOp{
+		{Type: "add_node", ID: "text-1", NodeType: "text", Title: stringPtr("红色上衣 · 卖点"), Content: stringPtr("卖点正文")},
+		{Type: "connect_nodes", ID: "edge-1", FromNodeID: "image-1", ToNodeID: "text-1"},
+	})
+	if err != nil {
+		t.Fatalf("图片到文本节点的参考连线必须被接受：%v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected add and connect preview items, got %d", len(items))
+	}
+	metadata := doc["nodes"].([]map[string]any)[1]["metadata"].(map[string]any)
+	if metadata["content"] != "卖点正文" || metadata["prompt"] != "卖点正文" || metadata["composerContent"] != "卖点正文" {
+		t.Fatalf("text node lost prompt draft: %+v", metadata)
+	}
+}
+
 // 漏 patch 必须是**可恢复的参数错误**：运行期会把它当工具结果回给模型重试，
 // 而不是把整轮判死；未知操作类型（例如删除）仍按准入失败终止。
 func TestCloudAgentCanvasApprovalPreviewTreatsMissingPatchAsArgumentError(t *testing.T) {

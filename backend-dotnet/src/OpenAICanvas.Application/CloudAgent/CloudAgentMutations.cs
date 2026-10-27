@@ -640,8 +640,16 @@ public static class CloudAgentMutations
                     // 纵向对齐中心），没有来源时退回模型坐标，最后统一做就近空位避让。
                     (double startX, double startY) = AddNodeStart(nodes, op, capability.DefaultWidth, capability.DefaultHeight);
                     (double placeX, double placeY) = NearestFreeSlot(nodes, startX, startY, capability.DefaultWidth, capability.DefaultHeight);
+                    JsonObject metadata = capability.Metadata(content) ?? new JsonObject();
+                    if (capability.Type == "text")
+                    {
+                        // 文本节点的正文同时是下一版提示词：只写 content 时节点能显示正文，
+                        // 但提示词面板读的是 prompt/composerContent，会出现空输入框。
+                        metadata["prompt"] = content;
+                        metadata["composerContent"] = content;
+                    }
                     JsonObject node = AddedNode(
-                        op.ID, op.NodeType, title, placeX, placeY, capability.Metadata(content));
+                        op.ID, op.NodeType, title, placeX, placeY, metadata);
                     nodes.Add(node);
                     string nodeTitle = ApprovalNodeTitle(node, capability.Label);
                     items.Add(new CloudAgentApprovalPreviewItemDto

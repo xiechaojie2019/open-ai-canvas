@@ -140,7 +140,14 @@ func applyCloudAgentCanvasPlan(doc map[string]any, ops []agentCanvasOp) ([]cloud
 					}
 				}
 			}
-			node := creationAddedNode(CreationCanvasOp{Type: op.Type, ID: op.ID, NodeType: op.NodeType, Title: title, X: x, Y: y, Metadata: capability.Metadata(content)})
+			metadata := capability.Metadata(content)
+			if capability.Type == "text" {
+				// 文本节点的正文同时是下一版提示词：只写 content 时节点能显示正文，
+				// 但提示词面板读的是 prompt/composerContent，会出现空输入框。
+				metadata["prompt"] = content
+				metadata["composerContent"] = content
+			}
+			node := creationAddedNode(CreationCanvasOp{Type: op.Type, ID: op.ID, NodeType: op.NodeType, Title: title, X: x, Y: y, Metadata: metadata})
 			nodes = append(nodes, node)
 			nodeTitle := cloudAgentApprovalNodeTitle(node, capability.Label)
 			items = append(items, cloudAgentApprovalPreviewItem{

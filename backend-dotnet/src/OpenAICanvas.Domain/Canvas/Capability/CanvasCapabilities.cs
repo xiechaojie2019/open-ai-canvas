@@ -433,7 +433,10 @@ public static class BuiltinCanvasCapabilities
             GoodFor = ["单个创意", "一次性提示词", "临时备注", "快速试验"],
             NotIdealFor = ["多镜头脚本", "需要逐镜修改的内容", "需要镜头级资产关系的内容"],
             Tradeoffs = ["创建和编辑最轻量", "没有镜头级字段和逐镜维护能力"],
-            InputKind = "text", Connection = new ConnectionPolicy { CanSource = true }, CanUpdate = true,
+            InputKind = "text", Connection = new ConnectionPolicy
+            {
+                CanSource = true, CanTarget = true, AcceptedInputKinds = ["text", "image"],
+            }, CanUpdate = true,
             SummaryFields = ["content"], DetailFields = ["content"],
             PatchFields = EditableNodeFields("metadata.content", "正文", "节点正文"),
             CreateMetadata = content => new JsonObject

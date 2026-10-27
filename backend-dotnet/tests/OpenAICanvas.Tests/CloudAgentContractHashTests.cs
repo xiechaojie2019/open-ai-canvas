@@ -18,7 +18,7 @@ public class CloudAgentContractHashTests
     public void CapabilitySetHash_MatchesGoBaseline()
     {
         Assert.Equal(
-            "9f4199f9d89d5ce4ba08142f78c17cdd6c8f888c46069ea562786e0bfd8cf980",
+            "910aa1fc3959f67d9228d3f006b2558631b242423931ce5b6547ff7e1dab65bd",
             BuiltinCanvasCapabilities.BuiltinRegistry().Hash());
     }
 
@@ -32,10 +32,10 @@ public class CloudAgentContractHashTests
     public async Task AgentPolicyDocuments_MatchGoBaselines()
     {
         (AgentPolicy system, AgentPolicy media) = await AgentPolicyDocuments.LoadAgentPoliciesAsync();
-        // 系统策略未改：解析 + 哈希必须与 Go 逐字节一致，这条就是「同一份文档两边算出同一个哈希」的证据。
+        // 系统策略 v3：新增「图片产出文本时建参考连线」规则，解析 + 哈希必须与 Go 逐字节一致。
         Assert.Equal("cloud-agent-system", system.Id);
-        Assert.Equal(2, system.Version);
-        Assert.Equal("82fc03c3b8a5b484acc4119569eaf0f3ffdffabd459839b6ce89e0598cb40d43", system.Hash);
+        Assert.Equal(3, system.Version);
+        Assert.Equal("ee441a9879ec5a5b40237ac6403342919ea45143a4e0e4ca8eb6cc158e98794b", system.Hash);
         Assert.Equal("cloud-agent-media", media.Id);
         // ⚠️ 媒体策略**有意偏离 Go 基线**（Go 为 version 2 / abcd5762…）：
         // 本 fork 按产品要求放开了两处规则 —— auto 模式不再对 generate_media 强制人工审批、

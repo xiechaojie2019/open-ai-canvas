@@ -15,7 +15,9 @@ func BuiltinRegistry() *Registry {
 			GoodFor:     []string{"单个创意", "一次性提示词", "临时备注", "快速试验"},
 			NotIdealFor: []string{"多镜头脚本", "需要逐镜修改的内容", "需要镜头级资产关系的内容"},
 			Tradeoffs:   []string{"创建和编辑最轻量", "没有镜头级字段和逐镜维护能力"},
-			InputKind:   "text", Connection: ConnectionPolicy{CanSource: true}, CanUpdate: true,
+			InputKind: "text", Connection: ConnectionPolicy{
+				CanSource: true, CanTarget: true, AcceptedInputKinds: []string{"text", "image"},
+			}, CanUpdate: true,
 			SummaryFields: []string{"content"}, DetailFields: []string{"content"},
 			PatchFields: editableNodeFields("metadata.content", "正文", "节点正文"),
 			CreateMetadata: func(content string) map[string]any {
