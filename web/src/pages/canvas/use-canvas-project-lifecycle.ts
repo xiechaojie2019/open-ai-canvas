@@ -80,7 +80,7 @@ export function useCanvasProjectLifecycle({
     cleanupAssetImages,
     cleanupCanvasFiles,
 }: UseCanvasProjectLifecycleOptions) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const navigate = useNavigate();
     const hydrated = useCanvasStore((state) => state.hydrated);
     const sessionHydrated = useUserStore((state) => state.hydrated);
@@ -290,24 +290,35 @@ export function useCanvasProjectLifecycle({
         });
     }, [message, navigate]);
 
-    const deleteCurrentProject = useCallback(async () => {
-        let drawingIds = nodesRef.current.flatMap((node) => node.type === "drawing" && node.metadata?.drawingId ? [node.metadata.drawingId] : []);
-        try {
-            const drafts = await readCanvasSyncDrafts(projectId);
-            const preserved = new Set(drafts.flatMap((draft) => draft.project.nodes.flatMap((node) => node.metadata?.drawingId ? [node.metadata.drawingId] : [])));
-            drawingIds = drawingIds.filter((id) => !preserved.has(id));
-            await deleteCanvasProjectsWithRemoteSync([projectId]);
-        } catch (error) {
-            message.error(error instanceof Error ? `删除画布失败：${error.message}` : "删除画布失败，请稍后重试");
-            return;
-        }
-        if (drawingIds.length) {
-            void Promise.all(drawingIds.map((drawingId) => removeCanvasDrawing(projectId, drawingId)))
-                .catch(() => message.warning("项目已删除，但部分本地绘图缓存清理失败"));
-        }
-        cleanupAssetImages();
-        navigate("/canvas");
-    }, [cleanupAssetImages, message, navigate, nodesRef, projectId]);
+    const deleteCurrentProject = useCallback(() => {
+        // 画布上的任务已经扣费，删除时任务继续跑、产物由后端补登素材库，
+        // 确认框要把这一点说清楚，避免用户以为删除等于放弃产物。
+        modal.confirm({
+            title: "删除当前画布？",
+            content: "画布里的节点和连线会一起移除。排队或生成中的任务会继续执行，完成后的产物自动保存到素材库。",
+            okText: "删除",
+            okButtonProps: { danger: true },
+            cancelText: "取消",
+            onOk: async () => {
+                let drawingIds = nodesRef.current.flatMap((node) => node.type === "drawing" && node.metadata?.drawingId ? [node.metadata.drawingId] : []);
+                try {
+                    const drafts = await readCanvasSyncDrafts(projectId);
+                    const preserved = new Set(drafts.flatMap((draft) => draft.project.nodes.flatMap((node) => node.metadata?.drawingId ? [node.metadata.drawingId] : [])));
+                    drawingIds = drawingIds.filter((id) => !preserved.has(id));
+                    await deleteCanvasProjectsWithRemoteSync([projectId]);
+                } catch (error) {
+                    message.error(error instanceof Error ? `删除画布失败：${error.message}` : "删除画布失败，请稍后重试");
+                    return;
+                }
+                if (drawingIds.length) {
+                    void Promise.all(drawingIds.map((drawingId) => removeCanvasDrawing(projectId, drawingId)))
+                        .catch(() => message.warning("项目已删除，但部分本地绘图缓存清理失败"));
+                }
+                cleanupAssetImages();
+                navigate("/canvas");
+            },
+        });
+    }, [cleanupAssetImages, message, modal, navigate, nodesRef, projectId]);
 
     const renameCurrentProject = useCallback((title: string) => {
         renameProject(projectId, title);

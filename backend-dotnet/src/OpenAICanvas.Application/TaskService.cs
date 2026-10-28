@@ -92,6 +92,12 @@ public sealed class TaskService
         _repository = repository;
     }
 
+    /// <summary>
+    /// 删除画布后的产物补登。文本回放由前端收尾（不经过 worker），
+    /// 也需要在完成任务后按删除标记把文本存进素材库。
+    /// </summary>
+    public GeneratedAssetArchiveService? AssetArchive { get; set; }
+
     // ------------------------------------------------------------ 读取
 
     /// <summary>任务列表。对应 Go: <c>TasksWithOptions</c>。</summary>
@@ -199,8 +205,34 @@ public sealed class TaskService
                 .ConfigureAwait(false);
         }
 
+        await ArchiveDeletedCanvasTextAsync(userId, taskId, cancellationToken).ConfigureAwait(false);
+
         return await _repository.TaskForUserAsync(userId, taskId, cancellationToken).ConfigureAwait(false)
             ?? throw AppError.NotFound("任务不存在");
+    }
+
+    /// <summary>画布已删除的文本任务，收尾后把正文补登素材库；失败只记日志。</summary>
+    private async Task ArchiveDeletedCanvasTextAsync(
+        string userId, string taskId, CancellationToken cancellationToken)
+    {
+        if (AssetArchive is null)
+        {
+            return;
+        }
+        try
+        {
+            TaskEntity? task = await _repository.TaskForUserAsync(userId, taskId, cancellationToken)
+                .ConfigureAwait(false);
+            if (task is not null)
+            {
+                await AssetArchive.SaveAsync(task, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            await AppendLogAsync(userId, taskId, "warn", "画布已删除，产物归档素材库失败", error.Message,
+                CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     /// <summary>追加文本增量。对应 Go: <c>AppendTaskTextDelta</c>。</summary>

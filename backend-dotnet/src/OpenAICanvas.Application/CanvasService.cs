@@ -108,6 +108,9 @@ public sealed class CanvasService
             new ResourceDomainService(repository, RuntimePolicy, dataDir));
         CreationRuns = new CreationRunService(repository, TaskCreations, RuntimePolicy);
         CreationRuns.UserData = UserData;
+        // 删除画布后补登产物：需要整棵服务树，构造完成后回填给任务收尾路径。
+        AssetArchive = new GeneratedAssetArchiveService(this);
+        Tasks.AssetArchive = AssetArchive;
         Diagnostics = new DiagnosticsService(repository, dataDir);
         SystemPerformance = new SystemPerformanceService(repository, dataDir);
         // 支付适配器注册表复用插件启动加载的官方 RPC provider；测试可注入替身。
@@ -658,6 +661,9 @@ public sealed class CanvasService
     public AdminUserService AdminUsers { get; }
 
     public TaskService Tasks { get; }
+
+    /// <summary>删除画布后的产物补登服务；由构造末尾装配，任务收尾路径按需读取。</summary>
+    public GeneratedAssetArchiveService AssetArchive { get; }
 
     /// <summary>项目工作流 v2 与工作台聚合。对应 Go: <c>project_workflow.go</c>。</summary>
     public ProjectWorkflowService ProjectWorkflows { get; }

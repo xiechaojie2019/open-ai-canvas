@@ -180,6 +180,7 @@ builder.Services.AddSingleton(serviceProvider =>
         CanvasService = canvas,
         GeneratedMediaUpload =
             serviceProvider.GetRequiredService<OpenAICanvas.Application.ResourceUploadService>(),
+        GeneratedAssetArchive = canvas.AssetArchive,
     };
 });
 // 媒体结果保存路径：声明式协议的媒体结果由 ProviderProtocolTask.FinishResultAsync 走

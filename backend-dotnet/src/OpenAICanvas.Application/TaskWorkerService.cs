@@ -73,6 +73,12 @@ public sealed class TaskWorkerService
     /// </summary>
     public ResourceUploadService? GeneratedMediaUpload { get; set; }
 
+    /// <summary>
+    /// 删除画布后把在途任务产物补登素材库。删除路径会在任务 inputJson 上打标记，
+    /// 这里在任务成功写库后读取标记补登；未注入即不补登（测试与旧装配行为不变）。
+    /// </summary>
+    public GeneratedAssetArchiveService? GeneratedAssetArchive { get; set; }
+
     // ------------------------------------------------------------- 调度循环
 
     /// <summary>
@@ -345,6 +351,7 @@ public sealed class TaskWorkerService
                 string timelineResultJSON = JsonSerializer.Serialize(
                     timelineResult, ProjectCharacterService.GoPayloadOptions);
                 await SaveCompletionWithinQuotaAsync(latest, timelineResultJSON, ct).ConfigureAwait(false);
+                await ArchiveDeletedCanvasResultAsync(latest).ConfigureAwait(false);
                 await _terminal.HandleSuccessAsync(latest).ConfigureAwait(false);
                 return null;
             }
@@ -441,6 +448,7 @@ public sealed class TaskWorkerService
             {
                 CanvasService?.MediaRecovery.CleanupTempFiles(claimed);
             }
+            await ArchiveDeletedCanvasResultAsync(latest).ConfigureAwait(false);
             await _compact.NoteTaskAsync(latest, result, null, ct).ConfigureAwait(false);
             await _terminal.HandleSuccessAsync(latest).ConfigureAwait(false);
             return null;
@@ -1147,6 +1155,29 @@ public sealed class TaskWorkerService
                 : "任务执行超时，请稍后重试。";
 
     /// <summary>
+    /// 画布在任务执行期间被删除时，把产物补登素材库。
+    /// 补登失败只记任务日志：任务本身已成功、计费已结算，不能让归档问题回滚结果。
+    /// </summary>
+    private async Task ArchiveDeletedCanvasResultAsync(TaskEntity latest)
+    {
+        if (GeneratedAssetArchive is null)
+        {
+            return;
+        }
+        try
+        {
+            await GeneratedAssetArchive.SaveAsync(latest, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            await _repository
+                .CreateTaskLogAsync(latest.UserID, latest.ID, "warn", "画布已删除，产物归档素材库失败",
+                    error.Message, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// 存储配额核算 + 原子写任务完成态。对应 Go: <c>saveTaskCompletionWithinStorageQuota</c>。
     /// 结构化画布配额通道（structuredDelta）当前恒为 0，待画布操作落库（阶段 7）接入。
     /// </summary>
@@ -1157,6 +1188,15 @@ public sealed class TaskWorkerService
         UserStorageUsage usage = await _repository
             .UserStorageUsageAsync(current.UserID, cancellationToken).ConfigureAwait(false);
         string publicInputJSON = TaskOutput.PublicTaskInputJSON(current.InputJSON);
+        // 画布删除可能发生在本轮读取任务之后：此时标记只在库里，直接写回 current.InputJSON
+        // 会把它覆盖掉，补登素材就丢了。以库里最新值为准合并标记。
+        TaskEntity? freshest = await _repository.TaskAsync(current.ID, cancellationToken).ConfigureAwait(false);
+        if (freshest is not null &&
+            TaskArchiveMarker.TryRead(freshest.InputJSON, out string deletedCanvasID, out string deletedCanvasTitle) &&
+            !TaskArchiveMarker.TryRead(publicInputJSON, out _, out _))
+        {
+            publicInputJSON = TaskArchiveMarker.Mark(publicInputJSON, deletedCanvasID, deletedCanvasTitle);
+        }
         long taskDelta = Math.Max(
             0, resultJSON.Length + publicInputJSON.Length - current.ResultJSON.Length - current.InputJSON.Length);
         long limitBytes = resource.TaskDataGB * (1L << 30);

@@ -145,6 +145,12 @@ public sealed partial class Repository
     {
         await InTransactionAsync(async (connection, transaction) =>
         {
+            // 删除前先把画布上的进行中任务标记为“完成后入素材库”：任务已经扣费且
+            // 上游仍在执行，直接丢弃产物等于白扣积分。标记写在 inputJson.metadata
+            // 上，任务完成时由 worker 读取并补登素材；不改表结构。
+            await MarkDeletedCanvasTasksForAssetArchiveAsync(
+                connection, transaction, userId, id, cancellationToken).ConfigureAwait(false);
+
             await ExecuteAsync(
                 connection,
                 "DELETE FROM \"canvasShares\" WHERE \"userId\" = @userId AND \"projectId\" = @id",
@@ -174,6 +180,51 @@ public sealed partial class Repository
                 transaction,
                 cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 给画布上排队/运行中的任务写入素材补登标记。
+    /// 只动 <c>tasks.inputJson</c> 的 metadata，状态、计费与结果字段保持不变。
+    /// </summary>
+    private async Task MarkDeletedCanvasTasksForAssetArchiveAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string userId,
+        string projectId,
+        CancellationToken cancellationToken)
+    {
+        string? title = await ScalarAsync<string>(
+            connection,
+            "SELECT \"title\" FROM \"canvasProjects\" WHERE \"id\" = @projectId AND \"userId\" = @userId LIMIT 1",
+            new { projectId, userId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        IReadOnlyList<(string ID, string InputJSON)> tasks = await QueryAsync<(string ID, string InputJSON)>(
+            connection,
+            """
+            SELECT "id" AS "ID", "inputJson" AS "InputJSON" FROM "tasks"
+            WHERE "userId" = @userId AND "projectId" = @projectId
+              AND "status" IN ('queued', 'running', 'text_replay')
+            """,
+            new { userId, projectId },
+            transaction,
+            cancellationToken).ConfigureAwait(false);
+
+        foreach ((string taskId, string inputJSON) in tasks)
+        {
+            string marked = TaskArchiveMarker.Mark(inputJSON, projectId, title ?? "");
+            if (marked.Length == 0)
+            {
+                continue;
+            }
+            await ExecuteAsync(
+                connection,
+                "UPDATE \"tasks\" SET \"inputJson\" = @marked WHERE \"id\" = @taskId AND \"userId\" = @userId",
+                new { marked, taskId, userId },
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

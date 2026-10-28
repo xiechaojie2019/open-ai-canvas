@@ -42,6 +42,9 @@ export function CanvasDeleteProjectsDialog() {
             }
         >
             <p className="text-sm text-stone-500">将删除 {ids.length} 个画布，里面的节点和连线也会一起移除。</p>
+            <p className="mt-2 text-sm text-stone-500">
+                画布上排队或生成中的任务会继续执行，完成后的产物自动保存到素材库，积分不会白扣。
+            </p>
         </Modal>
     );
 }
