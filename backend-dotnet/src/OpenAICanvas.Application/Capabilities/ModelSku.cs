@@ -226,7 +226,7 @@ public static class ModelSku
     /// 图片价格档使用 1k/2k/4k 一套档位，而画布与上游会传 low/medium/high、
     /// standard/hd。这里统一折算，避免同一档位在价格匹配时找不到价格。
     /// </summary>
-    private static string NormalizeImageQualityAlias(string rawQuality) =>
+    internal static string NormalizeImageQualityAlias(string rawQuality) =>
         rawQuality.Trim().ToLowerInvariant() switch
         {
             "low" or "standard" => "1k",

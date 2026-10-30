@@ -489,6 +489,10 @@ public sealed partial class TaskCreationService
                 throw ModelSelectionError("指定的模型能力配置无效，请联系管理员");
             }
         }
+        // 质量档位对齐必须早于 ApplyChannelCapabilityDefaults：别名折不到时本方法会删掉
+        // 该键，随后由补默认值补上模型自己的 default，保证「上游实际拿到的档位」和
+        // 「计费算的档位」是同一个（晚于补默认值则删成空，上游收空、计费按 size 猜档 ⇒ 漏收）。
+        CapabilityOptionAlign.AlignQuality(capabilitySpec, nextConfig);
         ApplyChannelCapabilityDefaults(nextConfig, channelModel.Capability, capabilityConfig);
         input["config"] = JsonSerializer.SerializeToElement(nextConfig);
 

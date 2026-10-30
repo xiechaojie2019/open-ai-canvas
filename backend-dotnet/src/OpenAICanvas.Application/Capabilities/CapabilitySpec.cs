@@ -681,11 +681,21 @@ public static class CapabilitySpecOps
     {
         string left = NormalizedScalar(candidate);
         string right = NormalizedScalar(value);
-        if (CanonicalCapabilityOptionName(name) == "vquality")
+        string canonical = CanonicalCapabilityOptionName(name);
+        if (canonical == "vquality")
         {
             // 与请求意图和价格档使用同一组别名比较（"480"/"low" → "480p" → "480"）。
             left = NormalizedScalar(NormalizeModelRequestOption(name, JsonSerializer.SerializeToElement(left))).TrimSuffix("p");
             right = NormalizedScalar(NormalizeModelRequestOption(name, JsonSerializer.SerializeToElement(right))).TrimSuffix("p");
+        }
+        else if (canonical == "quality")
+        {
+            // 图片质量档线上有三套写法：价格档 1k/2k/4k、OpenAI 兼容协议 low/medium/high、
+            // 部分中转站 standard/hd。这里与计费侧 ModelSku.PricingQualityForImage 共用
+            // 同一张别名表，避免「准入判超出范围、计费却按 4k 收」这类错位
+            // （2026-10-30：模型填 high、values 是 1k/2k/4k 时被误判超出范围）。
+            left = ModelSku.NormalizeImageQualityAlias(left);
+            right = ModelSku.NormalizeImageQualityAlias(right);
         }
         return left == right;
     }
